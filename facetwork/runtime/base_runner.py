@@ -226,7 +226,7 @@ def check_declared_returns(facet_name: str, facet_def: dict, produced: dict) -> 
     cause is, not where the symptom surfaces.
     """
     declared = [
-        r.get("name")
+        str(r["name"])
         for r in (facet_def.get("returns") or [])
         if isinstance(r, dict) and r.get("name")
     ]

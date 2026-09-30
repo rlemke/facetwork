@@ -1092,8 +1092,6 @@ class RunnerService(BaseRunner):
                     "No handler for facet '%s' on step %s",
                     step.facet_name,
                     step.id,
-                    resources=self._measured_resources(),
-                    known_features=self._known_ast_features(),
                 )
                 return
 

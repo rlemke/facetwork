@@ -59,7 +59,7 @@ class IterationChanges:
     # id -> pending step, so a lookup does not scan the lists. The indexes above
     # already exist for dedup; this one makes them usable for FINDING a step,
     # which is the hot path (a 50-way fan-out did ~7.5k of these lookups).
-    _pending_by_id: dict[StepId, StepDefinition] = field(default_factory=dict)
+    _pending_by_id: dict[StepId | BlockId, StepDefinition] = field(default_factory=dict)
 
     def add_created_step(self, step: StepDefinition) -> None:
         """Record a newly created step (idempotent)."""
@@ -81,7 +81,7 @@ class IterationChanges:
         # both refer to the same step, and the updated object is the current one.
         self._pending_by_id[step.id] = step
 
-    def find_pending(self, step_id: StepId) -> StepDefinition | None:
+    def find_pending(self, step_id: StepId | BlockId) -> StepDefinition | None:
         """The pending (uncommitted) version of a step, if any.
 
         Pending changes beat persistence: a step mutated this iteration has not
@@ -589,6 +589,7 @@ class PersistenceAPI(Protocol):
         server_id: str = "",
         provided_environments: list[str] | None = None,
         known_features: list[str] | None = None,
+        resources: dict | None = None,
     ) -> Optional["TaskDefinition"]:
         """Atomically claim a pending task matching one of the given names.
 
@@ -607,6 +608,9 @@ class PersistenceAPI(Protocol):
           A task whose workflow needs a construct the runner doesn't implement
           is left for a capable runner instead of being executed with that
           construct silently ignored.
+        * ``resources`` — resource-aware routing: the runner's MEASURED
+          capacity (e.g. ``{"memory_gb": 30.5}``). A task whose ``requires``
+          floor exceeds it is left for a bigger runner. Absent = unconstrained.
 
         Args:
             task_names: List of task names to match
@@ -614,6 +618,7 @@ class PersistenceAPI(Protocol):
             server_id: The claiming server's ID (for orphan detection)
             provided_environments: Environment manifest hashes this runner provides
             known_features: AST features this runner understands
+            resources: This runner's measured capacity, for ``requires`` floors
 
         Returns:
             The claimed task, or None

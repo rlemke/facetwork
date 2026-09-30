@@ -85,14 +85,14 @@ class ToolStorage:
     def join(cls, *parts: str) -> str:
         """⚠️ ``os.path.join`` for local paths, POSIX for ``s3://``. Not the
         module-level ``join`` in domains/storage.py, which is POSIX always."""
-        parts = [p for p in parts if p]
-        if not parts:
+        kept = [p for p in parts if p]
+        if not kept:
             return ""
-        if cls.is_s3(parts[0]):
-            head = parts[0].rstrip("/")
-            tail = "/".join(p.strip("/") for p in parts[1:])
+        if cls.is_s3(kept[0]):
+            head = kept[0].rstrip("/")
+            tail = "/".join(p.strip("/") for p in kept[1:])
             return head + ("/" + tail if tail else "")
-        return os.path.join(*parts)
+        return os.path.join(*kept)
 
     # ── S3, through the one client ───────────────────────────────────────────
 

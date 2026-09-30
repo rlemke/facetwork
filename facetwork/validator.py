@@ -2713,7 +2713,7 @@ class FFLValidator:
                 self._result.add_error(
                     f"Invalid attribute '{attr}' for step '{step_name}': "
                     f"valid attributes are {sorted(returns)}"
-                    f"{_suggest.did_you_mean(attr, returns)}",
+                    f"{_suggest.did_you_mean(attr or '', returns)}",
                     ref.location,
                     rule_id="REF_INVALID_STEP_ATTRIBUTE",
                 )

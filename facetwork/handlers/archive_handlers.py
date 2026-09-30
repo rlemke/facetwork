@@ -120,6 +120,14 @@ def _looks_like_tar(data: bytes) -> bool:
     return len(data) >= 265 and data[257:262] in (b"ustar",)
 
 
+def _need(data: bytes | None) -> bytes:
+    """The archive's bytes, which _open_archive reads exactly when there is no
+    local path. A None here is a logic error, not a missing file."""
+    if data is None:
+        raise RuntimeError("archive bytes were not read for a non-local path")
+    return data
+
+
 def _open_archive(path: str):
     """Return ``(kind, handle, raw)`` for *path*.
 
@@ -133,12 +141,12 @@ def _open_archive(path: str):
     kind = detect_format(probe if len(probe) >= 265 else (data or probe))
 
     if kind == ZIP:
-        source: Any = local if local is not None else io.BytesIO(data)
+        source: Any = local if local is not None else io.BytesIO(_need(data))
         return ZIP, zipfile.ZipFile(source), None
     if kind == TAR:
         if local is not None:
             return TAR, tarfile.open(local, mode="r:*"), None
-        return TAR, tarfile.open(fileobj=io.BytesIO(data), mode="r:*"), None
+        return TAR, tarfile.open(fileobj=io.BytesIO(_need(data)), mode="r:*"), None
     raw = gzip.decompress(data if data is not None else _read_bytes(path))
     return GZIP, None, raw
 

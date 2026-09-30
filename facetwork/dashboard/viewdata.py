@@ -221,16 +221,16 @@ def _build_environment_coverage(live_servers: list, store: Any) -> list[dict]:
     except Exception:  # noqa: BLE001 - coverage is diagnostic; never break the page
         waiting = {}
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     for h in sorted(set(provided) | set(waiting)):
-        entry = provided.get(h)
+        cov = provided.get(h)
         rows.append(
             {
                 "hash": h,
-                "runners": entry["runners"] if entry else 0,
-                "hosts": sorted(entry["hosts"]) if entry else [],
+                "runners": cov["runners"] if cov else 0,
+                "hosts": sorted(cov["hosts"]) if cov else [],
                 "waiting": waiting.get(h, 0),
-                "covered": bool(entry),
+                "covered": bool(cov),
             }
         )
     # Uncovered first — those are the ones an operator has to act on.

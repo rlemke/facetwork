@@ -2068,7 +2068,7 @@ class Evaluator:
                 for current_id in work_queue:
                     if current_id in processed_ids:
                         continue
-                    step = context.get_step_cached(current_id)
+                    step = context.get_step_cached(StepId(current_id))
                     if step is None or step.is_terminal:
                         continue
                     processed_ids.add(current_id)

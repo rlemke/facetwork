@@ -71,6 +71,8 @@ def _builtin_entries() -> dict[str, tuple[str, int]]:
     out: dict[str, tuple[str, int]] = {}
     for module_name, _ffl in _BUILTIN_MODULES:
         module = importlib.import_module(module_name)
+        if not module.__file__:  # a namespace package has no file to point a runner at
+            raise RuntimeError(f"built-in handler module {module_name} has no __file__")
         uri = f"file://{os.path.abspath(module.__file__)}"
         timeout = getattr(module, "HANDLER_TIMEOUT_MS", _BUILTIN_TIMEOUT_MS)
         for facet in module.facet_names():
@@ -97,8 +99,9 @@ def declared_facets() -> set[str]:
             prefix = f"{ns.name}." if getattr(ns, "name", "") else ""
             for decl in getattr(ns, "event_facets", None) or []:
                 sig = getattr(decl, "sig", None)
-                if sig is not None and getattr(sig, "name", ""):
-                    names.add(f"{prefix}{sig.name}")
+                name = getattr(sig, "name", None) if sig is not None else None
+                if name:
+                    names.add(f"{prefix}{name}")
     return names
 
 
@@ -129,7 +132,7 @@ def register_builtin_handlers(persistence: Any) -> int:
                 f"handled but not declared: {sorted(missing_decl)}"
             )
 
-    now = str(int(time.time() * 1000))
+    now = int(time.time() * 1000)  # ms, an int like every other registration path
     count = 0
     for facet_name, (module_uri, timeout_ms) in sorted(entries.items()):
         persistence.save_handler_registration(

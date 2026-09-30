@@ -203,7 +203,7 @@ def handle_run(params: dict[str, Any]) -> dict[str, Any]:
     ]
     for t in readers:
         t.start()
-    if stdin:
+    if stdin and proc.stdin is not None:  # PIPE exactly when stdin was given
         try:
             proc.stdin.write(stdin.encode("utf-8"))
             proc.stdin.close()

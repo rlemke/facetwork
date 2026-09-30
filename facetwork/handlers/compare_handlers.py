@@ -90,7 +90,7 @@ def _read_records(path: str) -> tuple[list[dict], list[str], bytes]:
         head = next((i for i, ln in enumerate(lines) if ln.startswith("#CHROM")), None)
         if head is None:
             return [], [], raw
-        fields = lines[head].lstrip("#").split("\t")
+        fields: list[str] = lines[head].lstrip("#").split("\t")
         rows = []
         for ln in lines[head + 1 :]:
             if not ln or ln.startswith("#"):
@@ -103,7 +103,7 @@ def _read_records(path: str) -> tuple[list[dict], list[str], bytes]:
 
     if name.endswith((".jsonl", ".ndjson")):
         rows = [json.loads(line) for line in text.splitlines() if line.strip()]
-        fields: list[str] = []
+        fields = []
         for r in rows:  # union, order-preserving — json objects need not agree
             for k in r:
                 if k not in fields:
@@ -229,7 +229,10 @@ def _index(path, keys, *, ignore, sort_json, tol, abs_tol=0.0, split=(), delim="
     two records may be equal without being identical, so a hash cannot decide it
     — those keep their values and the caller compares numerically.
     """
-    idx, fields, count, rows_n, over = {}, [], 0, 0, 0
+    # A value TUPLE when a tolerance applies (compared numerically), else a DIGEST.
+    idx: dict[Any, tuple | bytes] = {}
+    fields: list[str] = []
+    count, rows_n, over = 0, 0, 0
     # Distinct values of the FIRST key column, which by convention is the
     # coarsest: chromosome, region, tenant, date. `None` once it proves to be
     # high-cardinality, i.e. not a partition at all.
@@ -504,15 +507,15 @@ def _compare_streaming(
     if not efields or not afields:
         return result("missing", False, 0, ecount, acount, "no records readable")
     if set(efields) != set(afields):
-        only_e = sorted(set(efields) - set(afields))
-        only_a = sorted(set(afields) - set(efields))
+        fields_only_e = sorted(set(efields) - set(afields))
+        fields_only_a = sorted(set(afields) - set(efields))
         return result(
             "exists",
             False,
             0,
             ecount,
             acount,
-            f"field mismatch — only in expected: {only_e or '-'}; only in actual: {only_a or '-'}",
+            f"field mismatch — only in expected: {fields_only_e or '-'}; only in actual: {fields_only_a or '-'}",
         )
 
     only_e = set(eidx) - set(aidx)
@@ -711,14 +714,14 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     # --- rung: schema -------------------------------------------------------
     ef, af = [f for f in efields if f not in ignore], [f for f in afields if f not in ignore]
     if set(ef) != set(af):
-        only_e, only_a = sorted(set(ef) - set(af)), sorted(set(af) - set(ef))
+        fields_only_e, fields_only_a = sorted(set(ef) - set(af)), sorted(set(af) - set(ef))
         return _result(
             "exists",
             False,
             0,
             len(erows),
             len(arows),
-            f"field mismatch — only in expected: {only_e or '-'}; only in actual: {only_a or '-'}",
+            f"field mismatch — only in expected: {fields_only_e or '-'}; only in actual: {fields_only_a or '-'}",
         )
     if ef != af:
         applied.append("ignored field ORDER")
@@ -785,9 +788,9 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     diffs = []
     with heartbeating(params, f"comparing {len(pairs)} record(s)"):
         for k, e, a in pairs:
-            bad = [f for f in ef if not _values_equal(e.get(f), a.get(f), tol, abs_tol)]
-            if bad:
-                diffs.append((k, bad, {f: (e.get(f), a.get(f)) for f in bad[:3]}))
+            bad_fields = [f for f in ef if not _values_equal(e.get(f), a.get(f), tol, abs_tol)]
+            if bad_fields:
+                diffs.append((k, bad_fields, {f: (e.get(f), a.get(f)) for f in bad_fields[:3]}))
     if diffs:
         ex = "; ".join(f"{k}: {d}" for k, _b, d in diffs[:max_ex])
         return _result(

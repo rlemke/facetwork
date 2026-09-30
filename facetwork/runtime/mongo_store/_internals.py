@@ -38,6 +38,8 @@ if TYPE_CHECKING:
         _db: Database
         _client: Any
         DEFAULT_LEASE_MS: int
+        DEFAULT_EXECUTION_TIMEOUT_MS: int
+        RECLAIM_GRACE_MS: int
 
         def _lease_ms(self) -> int: ...
         @staticmethod

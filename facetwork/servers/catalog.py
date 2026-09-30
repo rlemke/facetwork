@@ -164,7 +164,7 @@ def _local_addresses() -> set[str]:
         for _fam, _typ, _proto, _canon, sa in socket.getaddrinfo(
             socket.gethostname(), None, socket.AF_INET
         ):
-            addrs.add(sa[0])
+            addrs.add(str(sa[0]))
     except OSError:
         pass
     try:  # primary LAN address (routing lookup only — no packet is sent)

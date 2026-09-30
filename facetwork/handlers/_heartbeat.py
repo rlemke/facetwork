@@ -109,7 +109,7 @@ def heartbeats(what: str):
         # functools.wraps makes inspect.getsource return the UNDECORATED source,
         # so a text check for "heartbeating" would not see this. Mark the wrapper
         # explicitly — the enforcement test asks the object, not the text.
-        _wrapped._fw_heartbeats = what
+        _wrapped._fw_heartbeats = what  # type: ignore[attr-defined]
         return _wrapped
 
     return _decorate
