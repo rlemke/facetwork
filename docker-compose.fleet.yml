@@ -78,11 +78,12 @@ x-fleet-runner: &fleet-runner
     # catalog; see the .env.fleet warning about compose defaults winning.
     - "afl-mongodb:${FW_MONGO_IP:-${FW_INFRA_IP:-127.0.0.1}}"
     - "afl-minio:${FW_INFRA_IP:-127.0.0.1}"
-    # The self-hosted extract server (`fw svc osm-extracts`) runs on the infra
-    # host too. Named, not addressed by IP: a literal would freeze at whatever
-    # DHCP handed out on the day it was written, which is the failure the other
-    # two aliases already exist to avoid.
-    - "afl-extracts:${FW_INFRA_IP:-127.0.0.1}"
+    # The self-hosted extract server (`fw svc osm-extracts`) — its OWN variable
+    # too: it moved to beelink01 with the OSM role on 2026-09-15 while MinIO
+    # stayed on server3, so FW_INFRA_IP named the wrong (and by then empty)
+    # server. The fleet-agent supplies FW_EXTRACTS_IP from the catalog's
+    # afl-extracts alias; the FW_INFRA_IP fallback is the one-box behaviour.
+    - "afl-extracts:${FW_EXTRACTS_IP:-${FW_INFRA_IP:-127.0.0.1}}"
 
 # NOTE: `depends_on: !reset []` must sit DIRECTLY on each service, not in the
 # anchor above — Compose's `!reset` tag is not preserved through a `<<:` alias

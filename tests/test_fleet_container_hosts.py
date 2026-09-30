@@ -136,5 +136,25 @@ def test_host_gateway_mapping_is_left_alone(monkeypatch):
     downgrade, and it would happen again on every single poll."""
     rec = _Recorder(_all_names_at(GATEWAY, **{"host.docker.internal": GATEWAY}))
     _patch(monkeypatch, rec)
+    monkeypatch.setattr(fl, "_this_host_addresses", lambda: {"10.0.0.99"})
     assert fl.refresh_container_hosts("10.0.0.99") == []
     assert rec.written == []
+
+
+def test_gateway_entry_for_a_service_that_moved_away_is_healed(monkeypatch):
+    """The gateway skip holds only while the service still runs HERE.
+
+    2026-09-29: the OSM extract server moved server3 -> beelink01. server3's
+    runners were created with `afl-extracts:host-gateway` and the skip left them
+    resolving to server3's own, now-empty extract server for two weeks, while
+    every other host was healed to beelink01."""
+    rec = _Recorder(_all_names_at(GATEWAY, **{"host.docker.internal": GATEWAY}))
+    _patch(monkeypatch, rec)
+    monkeypatch.setattr(fl, "_this_host_addresses", lambda: {"10.0.0.3"})
+    mapping = dict.fromkeys(fl.INFRA_HOST_NAMES, "10.0.0.3")  # MinIO etc. still here
+    mapping["afl-extracts"] = "10.0.0.128"                     # ...the extracts moved
+    assert fl.refresh_container_hosts(mapping) == ["runner-a"]
+    written = rec.written[0]
+    assert "10.0.0.128\tafl-extracts" in written
+    # The names whose service is still local keep Docker's gateway mapping.
+    assert "10.0.0.3\tafl-minio" not in written

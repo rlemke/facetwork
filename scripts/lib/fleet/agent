@@ -519,7 +519,11 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     # the compose default a lie. Supply them from the catalog so a container is
     # born correct; the self-heal stays as the answer to drift AFTER creation.
     # Two variables, not one: Mongo and MinIO are on different hosts now.
-    for _var, _svc in (("FW_INFRA_IP", "afl-minio"), ("FW_MONGO_IP", "afl-mongodb")):
+    # Three since 2026-09-15, when the extract server moved to beelink01 with the
+    # OSM role: until this carried FW_EXTRACTS_IP, afl-extracts rode FW_INFRA_IP
+    # (MinIO's host) and every container was born pointing at the OLD server.
+    for _var, _svc in (("FW_INFRA_IP", "afl-minio"), ("FW_MONGO_IP", "afl-mongodb"),
+                       ("FW_EXTRACTS_IP", "afl-extracts")):
         _a = _fleet_lib.container_service_ip(_svc)
         if _a:
             env[_var] = _a

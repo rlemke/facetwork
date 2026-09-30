@@ -446,6 +446,21 @@ def _runner_containers() -> list[str]:
     return names
 
 
+def _this_host_addresses() -> set[str]:
+    """IPv4 addresses that mean THIS machine (for "does that service run here?")."""
+    out: set[str] = set()
+    try:
+        from facetwork.servers import catalog as _srv  # noqa: PLC0415
+
+        out |= set(_srv._local_addresses())
+    except Exception:                                          # noqa: BLE001
+        pass
+    ip = lan_ip()
+    if ip:
+        out.add(ip)
+    return out
+
+
 def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
     """Patch each running runner container whose afl-* entries have drifted, so
     those names resolve to their current addresses. Rewrites /etc/hosts in place
@@ -476,7 +491,6 @@ def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
                     drifted[name] = (cur, want)
             if not drifted:
                 continue
-            cur_ip = drifted.get("afl-mongodb", (None, None))[0]
             # Created with `afl-mongodb:host-gateway` (infra is this machine):
             # that mapping is maintained by Docker and can never go stale, so
             # "differs from the LAN IP" is not drift — leave it alone, or we
@@ -488,7 +502,16 @@ def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
                 # THIS machine): Docker maintains the mapping and it can never go
                 # stale, so "differs from the LAN IP" is not drift — rewriting it
                 # would downgrade it to an address that dies on the next lease.
-                for name in [n for n, (cur, _w) in drifted.items() if cur == gw]:
+                #
+                # ⚠️ Only when the service STILL runs here. A gateway entry for a
+                # service that has MOVED is exactly the drift this exists to fix,
+                # and skipping it unconditionally hid one (2026-09-29): the OSM
+                # extract server moved server3 -> beelink01, and server3's runners
+                # kept resolving afl-extracts to server3's own, now-empty server
+                # for two weeks while every other host was self-healed.
+                mine = _this_host_addresses()
+                for name in [n for n, (cur, want) in drifted.items()
+                             if cur == gw and want in mine]:
                     drifted.pop(name)
                 if not drifted:
                     continue
