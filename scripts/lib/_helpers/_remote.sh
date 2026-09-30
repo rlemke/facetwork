@@ -40,7 +40,7 @@ _afl_resolve_remote_env() {
     # fleet at. Same .env fallback as FW_RUNNER_HOSTS above and for the same reason
     # — rollout sources only _bootstrap.sh + this file, not _env.sh, so a value set
     # only in .env (e.g. a standalone host's local registry, host.docker.internal:5050)
-    # was silently ignored and the rollout defaulted back to the shared server3
+    # was silently ignored and the rollout defaulted back to the shared infra host
     # registry. Read the file directly rather than sourcing _env.sh.
     if [ -z "${FW_FLEET_REGISTRY:-}" ] && [ -f "$_REMOTE_REPO_ROOT/.env" ]; then
         FW_FLEET_REGISTRY="$(sed -n 's/^[[:space:]]*FW_FLEET_REGISTRY[[:space:]]*=[[:space:]]*//p' \
@@ -184,7 +184,7 @@ _afl_resolve_hosts() {
         # tracks the fleet by stable NAME and is updated when a host joins.
         #
         # Only hosts that RESOLVE are returned: an entry for a machine that is off
-        # is not an error, and treating it as one turns "server1 is powered down"
+        # is not an error, and treating it as one turns "an Intel mini is powered down"
         # into a failed rollout. This host is excluded — every caller acts on it
         # locally, not over ssh.
         local _self _out
@@ -201,7 +201,7 @@ for entry in (catalog.servers() or []):
     if not name or name.split(".")[0].lower() == me:
         continue
     # RESOLVING IS NOT MEMBERSHIP. A machine can be catalogued (so its capacity
-    # and intent are tracked) long before it runs a fleet-agent. atopnuc02
+    # and intent are tracked) long before it runs a fleet-agent. One host
     # answered on the network, passed the reachability filter, then failed the
     # staggered pre-pull because it has no Docker and no key. The rollout then
     # correctly refused to flip the config, so ONE unprovisioned host blocked

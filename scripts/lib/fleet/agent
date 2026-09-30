@@ -160,7 +160,7 @@ def _precreate_handler_dirs(env):
     exist on the Linux hosts, so every one was created root:root — which makes
     `fw install domain` fail with "Permission denied" on the clone. Measured
     2026-09-15 on all four Linux hosts at once; it blocked moving the OSM role
-    to beelink01, because the host-side replication publisher needs a checkout.
+    to the OSM host, because the host-side replication publisher needs a checkout.
 
     `create_host_path: false` would be the WRONG guard here: the runners log
     "using baked-in <domain> (image is source of truth; bind-mount ignored)", so
@@ -352,7 +352,7 @@ def _prune_superseded_images(image):
     """GC superseded runner-image tags after a successful reconcile.
 
     Every rollout pulls a fresh ~2GB tag and nothing ever deleted the old
-    ones — six accumulated generations filled server1's disk to 100%
+    ones — six accumulated generations filled an Intel mini's disk to 100%
     (2026-07-19), wedging its reconcile with ENOSPC. Keep the tag just
     applied plus the newest OTHER tag (one-step rollback), remove the rest;
     tags still in use by a container are skipped automatically (docker
@@ -479,7 +479,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     # no MongoDB, and crash-loops -- while `docker ps` reports it Up and the
     # agent reports the version applied. Refuse instead of baking it in.
     #
-    # This is not hypothetical (2026-09-08, server3): that host IS the MongoDB
+    # This is not hypothetical (2026-09-08, the infra host): that host IS the MongoDB
     # host, so its /etc/hosts maps afl-mongodb to 127.0.0.1 and self-discovery
     # returned it. 22 of 23 runners were down with RestartCount 21 and nothing
     # said so -- the only survivor was the gh-router. The fix is a NAME the
@@ -519,7 +519,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     # the compose default a lie. Supply them from the catalog so a container is
     # born correct; the self-heal stays as the answer to drift AFTER creation.
     # Two variables, not one: Mongo and MinIO are on different hosts now.
-    # Three since 2026-09-15, when the extract server moved to beelink01 with the
+    # Three since 2026-09-15, when the extract server moved to another host with the
     # OSM role: until this carried FW_EXTRACTS_IP, afl-extracts rode FW_INFRA_IP
     # (MinIO's host) and every container was born pointing at the OLD server.
     for _var, _svc in (("FW_INFRA_IP", "afl-minio"), ("FW_MONGO_IP", "afl-mongodb"),
@@ -553,9 +553,9 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     env["FW_SERVER_GROUP"] = grp
     # Stamp the runners with THIS AGENT'S identity rather than letting each one
     # re-derive it. `runner/start` otherwise falls back to `hostname -s`, and a
-    # host's network hostname is mutable: measured 2026-09-24, MaxPro's became
+    # host's network hostname is mutable: measured 2026-09-24, one Mac's became
     # "Mac"/"Mac.home" after a network change while the long-running agent still
-    # held the "MaxPro.local" it computed at startup. The runners then registered
+    # held the "<host>.local" it computed at startup. The runners then registered
     # under "Mac" with no agent record while the agent's own host reported
     # "NO RUNNERS ALIVE" — the fleet view split in two, `fleet status` could not
     # see 23 healthy runners, and a rollout's convergence check read 0/2 hosts
@@ -800,7 +800,7 @@ def cmd_refresh_hosts(a):
       the container's ENVIRONMENT      — e.g. FW_MONGODB_URL=mongodb://<ip>:27017,
                                           baked at creation and IMMUTABLE.
 
-    ⚠️ The second cost a real outage. server3's DHCP lease moved; 22 of its 23
+    ⚠️ The second cost a real outage. The infra host's DHCP lease moved; 22 of its 23
     runners kept the old IP in their environment, stayed "Up" for days, logged
     "Heartbeat failed" every 30s and never registered — while this command
     truthfully reported "no drift", because the /etc/hosts entries it owned were
@@ -815,7 +815,7 @@ def cmd_refresh_hosts(a):
     """
     # Per-SERVICE addresses, not one infra IP: afl-mongodb and afl-minio live on
     # different machines since 2026-09-13 (Mongo moved to its own host; MinIO
-    # stayed on server3). Collapsing them would point the object store at the
+    # stayed on the infra host). Collapsing them would point the object store at the
     # Mongo host and take every runner's cache and outputs down with it.
     svc = _fleet_lib.service_ips(log=lambda m: print(f"  {m}"))
     if not svc:
@@ -872,7 +872,7 @@ def cmd_refresh_hosts(a):
 # exists separately rather than as another verb on fw:sys.
 #
 # ⚠️ The address is the agent's OWN fleet_agents key. Those keys are not
-# uniform — the live fleet has both "MaxPro.local" and "atopnuc01" — so any
+# uniform — the live fleet has both "<host>.local" and "<host>" — so any
 # normalisation here would drift from what the agent actually writes. Using the
 # record's own _id makes the address and the identity the same string by
 # construction.
@@ -1090,7 +1090,7 @@ def cmd_watch(a):
                     # ⚠️ And the OTHER place an address hides: the container's
                     # ENVIRONMENT. Patching /etc/hosts cannot reach
                     # FW_MONGODB_URL=mongodb://<old-ip>:27017, and on 2026-09-08
-                    # that left 22 of server3's 23 runners "Up" for days,
+                    # that left 22 of the infra host's 23 runners "Up" for days,
                     # heartbeat-failing every 30s, while this very block reported
                     # no drift. An environment is immutable, so the cure is
                     # recreation.

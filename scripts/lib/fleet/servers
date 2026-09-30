@@ -1,5 +1,64 @@
 #!/usr/bin/env bash
-# fw-summary: server catalog (servers.json) — list machines + live-resolved IPs; --env/--infra-name/--resolve/--container-ip
+# fw-summary: server catalog (servers.json) — list machines + live-resolved IPs; --env/--infra-name/--resolve/--service-host/--container-ip; --push distributes it
+#
+# The catalog is SITE configuration: it names this deployment's machines, so it
+# is never committed (servers.example.json is the template). Each host keeps its
+# own copy at <repo>/servers.json, and nothing in git distributes it -- so after
+# editing it, or to give a new host its first copy:
+#
+#   fw fleet servers --push                 # to every catalogued, joined, reachable host
+#   fw fleet servers --push HOST [HOST...]  # to named hosts (a new host is not yet catalogued)
+#   fw fleet servers --push --dry           # show what would be copied where
+#
+# The file is validated as a catalog before anything is copied, and each copy
+# is written atomically (temp + rename) so a host never reads half a catalog.
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 PY="${FW_ROOT}/.venv/bin/python3"; [ -x "$PY" ] || PY=python3
-exec "$PY" -m facetwork.servers "$@"
+
+if [ "${1:-}" != "--push" ]; then
+    exec "$PY" -m facetwork.servers "$@"
+fi
+shift
+source "$FW_LIB/_helpers/_remote.sh"
+
+DRY=0; HOSTS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry|--dry-run|-n) DRY=1; shift ;;
+        -*) echo "fleet servers --push: unknown option $1" >&2; exit 2 ;;
+        *) HOSTS+=("$1"); shift ;;
+    esac
+done
+
+SRC="${FW_SERVERS_FILE:-$FW_ROOT/servers.json}"
+[ -f "$SRC" ] || { echo "no catalog at $SRC (copy servers.example.json to servers.json first)" >&2; exit 2; }
+"$PY" - "$SRC" <<'PY' || exit 2
+import json, sys
+try:
+    doc = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, ValueError) as exc:
+    sys.exit(f"{sys.argv[1]} is not valid JSON: {exc}")
+rows = doc.get("servers") if isinstance(doc, dict) else None
+if not isinstance(rows, list) or not all(isinstance(r, dict) and r.get("name") for r in rows):
+    sys.exit(f"{sys.argv[1]} has no servers[] of named entries -- refusing to distribute it")
+PY
+
+targets="$(FW_PYTHON="$PY" PYTHONPATH="$FW_ROOT" _afl_resolve_hosts ${HOSTS[@]+"${HOSTS[@]}"})" || exit 2
+fails=0
+while IFS= read -r h; do
+    [ -n "$h" ] || continue
+    if [ "$DRY" = 1 ]; then
+        echo "  [dry] $SRC -> $h:facetwork/servers.json"
+        continue
+    fi
+    # ssh -n: never let ssh consume the host list on this loop's stdin.
+    if scp -q -o BatchMode=yes -o ConnectTimeout=8 "$SRC" "$h:facetwork/.servers.json.tmp" \
+       && ssh -n -o BatchMode=yes -o ConnectTimeout=8 "$h" \
+            'mv -f ~/facetwork/.servers.json.tmp ~/facetwork/servers.json'; then
+        echo "  ✓ $h"
+    else
+        echo "  ✗ $h (not copied)" >&2
+        fails=$((fails + 1))
+    fi
+done <<< "$targets"
+[ "$fails" = 0 ] || { echo "$fails host(s) not updated" >&2; exit 1; }

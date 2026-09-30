@@ -9,7 +9,11 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 
-REGISTRY="${FW_FLEET_REGISTRY:-server3.local:5050}"
+# The registry host comes from the server catalog (the host serving
+# afl-registry, else the infra host) -- site configuration, never a name
+# written into the repo. FW_FLEET_REGISTRY overrides.
+_fw_reg_host="$(fw_service_host afl-registry)"
+REGISTRY="${FW_FLEET_REGISTRY:-${_fw_reg_host:+$_fw_reg_host:5050}}"
 HOST="" DRY=0 DO_RESTART=0
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -21,6 +25,11 @@ while [ $# -gt 0 ]; do
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
+if [ -z "$REGISTRY" ]; then
+    echo "$(basename "$0"): no image registry: set FW_FLEET_REGISTRY=<host>:<port> or --registry, or" >&2
+    echo "  give the server catalog (servers.json, from servers.example.json) an infra host" >&2
+    exit 2
+fi
 
 # The merge runs as a python snippet, locally or piped over ssh.
 read -r -d '' PYSNIP <<PY || true

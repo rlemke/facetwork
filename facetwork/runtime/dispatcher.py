@@ -45,7 +45,7 @@ def _import_verify_cache_path() -> str:
 
     ⚠️ Keyed by IMAGE TAG and stored ON THE HOST, and both halves matter. The
     whole reason this verification exists is that the same image behaves
-    differently on different CPUs — macmini01's 2009 processor cannot run the
+    differently on different CPUs — a 2009 processor in the fleet cannot run the
     image's numpy while every other host can — so a cache shared between hosts
     would be actively wrong. A file on the host is implicitly host-scoped; the
     tag in its name keeps a rollout from inheriting the previous image's answers.
@@ -100,7 +100,7 @@ def core_stack_unusable() -> str | None:
     MODULE, which is necessary but not sufficient: a dependency imported inside a
     function is never exercised by importing the module, so a handler whose body
     does ``import numpy`` passes the per-registration check and then dies at
-    dispatch. Measured on macmini01 (2009 Core 2 Duo, no SSE4.2/POPCNT):
+    dispatch. Measured on a 2009 Core 2 Duo host (no SSE4.2/POPCNT):
 
         osm_geocoder import: OK          <- the handler module loads
         numpy import:        ImportError <- its dependency does not

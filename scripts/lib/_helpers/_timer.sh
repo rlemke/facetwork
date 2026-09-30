@@ -1,8 +1,7 @@
 # fw timer helper — install a periodic job on macOS (launchd) or Linux (cron).
 #
 # ⚠️ Every `fw svc …--install` was launchd-only and EXITED 1 on Linux. That was
-# invisible while the fleet was two Macs; it is now majority Linux (beelink01,
-# three macminis, two atopnucs), so these services were installable on 2 hosts
+# invisible while the fleet was two Macs; it is now majority Linux, so these services were installable on 2 hosts
 # of 7 — and the OSM role could not move to the box with the RAM to run it.
 #
 # cron rather than systemd, deliberately: `loginctl show-user … Linger` is `no`

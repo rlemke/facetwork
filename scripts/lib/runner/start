@@ -58,7 +58,7 @@ set -euo pipefail
 # ⚠️ Never exit non-zero in silence. `fw fleet agent` runs this with captured
 # output and prints both streams only on failure, so an early `set -e` abort that
 # has not echoed anything yet reaches the operator as a bare "start-worker failed
-# (exit 1)" — measured on macmini02, which failed that way 94 times with BOTH
+# (exit 1)" — measured on one host, which failed that way 94 times with BOTH
 # streams empty and could not be triaged remotely at all. An exit status with no
 # message is the least actionable failure shape there is; name the line.
 _fw_start_err() {
@@ -213,17 +213,18 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         # Resolve the infra host by NAME to its CURRENT IP, so the container
         # extra_hosts (afl-mongodb/afl-minio -> FW_INFRA_IP) track DHCP drift
         # automatically instead of pinning an IP that goes stale when the infra
-        # host's lease changes. FW_INFRA_HOST is a stable name (default
-        # server3.local); the HOST resolves it here (mDNS/DNS) and exports
+        # host's lease changes. FW_INFRA_HOST is a stable name (default: the
+        # catalog's infra host); the HOST resolves it here (mDNS/DNS) and exports
         # FW_INFRA_IP for compose interpolation — containers can't resolve
         # .local/mDNS themselves, which is exactly why the host does it for them.
         # To pin a fixed address instead, set FW_INFRA_HOST="" and FW_INFRA_IP=<ip>.
         FW_INFRA_HOST="${FW_INFRA_HOST:-$(_envget FW_INFRA_HOST)}"
-        # Default from the server catalog (servers.json 'infra' entry) so the
-        # infra host's stable name lives in ONE place; hardcoded fallback only
-        # if the catalog is absent/empty.
+        # Default from the server catalog (servers.json 'infra' entry), which is
+        # site configuration and never committed. No catalog and no
+        # FW_INFRA_HOST = nothing to resolve: the compose fallback applies and the
+        # preflight below reports what is unreachable, rather than a host name
+        # baked into the repo pointing every deployment at one site's machine.
         FW_INFRA_HOST="${FW_INFRA_HOST:-$("$PY" -m facetwork.servers --infra-name 2>/dev/null || true)}"
-        FW_INFRA_HOST="${FW_INFRA_HOST:-server3.local}"
         # When the infra host IS this machine (standalone / `fw mode local`),
         # the answer is Docker's `host-gateway` alias rather than any address:
         # Docker maintains it, so a reboot onto a new DHCP lease cannot strand
@@ -369,7 +370,7 @@ port = u.port or (443 if u.scheme == "https" else 80)
 
 # ⚠️ RETRY. A single connect attempt makes this probe a coin flip on a lossy
 # LAN, and losing it costs a whole domain runner its reconcile cycle. Measured
-# 2026-09-18 from macmini02 to the MinIO host: 25-49% ICMP loss in some windows
+# 2026-09-18 from one runner host to the MinIO host: 25-49% ICMP loss in some windows
 # and 0% in others, NIC error counters all zero, and one TCP connect that took
 # 4.0s -- a lost SYN retried by the kernel, just inside the 5s timeout. Three
 # attempts over ~8s distinguishes "the service is down" from "one SYN was
@@ -468,7 +469,7 @@ PYEOF
         # `up -d` below — so a slow registry left the service with ZERO
         # containers, and the fleet-agent bounds this whole call at 600s.
         #
-        # Measured on server1 (Intel mini, 2.3 GB image): every reconcile
+        # Measured on an Intel mini (2.3 GB image): every reconcile
         # removed runner-ffl, started the pull, hit "docker call timed out after
         # 600s", tripped the agent's 900s watchdog, force-exited for a
         # supervisor restart, and began again. The host did not merely lag — it

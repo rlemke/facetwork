@@ -23,12 +23,21 @@ source "$FW_LIB/_helpers/_remote.sh"
 _afl_resolve_remote_env
 
 # The fleet's runner-image registry, addressed by NAME so it survives the infra
-# host's DHCP drift (the Docker daemon resolves server3.local via mDNS; it's in
+# host's DHCP drift (the Docker daemon resolves <host>.local via mDNS; it's in
 # each host's insecure-registries). REGISTRY is what fleet_config records and
 # what REMOTE hosts pull from. PUSH_REGISTRY is where the BUILDER pushes to. Both
 # address the SAME registry + repo, so a push under either name is pulled fine as
-# `server3.local:5050`.
-REGISTRY="${FW_FLEET_REGISTRY:-server3.local:5050}"
+# `<registry-host>:5050`.
+# The registry host comes from the server catalog (the host serving
+# afl-registry, else the infra host) -- site configuration, never a name
+# written into the repo. FW_FLEET_REGISTRY overrides.
+_fw_reg_host="$(fw_service_host afl-registry)"
+REGISTRY="${FW_FLEET_REGISTRY:-${_fw_reg_host:+$_fw_reg_host:5050}}"
+if [ -z "$REGISTRY" ]; then
+    echo "$(basename "$0"): no image registry: set FW_FLEET_REGISTRY=<host>:<port>, or give" >&2
+    echo "  the server catalog (servers.json, from servers.example.json) an infra host" >&2
+    exit 2
+fi
 IMAGE_REPO="$REGISTRY/facetwork-runner"
 BUILDER="${FW_FLEET_BUILDER:-fleetbuilder}"
 
@@ -60,8 +69,8 @@ _builder_driver() {
 # registry host. Run from any other machine it resolves to that machine's OWN
 # daemon, so the build pushes to a local registry while fleet_config keeps
 # pointing at the real one — the rollout "succeeds", every host pulls the OLD
-# image, and nothing says so. Observed 2026-08-31 running from MaxPro: the
-# multi-arch manifest landed in MaxPro's registry while server3's stayed
+# image, and nothing says so. Observed 2026-08-31 running from a laptop: the
+# multi-arch manifest landed in the laptop's registry while the fleet's stayed
 # single-arch. The builder already trusts the registry by name (buildkitd.toml),
 # so when the registry is REMOTE just push to it directly.
 _registry_is_local() {
@@ -106,9 +115,9 @@ echo "push registry: $PUSH_REGISTRY  ($_push_why)"
 # Set FW_FLEET_PLATFORM=linux/arm64 to build a single arch (faster bake when
 # no x86 host is in the fleet).
 PLATFORM="${FW_FLEET_PLATFORM:-linux/amd64,linux/arm64}"
-MONGO="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
+MONGO="${FW_MONGODB_URL:-mongodb://afl-mongodb:27017}"
 # 900s, not 240s: agents recreate their services SERIALLY, so a host's converge
-# time scales with its runner count — server3's 22 containers take well over
+# time scales with its runner count — the infra host's 22 containers take well over
 # 240s even when everything is healthy. The old default expired on a normal
 # rollout, which is precisely why its "Rollout complete" line got ignored. Now
 # that a timeout exits non-zero, the default has to be long enough that hitting
@@ -385,7 +394,7 @@ if [ "$STAGGER" = 1 ]; then
     # NEW_IMAGE, not PUSH_IMAGE. Two different clients reach the same registry by
     # different names: BUILDKIT (a container) pushes via host.docker.internal,
     # while the HOST DAEMON that runs this pull only trusts the registry under
-    # its catalog name (server3.local:5050 is in insecure-registries;
+    # its catalog name (<registry-host>:5050 is in insecure-registries;
     # host.docker.internal:5050 is not, so the pull tries HTTPS and dies with
     # "server gave HTTP response to HTTPS client"). Pulling the same name the
     # remote hosts use also means this pre-pull exercises exactly their path.
@@ -456,7 +465,7 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
     # Count only hosts that CAN converge. A host printed with
     # "** NO RUNNERS ALIVE **" has no agent running to apply anything, so
     # waiting on it is waiting on nothing: on the standalone box that is
-    # server1/2/3, dead for weeks at v140, and counting them made every single
+    # the Intel minis and the infra host, dead for weeks at v140, and counting them made every single
     # rollout exit non-zero with the deploy actually fine. A wrong failure every
     # time is worse than no signal — it trains you to ignore the one that matters.
     #

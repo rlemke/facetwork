@@ -53,6 +53,10 @@ target/
 domains.local.json
 
 # Per-deployment server catalog override (see servers.json)
+# The server catalog is SITE configuration (it names this deployment's machines):
+# never committed. servers.example.json is the template; `fw fleet servers --push`
+# distributes it.
+servers.json
 servers.local.json
 mode.local.json
 mode.cluster.json

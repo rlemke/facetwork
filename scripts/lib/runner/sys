@@ -2,13 +2,13 @@
 # fw-summary: send a system command (status/pause/resume) to specific runners
 """runner sys — system-control commands addressed to RUNNER PROCESSES.
 
-    fw runner sys status --host server3
-    fw runner sys pause  --host server3 --task-list osm
+    fw runner sys status --host <host>
+    fw runner sys pause  --host <host> --task-list osm
     fw runner sys resume --uuid f4889570-...
     fw runner sys status --all
 
 ⚠️ THE ADDRESS IS THE SERVER UUID, and it has to be. Measured on the live fleet:
-111 runners share only 7 distinct server_names (server3 alone runs 23), and
+111 runners share only 7 distinct server_names (the infra host alone runs 23), and
 `service_name` is "afl-runner" for 109 of them. Even server_name+task_list is
 not unique — services have replicas. uuid is the only key that identifies one
 process, so `fw:sys:<uuid>` is the wire name a runner polls for.

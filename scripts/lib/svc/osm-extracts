@@ -11,7 +11,7 @@
 # the Phase 1 gap this project just closed — the replication directories existed
 # but were empty — so leaving the URL unserved would repeat it one layer up.
 #
-# Binds 0.0.0.0 on purpose: the stamped URL is a HOSTNAME (MaxPro.local:8088)
+# Binds 0.0.0.0 on purpose: the stamped URL is a HOSTNAME (<host>.local:8088)
 # because fleet members fetch from it, and 127.0.0.1 would answer only here.
 # The tree is OpenStreetMap data under ODbL — public by license — so directory
 # listing is left on, exactly as Geofabrik serves it.
@@ -29,7 +29,7 @@
 #
 #   1. macOS Sequoia drops INBOUND LAN connections to native processes unless
 #      the binary holds Local Network permission — which a launchd job has no
-#      way to prompt for. On server3 the python server answered localhost with
+#      way to prompt for. On the infra host the python server answered localhost with
 #      200 and timed out from every other host, while Docker-published ports
 #      (Mongo, MinIO, registry) worked, because Docker Desktop holds that
 #      permission. TCP still connects, so nc/lsof/launchctl all look healthy;

@@ -2,8 +2,8 @@
 # fw-summary: send a command (status/recreate/restart) to a host's fleet-agent
 """fleet agent-cmd — control a HOST's fleet-agent, not a runner process.
 
-    fw fleet agent-cmd status   --host server3.local
-    fw fleet agent-cmd recreate --host beelink01 --service runner-generalist
+    fw fleet agent-cmd status   --host <host>.local
+    fw fleet agent-cmd recreate --host <host> --service runner-generalist
     fw fleet agent-cmd status   --all
 
 ⚠️ TWO DIFFERENT CHANNELS, on purpose:
@@ -19,7 +19,7 @@ host is wrong" — the state that let an orphaned container run 22h on a stale
 image across three rollouts.
 
 ⚠️ The --host value is the agent's own fleet_agents key, which is NOT uniform
-across the fleet (both "MaxPro.local" and "atopnuc01" exist). This lists the
+across the fleet (both "<host>.local" and "<host>" forms exist). This lists the
 real keys rather than guessing, so the address always matches what the agent
 writes.
 """

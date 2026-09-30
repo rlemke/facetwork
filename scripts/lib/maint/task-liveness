@@ -73,7 +73,7 @@ def main() -> int:
     # ⚠️ ALWAYS say which Mongo this is. There are two reachable from a fleet
     # host and they disagree: measured 2026-08-28, `afl-mongodb` reached a
     # container with 2 running runners and 4 dead letters, while `localhost` and
-    # `server3.local` reached a DIFFERENT container - 27h uptime, 0 running, 12
+    # the infra host's name reached a DIFFERENT container - 27h uptime, 0 running, 12
     # dead letters. Both answer on 27017 and one of the names even resolves to
     # the other's IP. A tool that prints numbers without naming its source lets
     # you diagnose the wrong world with total confidence; that has happened.

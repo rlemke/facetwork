@@ -65,7 +65,7 @@ fi
 # is then scoped to its OWN facet namespaces via --topics: the image bakes every
 # domain's deps, so an unscoped --registry runner loads ALL importable handlers
 # and claims every namespace's work on any host (incl. heavy osm PBF on the
-# emulated minis). --topics keeps osm work on the (heavy-gated → MaxPro) osm
+# emulated minis). --topics keeps osm work on the (heavy-gated) osm
 # runners AND makes preload import-verify only its own handlers (fast startup).
 # Empty topics = no FFL facets (workflow-only catalog) → don't scope (load-all).
 echo "    Registering handlers + seeding workflows for $FW_DOMAIN_NAME"

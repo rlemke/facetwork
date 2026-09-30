@@ -31,11 +31,12 @@ stale=""
     && stale="   ⚠️ .env.fleet pins a stale $infra_ip"
 printf '  %-18s %s\n' "infra IP"       "${live_ip:-<unresolved>} (live)$stale"
 printf '  %-18s %s\n' "containers use" "${container_ip:-<unresolved>}  (afl-mongodb/afl-minio -> here)"
-printf '  %-18s %s\n' "image registry" "${reg:-server3.local:5050 (default)}"
+_def_reg="$(fw_service_host afl-registry)"
+printf '  %-18s %s\n' "image registry" "${reg:-${_def_reg:+$_def_reg:5050 (catalog default)}}"
 if [ -f "$FW_ROOT/servers.local.json" ]; then
     printf '  %-18s %s\n' "server catalog" "servers.local.json present (overrides infra resolution)"
 else
-    printf '  %-18s %s\n' "server catalog" "servers.json only (committed defaults)"
+    printf '  %-18s %s\n' "server catalog" "servers.json only (site catalog)"
 fi
 
 echo

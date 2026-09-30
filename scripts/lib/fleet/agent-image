@@ -27,7 +27,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 ROLE="" DRY=0 DO_SET=1 CONTEXT="" TAG=""
 PLATFORM="${FW_FLEET_PLATFORM:-linux/amd64,linux/arm64}"
 MONGO="${FW_MONGODB_URL:-mongodb://afl-mongodb:27017}"
-REGISTRY="${FW_FLEET_REGISTRY:-server3.local:5050}"
+# The registry host comes from the server catalog (the host serving
+# afl-registry, else the infra host) -- site configuration, never a name
+# written into the repo. FW_FLEET_REGISTRY overrides.
+_fw_reg_host="$(fw_service_host afl-registry)"
+REGISTRY="${FW_FLEET_REGISTRY:-${_fw_reg_host:+$_fw_reg_host:5050}}"
 BUILDER="${FW_FLEET_BUILDER:-fleetbuilder}"
 HANDLERS="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
 
@@ -66,6 +70,11 @@ if [ -z "$TAG" ]; then
         exit 2
     fi
     TAG="$(git -C "$CONTEXT" rev-parse --short HEAD)"
+fi
+if [ -z "$REGISTRY" ]; then
+    echo "$(basename "$0"): no image registry: set FW_FLEET_REGISTRY=<host>:<port>, or give" >&2
+    echo "  the server catalog (servers.json, from servers.example.json) an infra host" >&2
+    exit 2
 fi
 IMAGE="$REGISTRY/$REPO_NAME:$TAG"
 

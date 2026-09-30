@@ -550,7 +550,7 @@ def seed_server(store) -> None:
         server_group="docker:seed",
         service_name="addone-agent",
         server_name="addone-agent-1",
-        server_ips=["172.18.0.4"],
+        server_ips=["192.0.2.4"],  # RFC 5737 documentation address (demo data)
         start_time=now_ms - 5000,
         ping_time=now_ms,
         handlers=["handlers.AddOne", "handlers.Multiply", "handlers.Greet"],

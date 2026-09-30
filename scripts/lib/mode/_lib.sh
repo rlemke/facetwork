@@ -34,7 +34,7 @@ PY
 
 # _env_upsert <file> <KEY> <VALUE> — set KEY=VALUE (replace the last uncommented
 # assignment, else append). Python, not sed: BSD sed's missing GNU features have
-# silently no-op'd env edits before (maxpro-standalone §3.6).
+# silently no-op'd env edits before (standalone-laptop §3.6).
 _env_upsert() {
     local file="$1" key="$2" val="$3"
     [ -f "$file" ] || : > "$file"
@@ -105,7 +105,7 @@ _mode_runner_containers() { docker ps -a --format '{{.Names}}' 2>/dev/null | gre
 # _mode_set_hosts <ip> — point afl-mongodb/afl-minio at <ip> in /etc/hosts. Host-side
 # only (the fw CLI + `mc`); runner CONTAINERS get afl-* from compose extra_hosts, so
 # this is a convenience, not load-bearing. Needs sudo; afl-postgres is left ALONE
-# (it lives on a different machine — maxpro-standalone §3.6). Python, never sed.
+# (it lives on a different machine — standalone-laptop §3.6). Python, never sed.
 _mode_set_hosts() {
     local ip="$1"; [ -z "$ip" ] && return 0
     # ⚠️ "none" means DO NOT PIN. Writing both names to one IP was correct when a
@@ -183,7 +183,7 @@ _mode_apply() {
     # ⚠️ Resolve with the catalog of the mode we are switching INTO, not the one
     # currently active. Measured 2026-09-18 while in local mode: previewing a
     # switch to cluster resolved afl-mongodb through servers.local.json and got
-    # THIS MACHINE, so the guard passed by probing MaxPro's own Mongo. On return
+    # THIS MACHINE, so the guard passed by probing the laptop's own Mongo. On return
     # from a trip with the cluster still powered off it would have passed again and
     # switched anyway -- stranding the box, which is the one thing this guard
     # exists to prevent. A guard that consults the wrong world does not guard.

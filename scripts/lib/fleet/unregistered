@@ -95,7 +95,7 @@ for cid, (name, image) in local.items():
 # loads several hundred handlers before it registers, which takes tens of seconds.
 # A container younger than that ALWAYS looks unregistered, so without this the
 # check cries wolf on every fresh join and after every rollout — measured on
-# macmini03, where a 7-second-old generalist was flagged and was fine 20s later.
+# one host, where a 7-second-old generalist was flagged and was fine 20s later.
 # Only the flagged containers are inspected, so this costs one call per finding
 # (usually zero).
 GRACE_S = 120

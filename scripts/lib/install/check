@@ -70,7 +70,7 @@ if [ "$FLEET" -eq 1 ]; then
     echo
     # ⚠️ Probed in BOTH shell contexts, because they resolve DIFFERENT
     # interpreters and the honest answer differs between them. Measured
-    # 2026-09-02: server1 finds /usr/local/bin/python3 (has pymongo) at login
+    # 2026-09-02: an Intel mini finds /usr/local/bin/python3 (has pymongo) at login
     # and /usr/bin/python3 (3.9, does not) when scheduled — so `fw fleet config`
     # works when a human runs it and fails from launchd. Reporting one number
     # would have been wrong whichever we picked, and the context that matters
@@ -122,11 +122,11 @@ sys.exit(1 if b else 0)' "$ctx" || host_rc=1
     echo "  scheduled = the PATH a launchd or cron job resolves"
     echo
     echo "  Both are reported because they resolve DIFFERENT interpreters and the"
-    echo "  honest answer differs: server1 finds pymongo in /usr/local/bin/python3"
+    echo "  honest answer differs: an Intel mini finds pymongo in /usr/local/bin/python3"
     echo "  at login and /usr/bin/python3 (without it) when scheduled. A command"
     echo "  broken only under 'scheduled' still fails every timer that calls it."
     echo "  ⚠️ An INTERACTIVE terminal can differ again where rc files add to PATH"
-    echo "  (server3's .zshrc prepends homebrew); the interpreter path is printed"
+    echo "  (the infra host's .zshrc prepends homebrew); the interpreter path is printed"
     echo "  for each row so the answer is never left to the label."
     echo
     [ "$rc" -eq 1 ] && echo "FAIL — a command cannot start somewhere in the fleet."

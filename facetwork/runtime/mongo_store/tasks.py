@@ -224,11 +224,11 @@ class TaskMixin(_MixinBase):
         # contract is identical — absent/empty means unconstrained, so this is
         # inert for every task created before it existed.
         #
-        # Motivation, measured 2026-08-26: MaxPro (7.75 GiB VM) and server3
+        # Motivation, measured 2026-08-26: a laptop (7.75 GiB VM) and the infra host
         # (13.63 GiB) are BOTH in the `heavy` server group, so group-based
-        # placement could not tell them apart. MaxPro claimed a Kreise split,
-        # OOM'd at a 5.8 GB budget, failed, and only then retried onto server3.
-        # A floor of memory_gb=10 would have skipped MaxPro at claim time
+        # placement could not tell them apart. The laptop claimed a Kreise split,
+        # OOM'd at a 5.8 GB budget, failed, and only then retried onto the infra host.
+        # A floor of memory_gb=10 would have skipped the laptop at claim time
         # instead of accepting work it could not finish.
         #
         # An unknown dimension is NOT silently ignored: a runner that advertises

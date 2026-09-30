@@ -28,7 +28,15 @@
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 
-ARCHIVE_HOST="${FW_BACKUP_HOST:-macmini01.local}"
+# Where archives go: the host claiming the afl-backup service in the server
+# catalog (site configuration, never committed), else the infra host -- which
+# is never the database host, so a backup does not share the disk it protects.
+ARCHIVE_HOST="${FW_BACKUP_HOST:-$(fw_service_host afl-backup)}"
+if [ -z "$ARCHIVE_HOST" ]; then
+    echo "backup-mongo: no archive host: set FW_BACKUP_HOST, or give a server-catalog" >&2
+    echo "  entry the afl-backup alias (servers.example.json)" >&2
+    exit 2
+fi
 ARCHIVE_DIR="${FW_BACKUP_DIR:-\$HOME/fw_backups/mongo}"
 KEEP="${FW_BACKUP_KEEP:-14}"
 MAX_AGE_H="${FW_BACKUP_MAX_AGE_HOURS:-36}"

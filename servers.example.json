@@ -1,38 +1,88 @@
 {
-  "_comment": "TEMPLATE — copy the shape into servers.json (or a servers.local.json override) for YOUR deployment. One entry per machine. Rules of thumb: (1) 'name' is a STABLE resolvable name — mDNS .local on a single LAN, or a real DNS name; consumers resolve it to the current IP at startup/reconcile, which is what makes DHCP drift a non-event. (2) 'aliases' are the conventional service names other config refers to (afl-mongodb, afl-minio, ...) — they map to this machine without /etc/hosts entries. (3) exactly one entry should have 'infra': true — the machine running MongoDB/MinIO/dashboard; tools use it as the default infra target. (4) 'ip_pin' is a LAST RESORT for hosts that name resolution cannot reach (cross-subnet, no mDNS): a pinned IP goes stale when the lease changes, which is the failure this catalog removes — leave it null if you can. 'group' is the FW_SERVER_GROUP role tag used by server-groups gating (docs/architecture/server-groups.md).",
+  "_comment": "TEMPLATE for the server catalog. Copy to servers.json and describe YOUR machines there. servers.json is SITE configuration: it names a deployment's machines, so it is gitignored and never committed. Distribute an edited catalog to every host with `fw fleet servers --push`; give a new host its first copy with `setup-ubuntu-fleet-host.sh --catalog FILE`. Machines are listed by STABLE NAME (mDNS/DNS), never by IP, and resolved at startup/reconcile time, so DHCP drift heals on the next resolution. Per-host override: servers.local.json (merged over servers.json by name; top-level \"_remove\": [...] drops entries). See docs/reference/server-catalog.md. Rules of thumb: (1) 'name' is a STABLE resolvable name — mDNS .local on a single LAN, or a real DNS name; consumers resolve it to the current IP at startup/reconcile, which is what makes DHCP drift a non-event. (2) 'aliases' are the conventional service names other config refers to (afl-mongodb, afl-minio, ...) — they map to this machine without /etc/hosts entries. (3) exactly one entry should have 'infra': true — the machine running MongoDB/MinIO/dashboard; tools use it as the default infra target. (4) 'ip_pin' is a LAST RESORT for hosts that name resolution cannot reach (cross-subnet, no mDNS): a pinned IP goes stale when the lease changes, which is the failure this catalog removes — leave it null if you can. 'group' is the FW_SERVER_GROUP role tag used by server-groups gating (docs/architecture/server-groups.md).",
   "version": 1,
+  "_groups": {
+    "heavy": "Enough memory for the largest OSM cut (a europe split has peaked at 18.9 GB) AND hundreds of GB of scratch. Runs every role, including osm-geocoder/osm-lz/gh-router.",
+    "medium": "Enough memory for every domain role, but not the scratch headroom for OSM staging. osm-geocoder/gh-router are gated away.",
+    "runner": "The light tier and the default for a host whose capacity has not been measured: ffl orchestration + one generalist runner."
+  },
+  "_services": {
+    "afl-mongodb": "The fleet control plane (MongoDB).",
+    "afl-minio": "The object store (MinIO / S3).",
+    "afl-postgres": "PostGIS.",
+    "afl-extracts": "The self-hosted OSM extract server. osmosis_replication_base_url is stamped from this alias, so it must follow the host that actually serves the tree.",
+    "afl-registry": "The fleet image registry (host:5050). `fw fleet rollout` and `fw fleet agent-image` push here.",
+    "afl-backup": "Where `fw maint backup-mongo` writes archives. Never the database host.",
+    "_note": "Each afl-* service resolves to the entry whose aliases claim it; a service no entry claims falls back to the \"infra\": true host (the one-box default). `fw fleet servers --service-host afl-registry` prints the answer."
+  },
   "servers": [
     {
       "name": "infra-host.local",
-      "aliases": ["afl-mongodb", "afl-minio", "afl-postgres"],
-      "purpose": "infra: MongoDB, MinIO, dashboard, image registry",
-      "group": "runner",
+      "aliases": [
+        "afl-minio",
+        "afl-postgres",
+        "afl-registry"
+      ],
+      "purpose": "infra: object store, PostGIS, dashboard, image registry",
+      "group": "heavy",
       "infra": true,
-      "ip_pin": null
+      "ip_pin": null,
+      "capacity": {
+        "tier": "heavy",
+        "arch": "arm64",
+        "cores": 12,
+        "host_ram_gb": 32,
+        "container_memory_gb": 24,
+        "scratch_path": "/Volumes/data",
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY",
+          "GITHUB_TOKEN"
+        ]
+      }
     },
     {
-      "name": "big-workstation.local",
-      "aliases": [],
-      "purpose": "heavy runner tier (large imports, wide fan-outs)",
+      "name": "db-host.local",
+      "aliases": [
+        "afl-mongodb",
+        "afl-extracts"
+      ],
+      "purpose": "MongoDB control plane + OSM extract server + heavy runner tier",
       "group": "heavy",
       "infra": false,
-      "ip_pin": null
+      "ip_pin": null,
+      "capacity": {
+        "tier": "heavy",
+        "arch": "x86_64",
+        "cores": 24,
+        "host_ram_gb": 32,
+        "container_memory_gb": 30,
+        "scratch_path": "$HOME/fw_data",
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ]
+      }
     },
     {
-      "name": "laptop-or-mini.local",
-      "aliases": [],
-      "purpose": "runner (light domains)",
+      "name": "light-host.local",
+      "aliases": [
+        "afl-backup"
+      ],
+      "purpose": "light runner tier: ffl orchestration + one generalist runner; also holds Mongo backups",
       "group": "runner",
       "infra": false,
-      "ip_pin": null
-    },
-    {
-      "name": "10.20.30.40-cross-subnet-box",
-      "aliases": [],
-      "purpose": "example of a host mDNS cannot reach — pin its address",
-      "group": "runner",
-      "infra": false,
-      "ip_pin": "10.20.30.40"
+      "ip_pin": null,
+      "joined": true,
+      "capacity": {
+        "tier": "light",
+        "arch": "x86_64",
+        "cores": 2,
+        "host_ram_gb": 6,
+        "container_memory_gb": 6.7,
+        "scratch_path": "$HOME/fw_data",
+        "credentials": []
+      }
     }
   ]
 }

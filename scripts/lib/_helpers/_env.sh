@@ -59,14 +59,14 @@ except Exception:
         # 1. THE SERVER CATALOG FIRST. A name like afl-mongodb failing to resolve
         #    almost always means a stale /etc/hosts, not a missing database: the
         #    catalog tracks the current IP so DHCP drift self-heals without root.
-        #    Measured on MaxPro 2026-09-14 — /etc/hosts still pointed afl-mongodb
+        #    Measured on a laptop host 2026-09-14 — /etc/hosts still pointed afl-mongodb
         #    at a host that had not held it since the move, while the catalog had
         #    the right address all along.
         # URL passed as argv, NOT via the environment: _FW_ORIG_URL is a plain
         # shell variable here, and reading it with os.environ silently yielded
         # None -- the lookup "ran" and always declined.
         # ⚠️ TWO defects lived in this one assignment, and together they cost
-        # 94 silent reconcile failures on macmini02 (2026-09-18).
+        # 94 silent reconcile failures on one host (2026-09-18).
         #
         # 1. `|| _FW_CAT_URL=""`. The snippet exits 1 to mean "I could not
         #    resolve this" -- a normal, expected outcome. But a command
@@ -143,7 +143,7 @@ print(m.group(1) + ip + m.group(3))
                     # The old code left the probe's own localhost value in place
                     # and said nothing, so every downstream script silently
                     # addressed a CLOSED local port and reported it as the fleet's
-                    # database. Measured on macmini02 2026-09-18. Unset it and say
+                    # database. Measured on one host 2026-09-18. Unset it and say
                     # so: no endpoint is an answerable state, a wrong one is not.
                     unset FW_MONGODB_URL
                     echo "MongoDB: no endpoint configured (no .env here) and localhost is closed." >&2

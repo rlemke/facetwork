@@ -356,7 +356,7 @@ services:
       # fleet's: `mongodb` and `afl-mongodb` both resolve to this host's own
       # container (the service carries that alias), so a dashboard here silently
       # shows a DIFFERENT database from the one the runners use. Measured
-      # 2026-08-25 on MaxPro: its dashboard served a snapshot 4 days stale (349
+      # 2026-08-25 on a standalone laptop: its dashboard served a snapshot 4 days stale (349
       # runners, newest run 08-21) while the fleet Mongo had 363 and a run from
       # that morning. Nothing looked wrong on screen — it was the wrong world.
       # Point this at the fleet Mongo on any host that is not standalone.

@@ -122,8 +122,8 @@ def _claim_windows(logs):
     ⚠️ A log line must be credited to whoever held the task AT THAT MOMENT, not
     to the last host that ever claimed it. Using the final claimer produced an
     IMPOSSIBLE reading on 2026-08-31 — "peak mem 21.6 GB" attributed to a host
-    whose whole VM is 7.75 GiB — because server3 logged that peak at 15:23:55 and
-    MaxPro only claimed the step at 15:25:52. Same reclaim hazard the time
+    whose whole VM is 7.75 GiB — because the infra host logged that peak at 15:23:55 and
+    The claiming host only took the step at 15:25:52. Same reclaim hazard the time
     attribution already handles; the absurd number is what exposed it here.
     """
     w = collections.defaultdict(list)

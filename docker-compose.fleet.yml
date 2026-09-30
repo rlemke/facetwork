@@ -57,7 +57,7 @@ x-fleet-runner: &fleet-runner
   # / FW_FLEET_HOST) so `fleet status` shows the server by name, not a random id.
   hostname: ${FW_FLEET_HOST:-}
   # FW_INFRA_IP is normally set for you: runner/start resolves FW_INFRA_HOST
-  # (a stable NAME, default server3.local) to the infra host's CURRENT IP via
+  # (a stable NAME, default: the server catalog's infra host) to the infra host's CURRENT IP via
   # mDNS/DNS and exports it here, so these mappings track DHCP drift with no
   # per-host edit — the name is stable even when the address changes. When that
   # host is THIS machine (standalone / `fw mode local`) the value is Docker's
@@ -79,8 +79,8 @@ x-fleet-runner: &fleet-runner
     - "afl-mongodb:${FW_MONGO_IP:-${FW_INFRA_IP:-127.0.0.1}}"
     - "afl-minio:${FW_INFRA_IP:-127.0.0.1}"
     # The self-hosted extract server (`fw svc osm-extracts`) — its OWN variable
-    # too: it moved to beelink01 with the OSM role on 2026-09-15 while MinIO
-    # stayed on server3, so FW_INFRA_IP named the wrong (and by then empty)
+    # too: it moved to another host with the OSM role on 2026-09-15 while MinIO
+    # stayed on the infra host, so FW_INFRA_IP named the wrong (and by then empty)
     # server. The fleet-agent supplies FW_EXTRACTS_IP from the catalog's
     # afl-extracts alias; the FW_INFRA_IP fallback is the one-box behaviour.
     - "afl-extracts:${FW_EXTRACTS_IP:-${FW_INFRA_IP:-127.0.0.1}}"

@@ -206,7 +206,7 @@ def smoke_import(interpreter: str, pins: list[str], timeout: int = 300) -> tuple
 
     ⚠️ This exists because "the environment is provided here" was a claim about
     files on disk, not about whether this host can RUN them, and the two come
-    apart on real hardware. macmini01 is an Intel Core 2 Duo (2009) with no
+    apart on real hardware. One fleet host is an Intel Core 2 Duo (2009) with no
     SSE4.2/POPCNT, so it does not meet x86-64-v2: `pip install numpy` there
     SUCCEEDS — the x86_64 wheel is perfectly valid — and only `import numpy`
     fails. Without this check the host materializes the venv, advertises the

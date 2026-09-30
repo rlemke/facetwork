@@ -1372,6 +1372,26 @@ def check_published(
     return 1
 
 
+def _default_tree_url() -> str:
+    """The self-hosted extract server, from the server catalog's afl-extracts
+    host -- site configuration, so no host name lives in the repo. Without a
+    catalog, the product alias (which a runner container resolves)."""
+    try:
+        import sys
+
+        repo = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        )
+        if repo not in sys.path:
+            sys.path.insert(0, repo)
+        from facetwork.servers import catalog
+
+        host = catalog.service_host("afl-extracts")
+    except Exception:  # noqa: BLE001 - no catalog / no package: use the alias
+        host = None
+    return f"http://{host or 'afl-extracts'}:8088"
+
+
 def main(argv=None) -> int:
     """Exit 0 = report written. Exit 2 = could not survey.
 
@@ -1384,11 +1404,12 @@ def main(argv=None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(prog="fw svc osm-report", description=__doc__)
+    # (the default tree URL is resolved from the server catalog; see below)
     ap.add_argument("--endpoint", default=os.environ.get("FW_S3_ENDPOINT", "http://afl-minio:9000"))
     ap.add_argument("--bucket", default=os.environ.get("FW_OSM_EXTRACT_BUCKET", "osm-extracts"))
     ap.add_argument(
         "--tree-url",
-        default=os.environ.get("FW_OSM_SELFHOST_BASE_URL", "http://server3.local:8088"),
+        default=os.environ.get("FW_OSM_SELFHOST_BASE_URL") or _default_tree_url(),
     )
     ap.add_argument(
         "--sets-file",

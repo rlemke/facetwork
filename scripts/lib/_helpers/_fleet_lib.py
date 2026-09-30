@@ -186,7 +186,7 @@ def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
 
         # Prefer whichever entry CLAIMS the afl-mongodb alias — since 2026-09-13
         # that is no longer necessarily the infra host (MongoDB moved off it;
-        # MinIO stayed on server3). Falls through to the infra entry when
+        # MinIO stayed on the infra host). Falls through to the infra entry when
         # no entry claims the alias, i.e. unchanged for a one-infra-host fleet.
         _mongo_entry = _srv_catalog.find("afl-mongodb")
         _infra = _srv_catalog.infra()
@@ -273,7 +273,7 @@ def service_ips(*, log=None) -> dict[str, str]:
     ⚠️ These names used to ALL point at the single ``infra: true`` host, because
     Mongo, MinIO, PostGIS and the extract server did all live on one box. They no
     longer do: the fleet's MongoDB moved to its own host on 2026-09-13 while
-    MinIO stayed put (it stayed on server3). Collapsing the
+    MinIO stayed put (it stayed on the infra host). Collapsing the
     four names onto one address would therefore point ``afl-minio`` at the Mongo
     host and take the object store out fleet-wide.
 
@@ -510,8 +510,8 @@ def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
                 # ⚠️ Only when the service STILL runs here. A gateway entry for a
                 # service that has MOVED is exactly the drift this exists to fix,
                 # and skipping it unconditionally hid one (2026-09-29): the OSM
-                # extract server moved server3 -> beelink01, and server3's runners
-                # kept resolving afl-extracts to server3's own, now-empty server
+                # extract server moved off the infra host, and the infra host's runners
+                # kept resolving afl-extracts to the infra host's own, now-empty server
                 # for two weeks while every other host was self-healed.
                 mine = _this_host_addresses()
                 for name in [n for n, (cur, want) in drifted.items() if cur == gw and want in mine]:
@@ -708,7 +708,7 @@ def role_in_group(spec: dict, host_group: str) -> bool:
 # single-arch (arm64) while the heavy group it runs in had gained three x86
 # hosts. Compose pulled it without complaint — a registry serves a single-arch
 # manifest to any client — and the container crash-looped `exec format error`
-# 46 times on beelink01 and macmini02 while `fleet status` reported both hosts
+# 46 times on two x86 heavy hosts while `fleet status` reported both hosts
 # "up-to-date". The architecture is a property of the IMAGE, knowable before
 # anything is started, so it is checked there rather than discovered by a
 # restart loop.

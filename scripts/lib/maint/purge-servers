@@ -10,7 +10,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
 
 PYTHON="$FW_ROOT/.venv/bin/python3"; [ -x "$PYTHON" ] || PYTHON=python3
-MONGO_URL="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
+MONGO_URL="${FW_MONGODB_URL:-mongodb://afl-mongodb:27017}"
 DB="${FW_MONGODB_DATABASE:-facetwork}"
 APPLY=0
 while [ $# -gt 0 ]; do

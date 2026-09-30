@@ -15,7 +15,7 @@
 # Usage:
 #   fw maint repair-workflow <runner_id>
 #   fw maint repair-workflow --dry <runner_id>
-#   fw maint repair-workflow --mongo mongodb://server3.local:27017 <runner_id>
+#   fw maint repair-workflow --mongo mongodb://afl-mongodb:27017 <runner_id>
 #
 # Environment:
 #   FW_MONGODB_URL    MongoDB connection string (default from .env)

@@ -310,7 +310,7 @@ def _catalogued_not_joined() -> set[str]:
     a host set false still runs its agent, applies fleet_config and claims work,
     while every ops sweep skips it. So the one combination that means "running
     UNMANAGED" -- has a fleet-agent record AND is catalogued not-joined -- is
-    invisible unless something compares the two. Measured 2026-09-18: atopnuc02
+    invisible unless something compares the two. Measured 2026-09-18: one host
     applied v217 with 2/2 runners up while no host could even ssh to it, and it
     silently missed two rounds of fixes.
 
@@ -386,7 +386,7 @@ def cmd_status(a):
         # silently misses every fix. Neither fact is wrong on its own; only the
         # pair is, which is why nothing reported it before.
         # Gate on LIVE RUNNERS, not on having an agent record. A deliberately
-        # retired host keeps its fleet_agents document (macmini01's applied_at is
+        # retired host keeps its fleet_agents document (one retired host's applied_at is
         # hours old with 0 runners alive), so keying off the record's existence
         # flags every retirement forever -- and a flag that cries wolf is one you
         # learn to skip past, which is how the original silent failures survived.

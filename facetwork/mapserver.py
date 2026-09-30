@@ -12,7 +12,7 @@ public site separately.
 Run it via ``fw svc maps`` (see scripts/lib/svc/maps). Read-only; no bucket policy
 change, no anonymous access, nothing written back to the store.
 
-Config (env, all optional — defaults suit the MaxPro standalone box):
+Config (env, all optional — defaults suit a standalone single-machine install):
   FW_S3_ENDPOINT   S3/MinIO endpoint       (default http://localhost:9000)
   FW_S3_ACCESS_KEY / FW_S3_SECRET_KEY      (default minioadmin / minioadmin)
   FW_MAPS_BUCKET   bucket to browse        (default FW_S3_BUCKET or 'afl-cache')

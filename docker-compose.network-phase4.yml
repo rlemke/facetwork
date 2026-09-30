@@ -53,6 +53,6 @@ services:
       FW_OUTPUT_BASE: /data/output   # ApproxRoute writes route GeoJSON here
       FW_POLL_INTERVAL_MS: "500"
     volumes:
-      - ${FWH_HANDLERS_ROOT:-/Users/ralph_lemke/fw_handlers}/fwh_osm:/handlers/fwh_osm
+      - ${FWH_HANDLERS_ROOT:-${HOME}/fw_handlers}/fwh_osm:/handlers/fwh_osm
       - ${FW_DATA_DIR:-/tmp/phase4-data}:/data
     restart: unless-stopped

@@ -56,3 +56,16 @@ if [ -z "${FW_PYTHON_NO_VENV:-}" ] && [ -x "$FW_ROOT/.venv/bin/python3" ]; then
         *) PATH="$FW_ROOT/.venv/bin:$PATH"; export PATH ;;
     esac
 fi
+
+# fw_service_host SERVICE — stable name of the host serving an afl-* service
+# (afl-registry, afl-mongodb, afl-extracts, …), read from the SERVER CATALOG,
+# which is site configuration and never committed (servers.example.json is the
+# template). Prints nothing when there is no catalog. ALWAYS exits 0: callers
+# use it inside `$(…)` under `set -e`, where a declining lookup would otherwise
+# abort the caller with no output at all.
+fw_service_host() {
+    local py="$FW_ROOT/.venv/bin/python3"
+    [ -x "$py" ] || py="python3"
+    PYTHONPATH="$FW_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$py" -m facetwork.servers \
+        --service-host "$1" 2>/dev/null || true
+}

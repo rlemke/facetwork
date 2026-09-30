@@ -19,7 +19,7 @@ DB_PORT=$(echo "$POSTGIS_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
 DB_NAME=$(echo "$POSTGIS_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
 
 # Need superuser to terminate backends
-SU_USER="${FW_POSTGIS_SUPERUSER:-ralph_lemke}"
+SU_USER="${FW_POSTGIS_SUPERUSER:-${USER:-postgres}}"
 
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"

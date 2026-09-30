@@ -131,7 +131,7 @@ install)
     # no job, because the calendar entry reads as coverage.
     #
     # ⚠️ AND IT MUST NOT GUESS WHICH STORE. The first version of this fell back
-    # to localhost:9000 when the configured endpoint failed. On MaxPro that
+    # to localhost:9000 when the configured endpoint failed. On a laptop host that
     # ANSWERED — and it is the machine's own leftover standalone MinIO from the
     # cluster migration, a completely separate world that also has an
     # `osm-extracts` bucket with objects in it. No probe can tell the two apart,

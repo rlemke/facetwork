@@ -193,7 +193,7 @@ def _measure() -> dict:
     # unadvertised dimension makes the runner DECLINE every task carrying a
     # scratch floor (mongo_store/tasks.py: "a runner that cannot measure
     # something must not assume it fits"), so the host silently never claims
-    # that work. Measured 2026-09-13: 20 of macmini02's 23 runners advertised no
+    # that work. Measured 2026-09-13: 20 of one host's 23 runners advertised no
     # scratch at all while sitting on 847 free GB, because only the osm
     # containers had ever created their staging dir.
     #

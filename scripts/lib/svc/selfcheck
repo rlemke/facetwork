@@ -67,7 +67,7 @@ done
 # not the DB that is simply wrong — it would report "could not verify" forever
 # and read as a quiet fleet. Take the URL the runners actually use.
 # ⚠️ .env.fleet FIRST, not the environment. _env.sh has already sourced .env,
-# which on server1/server2 sets FW_MONGODB_URL=mongodb://localhost:27017 — no
+# which on the Intel minis sets FW_MONGODB_URL=mongodb://localhost:27017 — no
 # Mongo listens there, so taking the env value made every run report
 # could-not-verify while looking correctly configured. This is the same
 # asymmetry that has cost real debugging here before: .env carries a local

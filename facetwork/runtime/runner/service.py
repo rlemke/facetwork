@@ -320,8 +320,8 @@ class RunnerService(BaseRunner):
         # System-control channel, addressed to THIS RUNNER PROCESS.
         #
         # ⚠️ The key is the server UUID, not the host name. Measured on the live
-        # fleet: 111 runners share only 7 distinct server_names (server3 alone
-        # runs 23), so "fw:sys:server3" would be claimed by whichever of its 23
+        # fleet: 111 runners share only 7 distinct server_names (the infra host alone
+        # runs 23), so "fw:sys:<host>" would be claimed by whichever of its 23
         # runners won the race — a lottery, not an address. `container` is not
         # universal either (polyglot and bare-metal runners report none). uuid
         # is the only field that is unique per runner process.

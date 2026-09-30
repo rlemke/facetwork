@@ -66,7 +66,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
 
 # S3 config lives in .env.fleet, NOT .env — same lift as `fw svc maps`. Without
-# it FW_S3_ENDPOINT falls back to localhost:9000, which on MaxPro is the leftover
+# it FW_S3_ENDPOINT falls back to localhost:9000, which on a laptop host is the leftover
 # STANDALONE MinIO: a store that answers and holds no continent extracts. The
 # freshness guard then reports "matched nothing", which reads as a missing source
 # rather than a wrong endpoint. Measured 2026-08-29: south-america-countries was

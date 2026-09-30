@@ -106,7 +106,7 @@ polkit.addRule(function(action, subject) {
     }
 
     // Boot persistence: joining or parking a host. Measured 2026-09-18 --
-    // atopnuc02 ran the agent with it DISABLED, so the host worked until its
+    // One host ran the agent with it DISABLED, so the host worked until its
     // next reboot and would then have vanished from the fleet silently. Fixing
     // that needed sudo, which is the per-host toil this rule exists to remove.
     //

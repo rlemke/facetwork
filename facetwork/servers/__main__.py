@@ -4,6 +4,7 @@
     python -m facetwork.servers --env           # shell exports (FW_INFRA_HOST/FW_INFRA_IP)
     python -m facetwork.servers --infra-name    # just the infra host's stable name
     python -m facetwork.servers --resolve NAME  # current IP for a name/alias
+    python -m facetwork.servers --service-host afl-registry  # host serving a service
 
 ``--env`` is the docker/compose materialization hook: a start script (or the
 fleet-agent via ``runner/start --fleet``) evals it so container ``extra_hosts``
@@ -25,6 +26,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--infra-name", action="store_true", help="print the infra host's stable name")
     p.add_argument("--resolve", metavar="NAME", help="print the current IP for a name/alias")
     p.add_argument(
+        "--service-host",
+        metavar="SERVICE",
+        help="print the stable name of the host serving an afl-* service "
+        "(e.g. afl-registry); the infra host when no entry claims it",
+    )
+    p.add_argument(
         "--container-ip",
         nargs="?",
         const="",
@@ -44,6 +51,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         print(val)
+        return 0
+
+    if args.service_host:
+        name = catalog.service_host(args.service_host)
+        if not name:
+            print(
+                f"no host serves '{args.service_host}': the server catalog is empty or "
+                "missing (copy servers.example.json to servers.json)",
+                file=sys.stderr,
+            )
+            return 1
+        print(name)
         return 0
 
     if args.infra_name:

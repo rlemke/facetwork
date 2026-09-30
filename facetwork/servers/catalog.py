@@ -17,7 +17,8 @@ Resolution (same contract as ``facetwork/domains/catalog.py``):
 2. else ``servers.local.json`` next to ``servers.json`` — merged OVER the
    committed defaults: entries add or replace by ``name``, and a top-level
    ``"_remove": ["name", ...]`` drops standard entries.
-3. else ``servers.json`` (the committed catalog).
+3. else ``servers.json`` -- SITE configuration, never committed (template:
+   ``servers.example.json``; distribute with ``fw fleet servers --push``).
 
 Pure-stdlib (json/os/socket/pathlib) so every consumer can import it cheaply.
 """
@@ -79,6 +80,18 @@ def load_catalog() -> dict:
 def servers() -> list[dict]:
     """All catalog entries (each: name/aliases/purpose/group/infra/ip_pin)."""
     return list(load_catalog().get("servers") or [])
+
+
+def service_host(service: str) -> str | None:
+    """Stable NAME of the host that serves ``service`` (an ``afl-*`` alias).
+
+    The entry claiming the alias wins; an unclaimed service falls back to the
+    ``infra: true`` host -- the one-box default. This is how a script names the
+    registry, the object store or the extract server WITHOUT a host name
+    written into the repo: the catalog is site configuration, never committed
+    (see servers.example.json). ``None`` when there is no catalog at all."""
+    entry = find(service) or infra()
+    return (entry or {}).get("name") or None
 
 
 def host_key(name: object) -> str:
@@ -183,7 +196,7 @@ def is_self(entry_or_name: dict | str) -> bool:
     """True when the catalog entry names THIS machine.
 
     Checked by short hostname first (cheap, works offline) and then by address,
-    so it holds whether the entry is written ``MaxPro.local`` or ``maxpro``."""
+    so it holds whether the entry is written ``host.local`` or ``host``."""
     entry = entry_or_name if isinstance(entry_or_name, dict) else find(entry_or_name)
     if not entry:
         return False

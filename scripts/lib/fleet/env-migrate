@@ -35,7 +35,7 @@ for k in "${PER_SERVER[@]}"; do
     [[ -n "$v" ]] && OVR_BODY+="$k=$v"$'\n'
 done
 
-# Ensure this host names itself correctly (the server2-as-server3 class of bug):
+# Ensure this host names itself correctly (the one-host-named-as-another class of bug):
 # if neither FW_RUNNER_NAME nor FW_FLEET_HOST is set, pin FW_RUNNER_NAME to
 # this machine's short hostname so it can't inherit a clone's name.
 if ! grep -qE '^(FW|AFL)_(RUNNER_NAME|FLEET_HOST)=' <<<"$OVR_BODY"; then

@@ -40,7 +40,7 @@ def _load_fleet_s3() -> None:
     """Lift FW_S3_* out of .env.fleet, which `_dotenv`/`_env.sh` do NOT read.
 
     ⚠️ Without this the endpoint falls back to localhost:9000, and on a former
-    standalone host that is a DIFFERENT, POPULATED object store — MaxPro still
+    standalone host that is a DIFFERENT, POPULATED object store — a laptop still
     serves its pre-cutover copy. So the wrong endpoint does not fail, it answers:
     measured 2026-08-29, `us-counties` returned a confident "needs fresher
     sources" verdict computed entirely from the wrong world, while
@@ -69,7 +69,7 @@ DEFAULT_SETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_osm-ad
 
 #: Where the guard actually looked. Reported on every refusal: a WRONG endpoint
 #: and a MISSING extract produce the identical "matched nothing", and on a fleet
-#: host both are reachable — MaxPro still runs a standalone MinIO on
+#: host both are reachable — a laptop still runs a standalone MinIO on
 #: localhost:9000 that holds no continent extracts. Measured 2026-08-29: without
 #: .env this refused `south-america-countries` for a 4.59 GB PBF that was sitting
 #: in the fleet bucket. Naming the endpoint turns a data verdict into a

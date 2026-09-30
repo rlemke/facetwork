@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "facetwork": {
-      "command": "${FW_PYTHON:-/Users/ralph_lemke/facetwork/.venv/bin/python}",
+      "command": "${FW_PYTHON:-.venv/bin/python}",
       "args": ["-m", "facetwork.mcp", "--log-level", "WARNING"],
       "env": {
         "FW_MONGODB_URL": "mongodb://localhost:27017",
