@@ -19,6 +19,7 @@ import os
 import socket
 import re
 import subprocess
+import sys
 from urllib.parse import urlparse
 
 CONVENTIONAL_MONGO = "mongodb://afl-mongodb:27017"
@@ -661,6 +662,192 @@ def role_in_group(spec: dict, host_group: str) -> bool:
     be kept off under-provisioned machines."""
     groups = spec.get("server_groups") or []
     return (not groups) or (host_group in groups)
+
+
+# ---------------------------------------------------------------------------
+# Image platforms — a role's image must carry THIS host's architecture
+# ---------------------------------------------------------------------------
+#
+# ⚠️ Why this exists (measured 2026-09-29): the Java gh-router image was pushed
+# single-arch (arm64) while the heavy group it runs in had gained three x86
+# hosts. Compose pulled it without complaint — a registry serves a single-arch
+# manifest to any client — and the container crash-looped `exec format error`
+# 46 times on beelink01 and macmini02 while `fleet status` reported both hosts
+# "up-to-date". The architecture is a property of the IMAGE, knowable before
+# anything is started, so it is checked there rather than discovered by a
+# restart loop.
+
+_ARCH_ALIASES = {"x86_64": "amd64", "amd64": "amd64", "x64": "amd64",
+                 "aarch64": "arm64", "arm64": "arm64", "arm64v8": "arm64"}
+
+
+def normalize_arch(arch: str | None) -> str | None:
+    """Docker's name for a CPU architecture (``amd64``/``arm64``), or None."""
+    if not arch:
+        return None
+    a = arch.strip().lower()
+    if a.startswith("linux/"):
+        a = a.split("/", 1)[1]
+    return _ARCH_ALIASES.get(a, a or None)
+
+
+def host_docker_arch() -> str | None:
+    """Architecture of the containers THIS host's Docker engine runs natively.
+
+    Asks the engine, not the OS: on Apple Silicon the engine is a linux/arm64
+    VM, and that is what an image has to match. Falls back to the host CPU."""
+    try:
+        out = subprocess.run(["docker", "version", "--format", "{{.Server.Arch}}"],
+                             capture_output=True, text=True, timeout=15)
+        a = normalize_arch(out.stdout)
+        if out.returncode == 0 and a:
+            return a
+    except Exception:                                          # noqa: BLE001
+        pass
+    import platform
+    return normalize_arch(platform.machine())
+
+
+def _split_image_ref(image: str) -> tuple[str, str, str] | None:
+    """(registry, repository, tag-or-digest) for a PRIVATE-registry reference.
+
+    None for a Docker Hub reference (no registry host in the first component):
+    those need token auth and are not what the fleet pins roles to."""
+    first, sep, rest = image.partition("/")
+    if not sep or not ("." in first or ":" in first or first == "localhost"):
+        return None
+    if "@" in rest:
+        repo, ref = rest.split("@", 1)
+    elif ":" in rest.rsplit("/", 1)[-1]:
+        repo, ref = rest.rsplit(":", 1)
+    else:
+        repo, ref = rest, "latest"
+    return first, repo, ref
+
+
+_MANIFEST_ACCEPT = ", ".join([
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+])
+
+
+def _registry_json(url: str, accept: str, timeout: float) -> dict:
+    import urllib.request
+    req = urllib.request.Request(url, headers={"Accept": accept})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:          # noqa: S310
+        return json.loads(resp.read().decode())
+
+
+def archs_from_manifest(manifest: dict) -> set[str] | None:
+    """Architectures a manifest LIST / OCI index offers, or None for a single
+    manifest (whose architecture lives in its config blob, not here).
+
+    Attestation entries (``unknown/unknown``, pushed by buildx provenance) are
+    not runnable platforms and are ignored."""
+    entries = manifest.get("manifests")
+    if entries is None:
+        return None
+    out = set()
+    for m in entries:
+        p = m.get("platform") or {}
+        if p.get("os") not in (None, "linux"):
+            continue
+        a = normalize_arch(p.get("architecture"))
+        if a and a != "unknown":
+            out.add(a)
+    return out
+
+
+def image_archs(image: str, *, timeout: float = 10.0) -> set[str] | None:
+    """Architectures ``image`` can run on, read from its registry — or None when
+    that cannot be determined (Docker Hub reference, registry unreachable).
+
+    None means "unknown", and callers must treat it as permission, not refusal:
+    an offline registry is already fatal to the pull that follows, and refusing
+    here too would only replace compose's error with a vaguer one.
+
+    Registries are addressed over plain HTTP first (the fleet registry is an
+    insecure registry:2) and HTTPS second. ``host.docker.internal`` is a name
+    only containers resolve, so from this host process it means localhost."""
+    parts = _split_image_ref(image)
+    if not parts:
+        return None
+    registry, repo, ref = parts
+    host = registry.replace("host.docker.internal", "localhost", 1)
+    for scheme in ("http", "https"):
+        base = f"{scheme}://{host}/v2/{repo}"
+        try:
+            man = _registry_json(f"{base}/manifests/{ref}", _MANIFEST_ACCEPT, timeout)
+        except Exception:                                      # noqa: BLE001
+            continue
+        listed = archs_from_manifest(man)
+        if listed is not None:
+            return listed
+        digest = (man.get("config") or {}).get("digest")
+        if not digest:
+            return None
+        try:
+            cfg = _registry_json(f"{base}/blobs/{digest}", "*/*", timeout)
+        except Exception:                                      # noqa: BLE001
+            return None
+        a = normalize_arch(cfg.get("architecture"))
+        return {a} if a else None
+    return None
+
+
+def image_arch_refusal(image: str, host_arch: str | None = None) -> str | None:
+    """Why this host must NOT start ``image`` — or None if it may.
+
+    Refuses only on POSITIVE evidence (the registry lists the image's platforms
+    and this host's is not among them); unknown on either side permits."""
+    have = image_archs(image)
+    me = host_arch or host_docker_arch()
+    if have is None or not me or me in have:
+        return None
+    return (f"image {image} is built for {'/'.join(sorted(have)) or 'no platform'} "
+            f"only; this host's Docker runs linux/{me} (it would crash-loop "
+            f"'exec format error'). Rebuild it multi-arch — for gh-router: "
+            f"`fw fleet agent-image gh-router`")
+
+
+def fleet_archs(server_groups: list[str] | None = None) -> dict[str, str]:
+    """{host: arch} from the server catalog, limited to ``server_groups`` when
+    given (empty/None = every host — the same rule as :func:`role_in_group`).
+
+    The catalog is the declared fleet, which is what a role image must cover:
+    a host that is merely offline today still pulls the image when it returns."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from facetwork.servers import catalog  # noqa: PLC0415
+
+    out = {}
+    for s in catalog.servers():
+        if server_groups and s.get("group") not in server_groups:
+            continue
+        a = normalize_arch((s.get("capacity") or {}).get("arch"))
+        if a:
+            out[s.get("name", "?")] = a
+    return out
+
+
+def remove_service_containers(service: str) -> list[str]:
+    """Force-remove every container of compose ``service`` on this host.
+
+    For a container that cannot run here at all (wrong architecture): it is
+    ``restart: unless-stopped``, so leaving it means a restart loop forever."""
+    try:
+        ids = subprocess.run(
+            ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.service={service}"],
+            capture_output=True, text=True, timeout=30).stdout.split()
+        if ids:
+            subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, timeout=60)
+        return ids
+    except Exception:                                          # noqa: BLE001
+        return []
 
 
 def parse_role_groups(value: str) -> tuple[str, list[str]]:

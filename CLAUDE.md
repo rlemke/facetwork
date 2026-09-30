@@ -31,7 +31,7 @@ fw db postgis vacuum          # nested groups work
 Groups: **`install`** (toolchain/venv/examples/**check**) · **`single`** (local dev stack:
 up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgroup) ·
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
-agent/**rollout**/**scale**/**registry-setup**/**allow-restart**/rolling-deploy/simulate) · **`ffl`**
+agent/**rollout**/**agent-image**/**scale**/**registry-setup**/**allow-restart**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**/**dead-letters**/**unsatisfiable**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**/**osm-admin-regen**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
@@ -320,7 +320,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Building handlers | [docs/reference/agent-sdk.md](docs/reference/agent-sdk.md) |
 | **Python scripts & environments — when to use them vs handlers** — the capability/logic tier decision rule, script contract + sandbox, environment declaration/freeze/bake/lazy lifecycle, the osm.emergency migration numbers, gotchas | [docs/guides/scripts-and-environments.md](docs/guides/scripts-and-environments.md) |
 | **Delegating a step to Ray** — hand one step's parallel interior to a Ray cluster while Facetwork keeps durable structure; when it pays (step overhead ~2.6s, so 5ms×3,000 belongs in one job) and when it does not (training needs gang scheduling); D2 blocking handler vs D3 watcher; ⚠️ D3 also needs a runner polling that task list for `fw:resume`, and a finished workflow reads `running` for up to 15min until the finalisation pass | [docs/guides/delegating-to-ray.md](docs/guides/delegating-to-ray.md) |
-| **Multi-language (polyglot) handlers** — Java/Go/Scala/TS handlers alongside Python via the Mongo-coordinated agent protocol (name-filtered claim → coexistence); worked example: the embedded-GraphHopper Java agent (`fwh_osm/java/osm-gh-router`) | [docs/guides/multi-language-handlers.md](docs/guides/multi-language-handlers.md) |
+| **Multi-language (polyglot) handlers** — Java/Go/Scala/TS handlers alongside Python via the Mongo-coordinated agent protocol (name-filtered claim → coexistence); worked example: the embedded-GraphHopper Java agent (`fwh_osm/java/osm-gh-router`). ⚠️ A polyglot agent ships its OWN image, which must be **multi-arch** (the fleet mixes arm64 + x86; a wrong-arch image pulls fine and crash-loops `exec format error`) — publish with `fw fleet agent-image <role>`; `fleet set` and the fleet-agent refuse an image missing a host's platform | [docs/guides/multi-language-handlers.md](docs/guides/multi-language-handlers.md) |
 | LLM integration | [docs/guides/llm-integration.md](docs/guides/llm-integration.md) |
 | **Long-running handlers** — heartbeats, batch boundaries, staging tables, and **cooperative cancellation** (`ctx.raise_if_cancelled()` / `ctx.is_cancelled`: stop when a run is terminated, a watchdog already failed the task, or a reclaim made this execution a zombie; a cancelled handler is a clean stop — no retry, no failed step) | [docs/guides/long-running-handlers.md](docs/guides/long-running-handlers.md) |
 | FFL examples | [docs/reference/examples.md](docs/reference/examples.md) |

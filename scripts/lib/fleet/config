@@ -110,6 +110,42 @@ def _print_cfg(cfg):
         print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')} image={spec.get('image', '-')}{kind}{grp}{region}")
 
 
+def _require_fleet_archs(image: str, role: str, cfg: dict, allow_gap: bool) -> None:
+    """Refuse to pin ``role`` to an image missing an architecture its hosts run.
+
+    The hosts are the catalogued members of the role's server_groups — the same
+    set the agent gate starts it on. Checked HERE because this is the one place
+    that sees the whole fleet: each agent can only refuse for itself, after the
+    flip, which leaves the role silently absent from every host of the missing
+    architecture. A registry that cannot be read is reported, not treated as a
+    pass or a refusal."""
+    groups = ((cfg.get("roles") or {}).get(role) or {}).get("server_groups") or []
+    try:
+        hosts = _fleet_lib.fleet_archs(groups)
+    except Exception as exc:                                   # noqa: BLE001
+        print(f"  arch check: cannot read the server catalog ({exc}) — not verified")
+        return
+    have = _fleet_lib.image_archs(image)
+    if have is None:
+        print(f"  arch check: could not read {image}'s platforms from its registry — not verified")
+        return
+    missing = {h: arch for h, arch in hosts.items() if arch not in have}
+    scope = f"server_groups {groups}" if groups else "every catalogued host"
+    if not missing:
+        print(f"  arch check: {image} covers {'/'.join(sorted(have))} — all of {scope} ✓")
+        return
+    lines = "\n".join(f"      {h}: linux/{arch}" for h, arch in sorted(missing.items()))
+    msg = (f"{image} is built for {'/'.join(sorted(have))} only, but {role} runs on "
+           f"{scope}, and these hosts need another platform:\n{lines}\n"
+           f"    They would crash-loop 'exec format error'. Publish it multi-arch "
+           f"(`fw fleet agent-image {role}`), or pass --allow-arch-gap to accept "
+           f"that those hosts will skip the role.")
+    if allow_gap:
+        print(f"  arch check: WARNING {msg}")
+        return
+    raise SystemExit(f"fleet set: REFUSED — {msg}")
+
+
 def cmd_set(a):
     d = _db(_resolve(a))
     cfg = d.fleet_config.find_one({"_id": "default"}) or {
@@ -143,6 +179,7 @@ def cmd_set(a):
     if a.image:
         cfg.setdefault("roles", {}).setdefault("osm-geocoder", {})["image"] = a.image
     if a.gh_router_image:
+        _require_fleet_archs(a.gh_router_image, "gh-router", cfg, a.allow_arch_gap)
         cfg.setdefault("roles", {}).setdefault("gh-router", {})["image"] = a.gh_router_image
     # graphhopper: the graphhopper-web HTTP server the low-zoom builder routes
     # against (one region+profile per server; runs on the shared runner image).
@@ -481,6 +518,9 @@ def main():
                          "coverage and region naming before switching")
     ps.add_argument("--image", help="runner image tag (a change triggers a rolling recreate fleet-wide)")
     ps.add_argument("--gh-router-image", help="embedded-GraphHopper agent image tag for the gh-router role (a change recreates it fleet-wide)")
+    ps.add_argument("--allow-arch-gap", action="store_true",
+                    help="accept a --gh-router-image missing an architecture some of the role's hosts run "
+                         "(those hosts then skip the role) instead of refusing")
     ps.add_argument("--graphhopper-region", help="graphhopper role: serve this prebuilt region's routing graph over HTTP for the low-zoom builder (e.g. north-america/us/washington); '' removes the role")
     ps.add_argument("--graphhopper-profile", help="graphhopper role: profile of the served graph (default car)")
     ps.add_argument("--ffl-replicas", type=int, help="ffl-runner (orchestration tier, continuation_mode=shared) per server; 0 disables")

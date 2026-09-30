@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# fw-summary: build+push a polyglot agent's OWN image multi-arch (gh-router), verify every fleet arch, pin its role
+#
+# The Python runners share one image that `fw fleet rollout` already builds for
+# linux/amd64 AND linux/arm64. A polyglot agent (the Java gh-router) ships its
+# OWN image, built from its own repo — and that image was pushed by hand,
+# single-arch. When x86 hosts joined its server group it crash-looped
+# `exec format error` there for 11 days while `fleet status` said up-to-date
+# (2026-09-29). This command is the one route from source to fleet_config for
+# such an image, and it enforces the packaging contract in
+# agent-spec/agent-sdk.agent-spec.yaml (multi_language.packaging):
+#
+#   1. buildx build --platform <every platform> --push   (one manifest list)
+#   2. read the PUSHED manifest back from the registry and compare it with the
+#      architectures the role's hosts actually run (servers.json capacity.arch,
+#      limited to the role's server_groups) — refuse on a gap
+#   3. `fleet set --<role>-image` (which re-checks the same thing)
+#
+# Usage: fw fleet agent-image <role> [--dry] [--no-set] [--platform P]
+#                                   [--context DIR] [--tag T] [--mongo URL]
+#
+# Roles: gh-router  (context: $FWH_HANDLERS_ROOT/fwh_osm/java/osm-gh-router,
+#                    repo: osm-gh-router, pinned via --gh-router-image)
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+ROLE="" DRY=0 DO_SET=1 CONTEXT="" TAG=""
+PLATFORM="${FW_FLEET_PLATFORM:-linux/amd64,linux/arm64}"
+MONGO="${FW_MONGODB_URL:-mongodb://afl-mongodb:27017}"
+REGISTRY="${FW_FLEET_REGISTRY:-server3.local:5050}"
+BUILDER="${FW_FLEET_BUILDER:-fleetbuilder}"
+HANDLERS="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+
+usage() { sed -n '/^# Usage:/,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry|--dry-run|-n) DRY=1; shift ;;
+        --no-set) DO_SET=0; shift ;;
+        --platform) PLATFORM="$2"; shift 2 ;;
+        --context) CONTEXT="$2"; shift 2 ;;
+        --tag) TAG="$2"; shift 2 ;;
+        --mongo) MONGO="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        -*) echo "agent-image: unknown option $1" >&2; usage >&2; exit 2 ;;
+        *) [ -z "$ROLE" ] || { echo "agent-image: one role at a time" >&2; exit 2; }
+           ROLE="$1"; shift ;;
+    esac
+done
+
+case "$ROLE" in
+    gh-router)
+        REPO_NAME="osm-gh-router"
+        SET_FLAG="--gh-router-image"
+        : "${CONTEXT:=$HANDLERS/fwh_osm/java/osm-gh-router}" ;;
+    "") echo "agent-image: name a role (gh-router)" >&2; usage >&2; exit 2 ;;
+    *)  echo "agent-image: unknown role '$ROLE' (known: gh-router)" >&2; exit 2 ;;
+esac
+[ -f "$CONTEXT/Dockerfile" ] || { echo "agent-image: no Dockerfile in $CONTEXT" >&2; exit 2; }
+
+# Tag from the SOURCE repo's commit, so a tag names exactly one build input.
+# A dirty tree would publish code no commit holds, under a tag that claims one.
+if [ -z "$TAG" ]; then
+    if [ -n "$(git -C "$CONTEXT" status --porcelain -- . 2>/dev/null)" ]; then
+        echo "agent-image: $CONTEXT has uncommitted changes — commit them, or pass --tag" >&2
+        exit 2
+    fi
+    TAG="$(git -C "$CONTEXT" rev-parse --short HEAD)"
+fi
+IMAGE="$REGISTRY/$REPO_NAME:$TAG"
+
+# Push address: same rule as `fleet rollout` — a registry on THIS host is reached
+# from the (containerised) buildkit as host.docker.internal; a remote one by name.
+me="$(hostname -s 2>/dev/null || hostname)"
+case "${REGISTRY%%:*}" in
+    localhost|127.0.0.1|host.docker.internal|"$me"|"$me".local)
+        PUSH_REGISTRY="${FW_FLEET_PUSH_REGISTRY:-host.docker.internal:${REGISTRY##*:}}" ;;
+    *)  PUSH_REGISTRY="${FW_FLEET_PUSH_REGISTRY:-$REGISTRY}" ;;
+esac
+PUSH_IMAGE="$PUSH_REGISTRY/$REPO_NAME:$TAG"
+
+PY="$FW_ROOT/.venv/bin/python"; [ -x "$PY" ] || PY=python3
+# Which platforms the role's hosts need (from the catalog + the role's groups).
+needed() {
+    "$PY" - "$MONGO" "$ROLE" <<'EOF'
+import os
+import sys
+sys.path.insert(0, os.path.join(os.environ["FW_LIB"], "_helpers"))
+import _fleet_lib
+groups = []
+try:
+    from pymongo import MongoClient
+    cfg = MongoClient(sys.argv[1], serverSelectionTimeoutMS=4000)[
+        os.environ.get("FW_MONGODB_DATABASE", "facetwork")].fleet_config.find_one({"_id": "default"}) or {}
+    groups = ((cfg.get("roles") or {}).get(sys.argv[2]) or {}).get("server_groups") or []
+except Exception:
+    pass
+hosts = _fleet_lib.fleet_archs(groups)
+print(" ".join(sorted(set(hosts.values()))), "|", " ".join(f"{h}={a}" for h, a in sorted(hosts.items())))
+EOF
+}
+export FW_LIB
+NEED_LINE="$(needed || true)"
+NEED="${NEED_LINE%%|*}"; NEED="$(echo $NEED)"
+for arch in $NEED; do
+    case ",$PLATFORM," in
+        *",linux/$arch,"*) ;;
+        *) echo "agent-image: --platform $PLATFORM omits linux/$arch, which ${NEED_LINE#*|} run — refusing" >&2
+           exit 1 ;;
+    esac
+done
+
+echo "role      $ROLE"
+echo "context   $CONTEXT"
+echo "image     $IMAGE   (push via $PUSH_REGISTRY)"
+echo "platform  $PLATFORM"
+echo "fleet     needs: ${NEED:-unknown} ←${NEED_LINE#*|}"
+if [ "$DRY" = 1 ]; then
+    echo "[dry-run] would: buildx build --platform $PLATFORM --push $PUSH_IMAGE, verify the pushed"
+    echo "          manifest covers [${NEED:-?}], then 'fleet set $SET_FLAG $IMAGE'. No changes made."
+    exit 0
+fi
+
+echo "=== 1/3 buildx build + push ==="
+docker buildx build --builder "$BUILDER" --platform "$PLATFORM" \
+    --provenance=false -t "$PUSH_IMAGE" --push "$CONTEXT"
+
+echo "=== 2/3 verify the PUSHED manifest (read back from $REGISTRY) ==="
+GOT="$("$PY" -c "
+import sys, os; sys.path.insert(0, os.path.join(os.environ['FW_LIB'], '_helpers'))
+import _fleet_lib; a = _fleet_lib.image_archs(sys.argv[1]); print(' '.join(sorted(a)) if a is not None else '?')
+" "$IMAGE")"
+echo "  $IMAGE → ${GOT}"
+if [ "$GOT" = "?" ]; then
+    echo "agent-image: could not read $IMAGE back from $REGISTRY — NOT pinning an image nobody verified" >&2
+    exit 1
+fi
+for arch in $NEED; do
+    case " $GOT " in *" $arch "*) ;; *)
+        echo "agent-image: pushed image lacks linux/$arch — fleet_config NOT changed" >&2; exit 1 ;;
+    esac
+done
+
+if [ "$DO_SET" = 0 ]; then
+    echo "=== 3/3 skipped (--no-set). Pin it with: fw fleet set $SET_FLAG $IMAGE ==="
+    exit 0
+fi
+echo "=== 3/3 fleet set $SET_FLAG $IMAGE ==="
+"$FW_LIB/fleet/config" set --mongo "$MONGO" "$SET_FLAG" "$IMAGE"

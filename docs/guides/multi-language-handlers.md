@@ -113,6 +113,57 @@ polling.
   process is usually enough — it advertises only its facet, so all of that
   facet's tasks route to it; scale it like any other runner if needed.
 
+### Packaging for a mixed-architecture fleet
+
+A polyglot agent ships its **own** image, and that image is a separate artifact
+from the Python runner image, which `fw fleet rollout` already builds for
+`linux/amd64` and `linux/arm64`. The fleet mixes Apple Silicon (arm64) and x86
+hosts, and **a wrong-architecture image does not fail to pull.** The registry
+serves it, the container starts, and it crash-loops `exec format error`. On
+2026-09-29 the gh-router did exactly this on two x86 heavy hosts, 46 restarts
+each over 11 days, while `fleet status` read *up-to-date*.
+
+The contract (`agent-spec/agent-sdk.agent-spec.yaml` → `multi_language.packaging`):
+
+1. **Publish a manifest list covering every host the role can run on.** "Every
+   host" means the catalogued members (`servers.json` → `capacity.arch`) of the
+   role's `server_groups`, or all of them when the role has none. Default
+   `linux/amd64,linux/arm64`.
+2. **Compile architecture-neutral output once.** Pin the build stage to the
+   build host and let only the runtime stage vary:
+
+   ```dockerfile
+   FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-17 AS build   # jar built once, natively
+   ...
+   FROM eclipse-temurin:17-jre                                           # resolved per target platform
+   COPY --from=build /build/target/app.jar /app/app.jar
+   ```
+
+   Native code (Go, JNI, Rust) must instead cross-compile per `$TARGETPLATFORM`.
+3. **Publish through `fw fleet agent-image <role>`**, never a hand `docker push`:
+
+   ```bash
+   fw fleet agent-image gh-router --dry   # platforms needed vs built, image tag
+   fw fleet agent-image gh-router         # build all platforms + push, verify the PUSHED manifest, pin the role
+   ```
+
+   It tags from the agent repo's commit, refuses a dirty tree, refuses a
+   `--platform` list that omits a platform the role's hosts run, and reads the
+   manifest back from the registry before it changes `fleet_config`.
+
+Three checks enforce the contract, so a single-arch push can no longer reach a
+host that cannot run it:
+
+| Where | What it does |
+|---|---|
+| `fw fleet set --gh-router-image` | **Refuses** an image missing a platform one of the role's hosts runs, and names those hosts (`--allow-arch-gap` accepts the gap on purpose) |
+| fleet-agent, per host | Won't start a role image whose manifest lacks this host's Docker architecture, and removes a crash-looping container of it. An unreadable manifest (Docker Hub, registry down) is allowed through. |
+| fleet-agent drift check | Compares each container with the pinned image **of its own repo**. A gh-router re-pin whose pull failed gets retried instead of being recorded as applied, and only that container is replaced. |
+
+Adding a second polyglot role means adding it to `fw fleet agent-image`, adding
+a `--<role>-image` flag on `fleet set` wired to the same check, and wiring the
+agent's start and drift checks the way gh-router's are.
+
 Because coordination is only the atomic Mongo claim, a polyglot agent on a box
 with Mongo + MinIO access *is* a fleet participant — see
 [informal-fleet.md](../operations/informal-fleet.md).

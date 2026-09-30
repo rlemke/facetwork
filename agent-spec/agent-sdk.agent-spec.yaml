@@ -3,8 +3,10 @@
 identity:
   name: agent-sdk
   kind: system-contract
-  canonical_id: "sha256:f610c85249cc256b461394d1e63463493d9e4d5283a43fa7c5ad592f3a5ff93e"
-  version: 1
+  canonical_id: "sha256:b96adc34a5660ac786e7afa25de8443525cb516e023be12003856d64d72f169f"
+  version: 2
+  supersedes:
+    - "sha256:f610c85249cc256b461394d1e63463493d9e4d5283a43fa7c5ad592f3a5ff93e"
 
 purpose: |
   The Agent SDK contract defines how external code — in any host
@@ -149,6 +151,29 @@ multi_language:
     - "agents/typescript/"
   wire_format: "JSON over the task-queue persistence backend."
 
+  # A polyglot agent is deployed as its OWN container image (the Python
+  # handlers share the runner image, which `fw fleet rollout` builds for every
+  # platform). That image is a separate artifact with a separate build, and
+  # nothing about the wire protocol makes it portable: the fleet is mixed
+  # arm64/amd64 and a container of the wrong architecture does not fail to
+  # pull, it crash-loops `exec format error` after a successful start.
+  packaging:
+    image: "Built from the agent's own repo (e.g. fwh_osm/java/osm-gh-router/Dockerfile), pinned per fleet role (fleet_config roles.<role>.image)."
+    platforms:
+      rule: "The image MUST be published as a manifest list covering the architecture of EVERY host the role can run on: the catalogued members (servers.json capacity.arch) of the role's server_groups, or of the whole catalog when the role has none."
+      default: "linux/amd64,linux/arm64"
+      why: "Measured 2026-09-29: the gh-router image was pushed arm64-only while its server group held two x86 hosts; it crash-looped 46 times on each for 11 days while `fleet status` read up-to-date."
+    build:
+      rule: "Architecture-neutral build output (JVM bytecode, a Node bundle, pure-Python wheels) is compiled ONCE on the build platform (`FROM --platform=$BUILDPLATFORM ...` for the build stage); only the runtime stage resolves per target platform."
+      why: "A multi-arch build otherwise runs the compiler under QEMU for the foreign half, which is slow and produces an identical artifact."
+      native_code: "An agent with native code (Go, a JNI library, a Rust extension) must cross-compile per $TARGETPLATFORM or build on native builders; the same platform rule applies."
+    publish_via: "`fw fleet agent-image <role>` -- builds `--platform <all>` + push, reads the PUSHED manifest back from the registry, refuses on a gap, then pins the role. Tag = the agent repo's commit; a dirty tree is refused."
+    enforcement:
+      - "`fw fleet set --<role>-image` REFUSES an image missing a platform one of the role's catalogued hosts runs (override: --allow-arch-gap)."
+      - "The fleet-agent refuses, per host, to start a role image whose registry manifest lacks this host's Docker architecture, and removes a crash-looping container of it; unknown platforms (Docker Hub, registry unreachable) permit."
+      - "The agent's image-drift check compares each runner container with the pinned image OF ITS OWN REPO, so a role re-pin whose pull failed is retried rather than recorded as applied."
+    adding_a_role: "A new polyglot role needs: a Dockerfile following the build rule, a role entry in `fw fleet agent-image`, a `--<role>-image` flag on `fleet set` wired to the same platform check, and the agent's start + drift wiring (see scripts/lib/fleet/agent, gh-router)."
+
 # ---------------------------------------------------------------------------
 # Properties.
 # ---------------------------------------------------------------------------
@@ -168,6 +193,10 @@ properties:
   - name: "step_log_is_append_only"
     statement: "Each _step_log call appends one entry to the step log; entries are never reordered or deleted by subsequent calls."
     checkable_via: "property_test"
+
+  - name: "agent_image_covers_fleet_platforms"
+    statement: "For every fleet role pinned to its own image, the image's published platforms include the Docker architecture of every catalogued host in the role's server_groups (every catalogued host when it has none)."
+    checkable_via: "example_suite (tests/test_fleet_image_arch.py) + enforced at `fw fleet set` and `fw fleet agent-image`"
 
   - name: "handler_exception_produces_step_error"
     statement: "For every handler invocation that raises, the owning step transitions to state.statement.Error with the exception message and type recorded. The step result remains empty/null."
@@ -199,6 +228,7 @@ human_docs:
   - "docs/reference/event-system.md"
   - "docs/guides/long-running-handlers.md"
   - "docs/guides/llm-integration.md"
+  - "docs/guides/multi-language-handlers.md"
   - "agents/"
   - "facetwork/runtime/registry_runner.py"
   - "facetwork/runtime/agent_poller.py"

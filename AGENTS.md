@@ -31,7 +31,7 @@ fw db postgis vacuum          # nested groups work
 Groups: **`install`** (toolchain/venv/examples/**check**) · **`single`** (local dev stack:
 up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgroup) ·
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
-agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
+agent/**rollout**/**agent-image**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog) · **`maint`** (disk-guard/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**).
@@ -113,7 +113,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Distributed step processing | [docs/reference/runtime.md §10.3.1](docs/reference/runtime.md) |
 | Runtime implementation details | [docs/reference/runtime-impl.md](docs/reference/runtime-impl.md) |
 | Building handlers | [docs/reference/agent-sdk.md](docs/reference/agent-sdk.md) |
-| **Multi-language (polyglot) handlers** — Java/Go/Scala/TS handlers alongside Python via the Mongo-coordinated agent protocol (name-filtered claim → coexistence); worked example: the embedded-GraphHopper Java agent (`fwh_osm/java/osm-gh-router`) | [docs/guides/multi-language-handlers.md](docs/guides/multi-language-handlers.md) |
+| **Multi-language (polyglot) handlers** — Java/Go/Scala/TS handlers alongside Python via the Mongo-coordinated agent protocol (name-filtered claim → coexistence); worked example: the embedded-GraphHopper Java agent (`fwh_osm/java/osm-gh-router`). ⚠️ A polyglot agent ships its OWN image, which must be **multi-arch** (the fleet mixes arm64 + x86; a wrong-arch image pulls fine and crash-loops `exec format error`) — publish with `fw fleet agent-image <role>`; `fleet set` and the fleet-agent refuse an image missing a host's platform | [docs/guides/multi-language-handlers.md](docs/guides/multi-language-handlers.md) |
 | LLM integration | [docs/guides/llm-integration.md](docs/guides/llm-integration.md) |
 | Long-running handlers | [docs/guides/long-running-handlers.md](docs/guides/long-running-handlers.md) |
 | FFL examples | [docs/reference/examples.md](docs/reference/examples.md) |
