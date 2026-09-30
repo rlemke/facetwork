@@ -118,7 +118,7 @@ def container_net_ip() -> str:
 
     Code that must ignore Docker-assigned addresses keys on that range, so a test
     of it needs one; generated, because no particular value is meaningful."""
-    net = ipaddress.ip_network((0xAC100000, 12))  # 172.16.0.0/12
+    net = ipaddress.ip_network((0xAC100000, 12))  # 172.16.0.0/12  sitescan: ok
     return str(net.network_address + _rng.randrange(2, net.num_addresses - 2))
 
 

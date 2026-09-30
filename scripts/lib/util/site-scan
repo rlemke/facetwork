@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# fw-summary: find host names, IPs, home paths and personal emails in the repo (and --domains: every fwh_* repo)
+#
+# The same check CI runs (facetwork/sitescan.py), plus what CI cannot know: the
+# REAL host names in this site's server catalog (servers.json, never committed),
+# reported without being echoed.
+#
+#   fw util site-scan              # this repo
+#   fw util site-scan --domains    # this repo + every fwh_* checkout
+#   fw util site-scan PATH ...     # specific repositories
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY=python3
+
+ROOTS=() DOMAINS=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --domains) DOMAINS=1; shift ;;
+        -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) ROOTS+=("$1"); shift ;;
+    esac
+done
+[ ${#ROOTS[@]} -gt 0 ] || ROOTS=("$FW_ROOT")
+if [ "$DOMAINS" = 1 ]; then
+    for d in "${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"/fwh_*/; do [ -d "$d/.git" ] && ROOTS+=("${d%/}"); done
+fi
+CAT=()
+[ -f "${FW_SERVERS_FILE:-$FW_ROOT/servers.json}" ] && CAT=(--catalog "${FW_SERVERS_FILE:-$FW_ROOT/servers.json}")
+exec "$PY" "$FW_ROOT/facetwork/sitescan.py" "${ROOTS[@]}" ${CAT[@]+"${CAT[@]}"}

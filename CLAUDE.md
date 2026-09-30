@@ -55,7 +55,9 @@ Notes for working with `fw`:
   service's host up with `fw_service_host afl-<service>` (in `_bootstrap.sh`),
   never a literal default. Docs and comments name machines by ROLE ("the infra
   host", "the database host"). `tests/test_no_site_identifiers.py` enforces the
-  test side. A new host gets the catalog via `setup-ubuntu-fleet-host.sh
+  test side; `facetwork/sitescan.py` the whole repo AND every `fwh_*` repo (a step in
+  facetwork CI and in the shared domain-ci workflow). `fw util site-scan --domains`
+  runs it locally, adding the real host names from the local catalog (never echoed). A new host gets the catalog via `setup-ubuntu-fleet-host.sh
   --infra-host NAME --catalog FILE`.
 - **`fw install check [--install]`** — host-readiness analyzer, three sections.
   (1) Statically scans `tests/` + `examples/` for imported modules (incl.

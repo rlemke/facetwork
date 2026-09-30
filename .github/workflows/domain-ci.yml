@@ -67,6 +67,15 @@ jobs:
         with:
           python-version: ${{ inputs.python-version }}
 
+      - name: No site identifiers (host names, IPs, home paths, personal emails)
+        # Before anything is installed: the scanner is stdlib-only. A published
+        # domain repo must not disclose the machines, network or people of the
+        # deployment it came from, and must run on any other one. Measured
+        # 2026-09-30: 12 of 31 domain repos carried a local home path, a fleet
+        # host name or a personal email address. Genuine exceptions: a line
+        # containing `sitescan: ok`, or a glob in `.sitescan-ignore`.
+        run: python core/facetwork/sitescan.py domain
+
       - name: Shallow-clone FFL library repos
         if: inputs.lib-repos != ''
         run: |

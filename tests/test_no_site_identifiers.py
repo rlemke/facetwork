@@ -16,6 +16,10 @@ This guard fails on:
   ``forbidden_names`` in the uncommitted site file. Read at RUNTIME, so this
   file names nothing either.
 
+The repo-wide check (any file, not only tests) is facetwork/sitescan.py; this
+guard is STRICTER for tests -- it also bans the documentation ranges that the
+repo-wide check allows, since tests must take every address from _site.py.
+
 tests/_site.py itself is exempt: it holds the reserved documentation ranges that
 generated values are drawn from, and nothing else.
 """
@@ -27,6 +31,7 @@ from pathlib import Path
 
 import pytest
 
+from facetwork import sitescan
 from tests import _site
 
 REPO = Path(__file__).resolve().parents[1]
@@ -60,7 +65,8 @@ def _findings(path: Path, names: list[str]) -> list[str]:
             if _is_ipv4(g) and not _allowed_ip(g):
                 out.append(f"{rel}:{n}: IP address {m.group(0)}")
         for m in _MDNS.finditer(line):
-            out.append(f"{rel}:{n}: mDNS host name {m.group(1)}")
+            if not sitescan._mdns_ok(m.group(1)):  # one definition of "not a host"
+                out.append(f"{rel}:{n}: mDNS host name {m.group(1)}")
         low = line.lower()
         for name in names:
             if re.search(rf"(?<![\w-]){re.escape(name.lower())}(?![\w-])", low):
