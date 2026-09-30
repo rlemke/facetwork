@@ -383,3 +383,17 @@ def test_left_behind_reports_provenance_and_makes_no_reproducibility_claim():
     # and it must NOT promise either one can be rebuilt
     assert "prognosis" not in lb
     assert "re-run" not in lb["note"].split("Measured")[0]
+
+
+def test_an_unreachable_tree_is_an_error_not_an_empty_store(monkeypatch):
+    """The root listing failing used to be swallowed: the report said "0 objects"
+    with no error -- indistinguishable from an empty store (2026-09-30, while the
+    serving host's link was saturated by a publish)."""
+    import urllib.error
+
+    def refuse(*_a, **_k):
+        raise urllib.error.URLError("timed out")
+
+    monkeypatch.setattr(R.urllib.request, "urlopen", refuse)
+    with pytest.raises(RuntimeError, match="could not list the served tree"):
+        R.survey_tree(f"http://{_site.host('extracts')}:8088")

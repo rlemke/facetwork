@@ -194,12 +194,20 @@ def survey_tree(base_url: str, *, timeout: int = 20) -> dict:
             return r.read() if binary else r.read().decode("utf-8", "replace")
 
     extracts: dict[str, dict] = {}
+    unlisted: list[str] = []
     to_visit = [("", 0)]
     while to_visit:
         rel, depth = to_visit.pop(0)
         try:
             html = get(base + rel)
-        except (urllib.error.URLError, OSError):
+        except (urllib.error.URLError, OSError) as exc:
+            # ⚠️ The ROOT failing means the tree was NOT surveyed. Swallowing it
+            # reported "0 objects" with no error -- indistinguishable from an
+            # empty store -- measured 2026-09-30 while the host's link was
+            # saturated by a publish. A sub-directory failing is recorded instead.
+            if not rel:
+                raise RuntimeError(f"could not list the served tree: {type(exc).__name__}") from exc
+            unlisted.append(rel)
             continue
         for href in _HREF.findall(html):
             if href.startswith(("..", "/", "http")):
@@ -249,6 +257,7 @@ def survey_tree(base_url: str, *, timeout: int = 20) -> dict:
         "objects": len(extracts),
         "bytes": sum(e["bytes"] or 0 for e in extracts.values()),
         "extracts": extracts,
+        "unlisted_dirs": unlisted,
     }
 
 
@@ -1203,7 +1212,7 @@ def build(
             "objects": 0,
             "bytes": 0,
             "extracts": {},
-            "error": type(exc).__name__,
+            "error": str(exc) or type(exc).__name__,
         }
 
     county_ref = None
@@ -1372,6 +1381,32 @@ def check_published(
     return 1
 
 
+def _catalog():
+    """The server catalog module, or None (no package / no checkout)."""
+    try:
+        import sys
+
+        repo = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        )
+        if repo not in sys.path:
+            sys.path.insert(0, repo)
+        from facetwork.servers import catalog
+
+        return catalog
+    except Exception:  # noqa: BLE001 - reported by the survey, not here
+        return None
+
+
+def _host_reachable_url(url: str) -> str:
+    """``url`` with an afl-* host this machine cannot resolve swapped for the
+    catalog's address. This report runs on a HOST, where the afl-* names resolve
+    only if /etc/hosts pins them -- which the fleet stopped doing -- so the
+    default endpoint could not be surveyed at all."""
+    cat = _catalog()
+    return cat.resolve_url(url) if cat else url
+
+
 def _default_tree_url() -> str:
     """The self-hosted extract server, from the server catalog's afl-extracts
     host -- site configuration, so no host name lives in the repo. Without a
@@ -1442,6 +1477,8 @@ def main(argv=None) -> int:
     )
     ap.add_argument("--max-age-hours", type=int, default=48)
     a = ap.parse_args(argv)
+    a.endpoint = _host_reachable_url(a.endpoint)
+    a.tree_url = _host_reachable_url(a.tree_url)
 
     if a.check:
         # ⚠️ Reads the PUBLISHED report, not a local file. Only the generator
