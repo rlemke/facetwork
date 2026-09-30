@@ -55,7 +55,6 @@ stays undetected.
 from __future__ import annotations
 
 import argparse
-import collections
 import json
 import os
 import pathlib
@@ -275,7 +274,7 @@ def scan_contracts(repo: pathlib.Path) -> list[str]:
 
 def audit(roots: list[str], *, check_contracts: bool = True,
           python: str | None = None, cwd: str | None = None,
-          repo_paths: "list[str] | None" = None) -> list[RepoResult]:
+          repo_paths: list[str] | None = None) -> list[RepoResult]:
     """Validate every ``fwh_*`` repo found under ``roots``.
 
     ``repo_paths`` names repositories DIRECTLY instead of sweeping a parent for

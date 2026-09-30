@@ -24,9 +24,9 @@ def _svc(prior):
 
 
 def _task(**kw):
-    base = dict(uuid="t", name="osm.planet.BuildAdminSet", runner_id="r",
-                workflow_id="w", flow_id="", step_id="s", state=TaskState.COMPLETED,
-                created=1000)
+    base = {"uuid": "t", "name": "osm.planet.BuildAdminSet", "runner_id": "r",
+            "workflow_id": "w", "flow_id": "", "step_id": "s",
+            "state": TaskState.COMPLETED, "created": 1000}
     base.update(kw)
     return TaskDefinition(**base)
 

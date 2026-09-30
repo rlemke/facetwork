@@ -9,8 +9,6 @@ checking could not see any of it, because none of them were links.
 import importlib.util
 import pathlib
 
-import pytest
-
 REPO = pathlib.Path(__file__).resolve().parents[1]
 MOD = REPO / "scripts" / "lib" / "_helpers" / "_doc_coderefs.py"
 
@@ -60,10 +58,6 @@ def test_resolves_accepts_a_path_relative_to_a_package_root():
 
 def test_the_repo_is_currently_clean():
     """Guards the fix itself: 0 stale refs and 0 stale protocol names."""
-    import io, contextlib
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        rc = dc.main.__wrapped__() if hasattr(dc.main, "__wrapped__") else None
     # main() parses argv; call the pieces directly instead
     bad = []
     for md in (REPO / "docs").rglob("*.md"):

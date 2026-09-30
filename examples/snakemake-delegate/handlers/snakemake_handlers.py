@@ -52,7 +52,6 @@ import signal
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
 
 from facetwork.runtime.errors import PermanentError
 from facetwork.runtime.handler_context import HandlerCancelled, HandlerContext

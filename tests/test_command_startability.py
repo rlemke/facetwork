@@ -7,9 +7,7 @@ on every host but the one it was written on — for its entire life, without eve
 looking broken, because exit 2 correctly does not alarm.
 """
 import importlib.util
-import os
 import stat
-import sys
 from pathlib import Path
 
 import pytest

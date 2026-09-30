@@ -1,5 +1,6 @@
 """Unit tests for the fw:sys control channel."""
 import pytest
+
 from facetwork.runtime.runner.service import RunnerService
 
 

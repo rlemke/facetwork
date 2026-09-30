@@ -12,8 +12,6 @@ silently would orphan each cache rather than move it.
 """
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from facetwork.domains.storage import DomainStorage, domain_storage, is_remote, join

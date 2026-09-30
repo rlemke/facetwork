@@ -40,7 +40,7 @@ import re
 import urllib.error
 import urllib.request
 
-UTC = dt.timezone.utc
+UTC = dt.timezone.utc  # noqa: UP017 — `osm-report` falls back to the SYSTEM python3, which is 3.9 on macOS (no dt.UTC)
 PBF_SUFFIX = "-latest.osm.pbf"
 
 

@@ -61,6 +61,7 @@ def test_a_finished_task_does_not_hold_the_slot(coll):
 def test_the_shipped_filter_matches_what_is_tested():
     """Guard against the code and these tests drifting apart."""
     import inspect
+
     from facetwork.runtime.mongo_store import base
     src = inspect.getsource(base)
     assert '"step_id": {"$gt": ""}' in src, (

@@ -14,8 +14,6 @@ worse than no test, because it is counted as coverage.
 """
 import dataclasses
 
-import pytest
-
 from facetwork.runtime.entities.server import ServerDefinition
 from facetwork.runtime.mongo_store.servers import ServerMixin
 

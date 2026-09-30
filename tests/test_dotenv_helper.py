@@ -12,8 +12,6 @@ from __future__ import annotations
 import pathlib
 import sys
 
-import pytest
-
 _HELPERS = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "lib" / "_helpers"
 sys.path.insert(0, str(_HELPERS))
 from _dotenv import load_env  # noqa: E402

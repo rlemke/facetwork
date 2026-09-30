@@ -7,11 +7,6 @@ serialises a nested dict in unstable key order.
 """
 from __future__ import annotations
 
-import json
-import textwrap
-
-import pytest
-
 from facetwork.handlers.compare_handlers import handle_summarise, handle_tabular
 
 BASE = 'id,name,other_tags,value\n1,alpha,"{""b"": 2, ""a"": 1}",10.0\n2,beta,"{""x"": 9}",20.0\n'

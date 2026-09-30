@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 import re
+import socket
 import subprocess
 import sys
 from urllib.parse import urlparse
@@ -303,7 +303,7 @@ def service_ips(*, log=None) -> dict[str, str]:
         if log:
             log(f"service-IP resolve failed ({exc}); falling back to one infra IP")
         if infra_ip:
-            out = {n: infra_ip for n in INFRA_HOST_NAMES}
+            out = dict.fromkeys(INFRA_HOST_NAMES, infra_ip)
     return out
 
 
@@ -383,7 +383,7 @@ def _rewrite_hosts(content: str, ip_or_map, names=INFRA_HOST_NAMES) -> str:
     rather than guessed at: writing a wrong address is worse than leaving a
     stale one, because the stale one is at least diagnosable.
     """
-    mapping = ({n: ip_or_map for n in names}
+    mapping = (dict.fromkeys(names, ip_or_map)
                if isinstance(ip_or_map, str) else dict(ip_or_map))
     nameset = set(names)
     seen: set[str] = set()
@@ -479,7 +479,7 @@ def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
     left afl-minio pointing at nothing.
     """
     say = log or (lambda _m: None)
-    mapping = ({n: ip_or_map for n in INFRA_HOST_NAMES}
+    mapping = (dict.fromkeys(INFRA_HOST_NAMES, ip_or_map)
                if isinstance(ip_or_map, str) else dict(ip_or_map))
     patched: list[str] = []
     for c in _runner_containers():

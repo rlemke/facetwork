@@ -36,12 +36,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import shutil
-import time
 import os
 import re
+import shutil
 import subprocess
 import sys
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ VERIFIED_MARKER = ".fw-verified"
 
 def _top_level_modules(pin: str) -> str:
     """Distribution name from a pin (``numpy==2.5.3``, ``pkg[extra]>=1``)."""
-    name = re.split(r"[<>=!~\[;\s]", pin.strip(), 1)[0].strip()
+    name = re.split(r"[<>=!~\[;\s]", pin.strip(), maxsplit=1)[0].strip()
     return name
 
 

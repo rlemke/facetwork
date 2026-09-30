@@ -109,8 +109,8 @@ def test_no_direct_boto3_client_remains():
     """
     import pathlib
     src = pathlib.Path(__file__).resolve().parents[1] / "facetwork/domains/toolstorage.py"
-    body = "\n".join(l for l in src.read_text().split("\n")
-                     if not l.strip().startswith("#") and '"""' not in l)
+    body = "\n".join(ln for ln in src.read_text().split("\n")
+                     if not ln.strip().startswith("#") and '"""' not in ln)
     assert "boto3.client" not in body
     assert "put_object" not in body and "get_object" not in body
     assert "get_storage_backend" in body

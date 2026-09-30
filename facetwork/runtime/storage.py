@@ -38,7 +38,7 @@ except ImportError:
 # boto3 is an optional dependency, soft-imported only when an s3:// path is used
 # (S3 / MinIO backend). The platform's only hard runtime dep stays minimal.
 try:
-    import boto3 as _boto3
+    import boto3  # noqa: F401 — availability probe; s3_client() imports it where used
     from botocore.config import Config as _BotoConfig
     from botocore.exceptions import ClientError as _BotoClientError
 

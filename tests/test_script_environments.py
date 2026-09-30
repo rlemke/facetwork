@@ -19,8 +19,8 @@ class TestScriptS3Credentials:
 
     def test_explicit_aws_env_is_not_overridden(self, monkeypatch):
         """An operator who set AWS_* deliberately must keep it."""
-        import os
         import subprocess as sp
+
         from facetwork.runtime import script_executor as se
         monkeypatch.setenv("FW_S3_ACCESS_KEY", "from-fw")
         monkeypatch.setenv("AWS_ACCESS_KEY_ID", "explicit")
@@ -38,6 +38,7 @@ class TestScriptS3Credentials:
 
     def test_fw_s3_is_mapped_when_aws_is_absent(self, monkeypatch):
         import subprocess as sp
+
         from facetwork.runtime import script_executor as se
         for k in ("AWS_ACCESS_KEY_ID", "AWS_ENDPOINT_URL"):
             monkeypatch.delenv(k, raising=False)
@@ -66,6 +67,7 @@ class TestScriptDeclaredReturns:
 
     def test_empty_result_against_declared_returns_raises_and_names_the_cause(self):
         import pytest
+
         from facetwork.runtime.base_runner import check_declared_returns
         with pytest.raises(RuntimeError) as ei:
             check_declared_returns(
@@ -140,7 +142,7 @@ def test_envbake_sweeps_every_root_that_declares_an_environment():
     import re
     root = pathlib.Path(__file__).resolve().parents[1]
     df = (root / "docker" / "Dockerfile.domain-runner").read_text()
-    envbake = [l for l in df.splitlines() if "facetwork.envbake" in l]
+    envbake = [ln for ln in df.splitlines() if "facetwork.envbake" in ln]
     assert envbake, "no envbake step in the Dockerfile"
     roots = set(re.findall(r"--root\s+(\S+)", envbake[0]))
 

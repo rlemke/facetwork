@@ -99,7 +99,7 @@ def test_reports_environment_as_provided_when_materialized(tmp_path):
     r = _check(tmp_path)
     assert r.returncode == 0, r.stderr
     assert "provided" in r.stdout
-    canonical_lines = [l for l in r.stdout.splitlines() if h[:7] in l]
+    canonical_lines = [ln for ln in r.stdout.splitlines() if h[:7] in ln]
     assert canonical_lines, f"no line mentions the canonical env {h[:7]}"
     for line in canonical_lines:
         assert "NOT materialized here" not in line, line

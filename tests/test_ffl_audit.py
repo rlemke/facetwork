@@ -33,7 +33,6 @@ from facetwork.ffl_audit import (
     scan_namespaces,
 )
 
-
 # --- dependency derivation --------------------------------------------------
 
 

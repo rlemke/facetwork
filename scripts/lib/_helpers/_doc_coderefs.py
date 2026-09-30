@@ -32,7 +32,6 @@ Two classes of check, because they fail differently:
     that import it are correct.
 """
 import argparse
-import os
 import pathlib
 import re
 import sys

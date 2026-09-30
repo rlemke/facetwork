@@ -268,7 +268,7 @@ def main():
     missing = {key: probe(interps[key], wanted[key]) for key in ("system", "venv")}
 
     broken, risk, ok = [], [], []
-    for name, path in cmds:
+    for name, _path in cmds:
         lang, key, mods = meta[name]
         gone = sorted(m for m in mods if m in missing.get(key, set()))
         if SYNTAX_ERROR in mods:

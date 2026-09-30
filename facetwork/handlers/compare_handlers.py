@@ -150,8 +150,7 @@ def _iter_records(path: str):
         keeps the two consistent.
         """
         try:
-            for ln in text_stream:
-                yield ln
+            yield from text_stream
         except (EOFError, OSError) as exc:
             logger.debug("truncated stream for %s: %s", path, exc)
 
@@ -529,9 +528,9 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
     pre = (scope_note + ". ") if scope_note else ""
 
     if only_e or only_a:
-        note = ("the %d shared record(s) match" % len(shared) if not changed
-                else "and %d of the %d shared record(s) also differ in values"
-                     % (len(changed), len(shared)))
+        note = (f"the {len(shared)} shared record(s) match" if not changed
+                else f"and {len(changed)} of the {len(shared)} shared record(s) "
+                     "also differ in values")
         ex = "; ".join(str(k) for k in sorted(only_e)[:max_ex]) or "-"
         return result("cardinality", False,
                       len(only_e) + len(only_a) + len(changed), ecount, acount,
