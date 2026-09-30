@@ -31,6 +31,7 @@ except ImportError:
     HAS_MONGOMOCK = False
 
 from facetwork.runtime.entities import User
+from tests import _site
 
 pytestmark_routes = pytest.mark.skipif(
     not (HAS_ROUTES and HAS_MONGOMOCK), reason="fastapi/mongomock not installed"
@@ -63,7 +64,7 @@ class TestSessionCookie:
 
         from facetwork.dashboard.auth import SESSION_COOKIE, make_session, read_session
 
-        val = make_session("user@test.local")
+        val = make_session(_site.email("user"))
 
         def req(cookie):
             scope = {
@@ -75,7 +76,7 @@ class TestSessionCookie:
             }
             return Request(scope)
 
-        assert read_session(req(val)) == "user@test.local"
+        assert read_session(req(val)) == _site.email("user")
         # ⚠️ Flip the last character to something it is NOT. The previous form
         # appended a fixed "00", which is a no-op whenever the signature already
         # ends in "00" — then the "tampered" cookie is the ORIGINAL, read_session
@@ -103,7 +104,7 @@ class TestLoginRoutes:
 
         mock_client = mongomock.MongoClient()
         store = MongoStore(database_name="afl_test_login", client=mock_client)
-        store.save_user(User(email="ralph@test.local", rights=["delete_runs"]))
+        store.save_user(User(email=_site.email("owner"), rights=["delete_runs"]))
 
         app = create_app()
         app.dependency_overrides[deps.get_store] = lambda: store
@@ -115,13 +116,13 @@ class TestLoginRoutes:
     def test_first_login_sets_password_and_session(self, client):
         tc, store = client
         # No password yet: submitting just the email enters setup mode.
-        r = tc.post("/login", data={"email": "ralph@test.local"})
+        r = tc.post("/login", data={"email": _site.email("owner")})
         assert r.status_code == 200 and "Set your password" in r.text
         # Setting it logs in and stores the hash.
         r = tc.post(
             "/login",
             data={
-                "email": "ralph@test.local",
+                "email": _site.email("owner"),
                 "new_password": "correct-horse",
                 "confirm_password": "correct-horse",
             },
@@ -129,45 +130,45 @@ class TestLoginRoutes:
         )
         assert r.status_code == 303
         assert "fw_session" in r.cookies
-        assert store.get_user("ralph@test.local").has_password
+        assert store.get_user(_site.email("owner")).has_password
 
     def test_login_wrong_password(self, client):
         tc, store = client
-        u = store.get_user("ralph@test.local")
+        u = store.get_user(_site.email("owner"))
         u.set_password("correct-horse")
         store.save_user(u)
-        r = tc.post("/login", data={"email": "ralph@test.local", "password": "nope"})
+        r = tc.post("/login", data={"email": _site.email("owner"), "password": "nope"})
         assert "Wrong password" in r.text
         assert "fw_session" not in r.cookies
 
     def test_session_identity_beats_acting_as_and_gates_rights(self, client, monkeypatch):
         tc, store = client
-        u = store.get_user("ralph@test.local")
+        u = store.get_user(_site.email("owner"))
         u.set_password("correct-horse")
         store.save_user(u)
-        store.save_user(User(email="mallory@test.local"))  # no rights, no password
+        store.save_user(User(email=_site.email("mallory")))  # no rights, no password
 
         # Auth is active (a password exists): acting-as cookie alone is ignored.
-        tc.cookies.set("afl_current_user", "ralph@test.local")
+        tc.cookies.set("afl_current_user", _site.email("owner"))
         r = tc.post("/api/runners/ghost/delete")
         assert r.status_code == 403  # anonymous — impersonation via cookie is dead
 
         # Log in: session identity + right => passes the gate (404 = fake id).
-        tc.post("/login", data={"email": "ralph@test.local", "password": "correct-horse"})
+        tc.post("/login", data={"email": _site.email("owner"), "password": "correct-horse"})
         r = tc.post("/api/runners/ghost/delete")
         assert r.status_code == 404
 
     def test_session_satisfies_mutation_token_guard(self, client, monkeypatch):
         tc, store = client
         monkeypatch.setenv("FW_DASHBOARD_TOKEN", "sekrit-token")
-        u = store.get_user("ralph@test.local")
+        u = store.get_user(_site.email("owner"))
         u.set_password("correct-horse")
         store.save_user(u)
 
         # login POST itself is exempt from the token guard
         r = tc.post(
             "/login",
-            data={"email": "ralph@test.local", "password": "correct-horse"},
+            data={"email": _site.email("owner"), "password": "correct-horse"},
             follow_redirects=False,
         )
         assert r.status_code == 303
@@ -177,10 +178,10 @@ class TestLoginRoutes:
 
     def test_logout_clears_session(self, client):
         tc, store = client
-        u = store.get_user("ralph@test.local")
+        u = store.get_user(_site.email("owner"))
         u.set_password("correct-horse")
         store.save_user(u)
-        tc.post("/login", data={"email": "ralph@test.local", "password": "correct-horse"})
+        tc.post("/login", data={"email": _site.email("owner"), "password": "correct-horse"})
         r = tc.post("/logout", follow_redirects=False)
         assert r.status_code == 303
         r = tc.post("/api/runners/ghost/delete")

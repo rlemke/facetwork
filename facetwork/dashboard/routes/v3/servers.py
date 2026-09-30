@@ -39,8 +39,10 @@ _DOT = {
 
 
 def _norm_host(name) -> str:
-    """fleet-agent records use 'server2.local'; runner heartbeats use 'server2'."""
-    return str(name or "").removesuffix(".local").lower()
+    """Same-machine key for agent (FQDN) and runner (short) records."""
+    from ....servers.catalog import host_key
+
+    return host_key(name)
 
 
 @router.get("/servers")

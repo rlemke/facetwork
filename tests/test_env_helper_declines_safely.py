@@ -1,6 +1,6 @@
 """_env.sh must not kill a `set -e` caller when a lookup merely DECLINES.
 
-Regression for the 2026-09-18 macmini02 outage: the catalog fallback in
+Regression for a 2026-09-18 runner-host outage: the catalog fallback in
 _env.sh assigned from a command substitution whose python exits 1 to mean
 "I could not resolve this". A failing command substitution is a failing
 command, so under the caller's `set -e` a declined lookup aborted the caller

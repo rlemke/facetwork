@@ -1,9 +1,9 @@
 """A runner must not claim work it cannot finish.
 
-Motivation, measured 2026-08-26: MaxPro (7.75 GiB Docker VM) and server3
+Motivation, measured 2026-08-26: a heavy-tier laptop (7.75 GiB Docker VM) and the infra host
 (13.63 GiB) are BOTH in the `heavy` server group, so group-based placement could
-not tell them apart. MaxPro claimed a German Kreise split, OOM'd at a 5.8 GB
-budget, failed, and only then retried onto server3. Resource-aware claim routing
+not tell them apart. The laptop claimed a German Kreise split, OOM'd at a 5.8 GB
+budget, failed, and only then retried onto the infra host. Resource-aware claim routing
 turns that accept-then-fail into a skip.
 
 Follows the two capability dimensions the claim already had (environment_hash,
@@ -39,7 +39,7 @@ def test_a_task_with_no_requirements_is_claimable_by_anyone():
 
 
 def test_the_small_host_declines_what_it_cannot_finish():
-    """The exact 2026-08-26 case: 10 GB floor vs MaxPro's 7.75 GiB."""
+    """The exact 2026-08-26 case: 10 GB floor vs the laptop's 7.75 GiB."""
     assert _claim(_store(memory_gb=10), SMALL) is None
 
 

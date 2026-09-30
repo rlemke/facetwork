@@ -21,6 +21,8 @@ import subprocess
 
 import pytest
 
+from tests import _site
+
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
@@ -33,6 +35,10 @@ def _load_lib():
 
 
 fl = _load_lib()
+
+# No registry or host name is spelled here -- each is a ROLE from tests/_site.py.
+REG = f"{_site.host('registry')}:5050"
+MAC, NUC, TINY, UNKNOWN_ARCH = (_site.host(r) for r in ("arm-host", "x86-host", "small-x86-host", "arch-unknown-host"))
 
 
 # --- normalisation ---------------------------------------------------------
@@ -53,11 +59,11 @@ def test_normalize_arch(raw, want):
 
 
 def test_private_registry_ref_is_split():
-    assert fl._split_image_ref("server3.local:5050/osm-gh-router:3c2e7fd") == (
-        "server3.local:5050", "osm-gh-router", "3c2e7fd")
+    assert fl._split_image_ref(f"{REG}/osm-gh-router:3c2e7fd") == (
+        f"{REG}", "osm-gh-router", "3c2e7fd")
     assert fl._split_image_ref("localhost/x") == ("localhost", "x", "latest")
-    assert fl._split_image_ref("reg.example.com/a/b@sha256:ab") == (
-        "reg.example.com", "a/b", "sha256:ab")
+    dotted = _site.host("dotted-registry")
+    assert fl._split_image_ref(f"{dotted}/a/b@sha256:ab") == (dotted, "a/b", "sha256:ab")
 
 
 def test_docker_hub_ref_is_not_ours_to_read():
@@ -91,14 +97,14 @@ def test_image_archs_reads_single_arch_from_config_blob(monkeypatch):
         assert url.endswith("/blobs/sha256:cfg")
         return {"architecture": "arm64", "os": "linux"}
     monkeypatch.setattr(fl, "_registry_json", fake)
-    assert fl.image_archs("server3.local:5050/osm-gh-router:f2ee20c") == {"arm64"}
+    assert fl.image_archs(f"{REG}/osm-gh-router:f2ee20c") == {"arm64"}
 
 
 def test_image_archs_unreachable_registry_is_unknown(monkeypatch):
     def boom(url, accept, timeout):
         raise OSError("connection refused")
     monkeypatch.setattr(fl, "_registry_json", boom)
-    assert fl.image_archs("server3.local:5050/osm-gh-router:x") is None
+    assert fl.image_archs(f"{REG}/osm-gh-router:x") is None
 
 
 def test_host_docker_internal_is_read_via_localhost(monkeypatch):
@@ -118,22 +124,22 @@ def test_host_docker_internal_is_read_via_localhost(monkeypatch):
 
 def test_refuses_on_positive_evidence_only(monkeypatch):
     monkeypatch.setattr(fl, "image_archs", lambda image, **k: {"arm64"})
-    why = fl.image_arch_refusal("r:5050/osm-gh-router:t", host_arch="amd64")
+    why = fl.image_arch_refusal(f"{REG}/osm-gh-router:t", host_arch="amd64")
     assert why and "arm64" in why and "linux/amd64" in why
-    assert fl.image_arch_refusal("r:5050/osm-gh-router:t", host_arch="arm64") is None
+    assert fl.image_arch_refusal(f"{REG}/osm-gh-router:t", host_arch="arm64") is None
 
 
 def test_unknown_platforms_permit(monkeypatch):
     # An unreadable registry is already fatal to the pull that follows; refusing
     # here too would only swap compose's error for a vaguer one.
     monkeypatch.setattr(fl, "image_archs", lambda image, **k: None)
-    assert fl.image_arch_refusal("r:5050/x:t", host_arch="amd64") is None
+    assert fl.image_arch_refusal(f"{REG}/x:t", host_arch="amd64") is None
 
 
 def test_multi_arch_image_is_never_refused(monkeypatch):
     monkeypatch.setattr(fl, "image_archs", lambda image, **k: {"amd64", "arm64"})
     for arch in ("amd64", "arm64"):
-        assert fl.image_arch_refusal("r:5050/x:t", host_arch=arch) is None
+        assert fl.image_arch_refusal(f"{REG}/x:t", host_arch=arch) is None
 
 
 # --- the fleet-wide requirement ----------------------------------------------
@@ -147,14 +153,14 @@ def _catalog(tmp_path, monkeypatch, servers):
 
 def test_fleet_archs_follow_the_roles_server_groups(tmp_path, monkeypatch):
     _catalog(tmp_path, monkeypatch, [
-        {"name": "mac.local", "group": "heavy", "capacity": {"arch": "arm64"}},
-        {"name": "nuc.local", "group": "heavy", "capacity": {"arch": "x86_64"}},
-        {"name": "tiny.local", "group": "runner", "capacity": {"arch": "x86_64"}},
-        {"name": "unknown.local", "group": "heavy"},
+        {"name": MAC, "group": "heavy", "capacity": {"arch": "arm64"}},
+        {"name": NUC, "group": "heavy", "capacity": {"arch": "x86_64"}},
+        {"name": TINY, "group": "runner", "capacity": {"arch": "x86_64"}},
+        {"name": UNKNOWN_ARCH, "group": "heavy"},
     ])
-    assert fl.fleet_archs(["heavy"]) == {"mac.local": "arm64", "nuc.local": "amd64"}
+    assert fl.fleet_archs(["heavy"]) == {MAC: "arm64", NUC: "amd64"}
     # No server_groups = every host, the same rule role_in_group applies.
-    assert set(fl.fleet_archs(None)) == {"mac.local", "nuc.local", "tiny.local"}
+    assert set(fl.fleet_archs(None)) == {MAC, NUC, TINY}
 
 
 # --- the agent's drift check -------------------------------------------------
@@ -184,30 +190,30 @@ def _ps(monkeypatch, lines):
 def test_drift_compares_each_container_with_its_own_repo(monkeypatch):
     wrong = _load_agent_fn()
     _ps(monkeypatch, [
-        "facetwork-runner-ffl-1\treg:5050/facetwork-runner:new",
-        "facetwork-runner-gh-router-1\treg:5050/osm-gh-router:old",
+        f"facetwork-runner-ffl-1\t{REG}/facetwork-runner:new",
+        f"facetwork-runner-gh-router-1\t{REG}/osm-gh-router:old",
     ])
     # The runner is on its tag; the gh-router is on the OLD pin -> repaired.
-    assert wrong("reg:5050/facetwork-runner:new", "reg:5050/osm-gh-router:new") == [
+    assert wrong(f"{REG}/facetwork-runner:new", f"{REG}/osm-gh-router:new") == [
         "facetwork-runner-gh-router-1"]
 
 
 def test_unpinned_foreign_repo_is_left_alone(monkeypatch):
     wrong = _load_agent_fn()
     _ps(monkeypatch, [
-        "facetwork-runner-ffl-1\treg:5050/facetwork-runner:new",
-        "facetwork-runner-gh-router-1\treg:5050/osm-gh-router:whatever",
+        f"facetwork-runner-ffl-1\t{REG}/facetwork-runner:new",
+        f"facetwork-runner-gh-router-1\t{REG}/osm-gh-router:whatever",
     ])
     # No gh-router pin for this host (gated out): never a recreate loop.
-    assert wrong("reg:5050/facetwork-runner:new", None) == []
+    assert wrong(f"{REG}/facetwork-runner:new", None) == []
 
 
 def test_registry_port_is_not_mistaken_for_a_tag(monkeypatch):
     wrong = _load_agent_fn()
-    _ps(monkeypatch, ["facetwork-runner-x-1\treg:5050/facetwork-runner",
-                      "facetwork-runner-y-1\treg:5050/facetwork-runner:latest"])
-    # Untagged means :latest -- repo "reg:5050/facetwork-runner", never repo
-    # "reg" with tag "5050/facetwork-runner".
-    assert wrong("reg:5050/facetwork-runner:latest") == []
-    assert wrong("reg:5050/facetwork-runner:new") == [
+    _ps(monkeypatch, [f"facetwork-runner-x-1\t{REG}/facetwork-runner",
+                      f"facetwork-runner-y-1\t{REG}/facetwork-runner:latest"])
+    # Untagged means :latest -- repo "<registry>:<port>/facetwork-runner", never
+    # repo "<registry>" with tag "<port>/facetwork-runner".
+    assert wrong(f"{REG}/facetwork-runner:latest") == []
+    assert wrong(f"{REG}/facetwork-runner:new") == [
         "facetwork-runner-x-1", "facetwork-runner-y-1"]

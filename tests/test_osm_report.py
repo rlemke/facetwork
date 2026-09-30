@@ -12,6 +12,8 @@ import re
 
 import pytest
 
+from tests import _site
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SETS = ROOT / "scripts" / "lib" / "svc" / "_osm-admin-sets.json"
 
@@ -165,9 +167,12 @@ def test_an_unavailable_census_reference_is_not_a_clean_bill():
 
 # --- publication safety ----------------------------------------------------
 
+# Generic shapes of an infrastructure identifier, plus this deployment's own
+# host names -- read at runtime (tests/_site.py), so none is spelled here.
 IDENTIFIER = re.compile(
-    r"server\d+\.local|maxpro|afl-[a-z]+|192\.168|localhost|:\d{4}|"
-    r"\b\d{1,3}(?:\.\d{1,3}){3}\b", re.I)
+    "|".join([r"\b[\w-]+\.local\b", r"afl-[a-z]+", r"localhost", r":\d{4}",
+              r"\b\d{1,3}(?:\.\d{1,3}){3}\b",
+              *(re.escape(n) for n in _site.forbidden_names())]), re.I)
 
 
 def _render_full():
@@ -192,7 +197,7 @@ def _render_full():
 
 def test_the_rendered_report_carries_no_hostnames_endpoints_or_ips():
     """⚠️ The report is published. It must not carry infrastructure identifiers,
-    and it did — server3.local, localhost:9000 and :8088 — into every copy."""
+    and it did — the infra host's name, localhost:9000 and :8088 — into every copy."""
     _, md, html = _render_full()
     assert not IDENTIFIER.findall(md), IDENTIFIER.findall(md)[:5]
     assert not IDENTIFIER.findall(html), IDENTIFIER.findall(html)[:5]
@@ -204,7 +209,7 @@ def test_the_generating_host_is_a_stable_label_that_still_distinguishes_hosts():
     assert R.host_label("a") == R.host_label("a")
     assert R.host_label("a") != R.host_label("b")
     assert "a" not in R.host_label("a").split("-")[1] or True   # opaque
-    assert IDENTIFIER.search(R.host_label("some-host.local")) is None
+    assert IDENTIFIER.search(R.host_label(_site.host("some-host"))) is None
 
 
 def test_the_rebuild_instructions_are_derived_from_the_sets_file():

@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from tests import _site
+
 _FLEET_LIB = (
     Path(__file__).resolve().parent.parent / "scripts" / "lib" / "_helpers" / "_fleet_lib.py"
 )
@@ -101,22 +103,25 @@ def test_parse_role_groups_rejects_missing_colon():
 def test_rewrite_hosts_repoints_afl_names():
     """Every afl-* entry moves to the new IP; unrelated lines are preserved and
     a missing afl-* name is added (so a stale/IPv6 mapping can't survive)."""
+    lo, old, new = _site.loopback(), _site.ip("infra-before"), _site.ip("infra-after")
+    other, stale6 = _site.ip("unrelated-host"), _site.ip6("stale-v6-mapping")
     before = (
-        "127.0.0.1\tlocalhost\n"
-        "192.0.2.10\tafl-mongodb\n"
-        "fd00::2\tafl-minio\n"
-        "198.51.100.5\tsome-other-host\n"
+        f"{lo}\tlocalhost\n"
+        f"{old}\tafl-mongodb\n"
+        f"{stale6}\tafl-minio\n"
+        f"{other}\tsome-other-host\n"
     )
-    after = fl._rewrite_hosts(before, "192.0.2.20")
+    after = fl._rewrite_hosts(before, new)
     lines = after.splitlines()
-    assert "192.0.2.20\tafl-mongodb" in lines
-    assert "192.0.2.20\tafl-minio" in lines
-    assert "192.0.2.20\tafl-postgres" in lines  # missing one added
-    assert "198.51.100.5\tsome-other-host" in lines  # unrelated untouched
-    assert "127.0.0.1\tlocalhost" in lines
-    assert "192.0.2.10" not in after and "fd00::2" not in after  # stale gone
+    assert f"{new}\tafl-mongodb" in lines
+    assert f"{new}\tafl-minio" in lines
+    assert f"{new}\tafl-postgres" in lines  # missing one added
+    assert f"{other}\tsome-other-host" in lines  # unrelated untouched
+    assert f"{lo}\tlocalhost" in lines
+    assert old not in after and stale6 not in after  # stale gone
 
 
 def test_rewrite_hosts_idempotent():
-    once = fl._rewrite_hosts("127.0.0.1\tlocalhost\n", "198.51.100.1")
-    assert fl._rewrite_hosts(once, "198.51.100.1") == once  # no churn when current
+    ip = _site.ip("infra")
+    once = fl._rewrite_hosts(f"{_site.loopback()}\tlocalhost\n", ip)
+    assert fl._rewrite_hosts(once, ip) == once  # no churn when current

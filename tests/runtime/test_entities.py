@@ -42,6 +42,7 @@ from facetwork.runtime.entities import (
     # Workflow and execution
     WorkflowDefinition,
 )
+from tests import _site
 
 
 class TestSupportingTypes:
@@ -263,14 +264,14 @@ class TestServerAndLocks:
             server_group="workers",
             service_name="afl-worker",
             server_name="worker-01",
-            server_ips=["192.0.2.100"],
+            server_ips=[_site.ip("server")],
             topics=["workflow.events"],
             handlers=["StepHandler", "EventHandler"],
             state=ServerState.RUNNING,
         )
         assert server.uuid == "server-123"
         assert server.state == "running"
-        assert "192.0.2.100" in server.server_ips
+        assert _site.ip("server") in server.server_ips
 
     def test_server_states(self):
         """Test ServerState constants."""

@@ -5,12 +5,13 @@
 runs its agent, applies fleet_config, starts runners and claims work, while every
 pull, installer and rollout skips it.
 
-Measured 2026-09-18: atopnuc02 was applying v217 with 2/2 runners up while no
-host in the fleet could ssh to it, and it silently missed two rounds of fixes.
+Measured 2026-09-18: a light-tier host was applying v217 with 2/2 runners up
+while no host in the fleet could ssh to it, and it silently missed two rounds of
+fixes.
 Neither fact is wrong alone; only the pair is, which is why nothing reported it.
 
 The flag is gated on LIVE RUNNERS rather than on having a fleet-agent record,
-because a retired host keeps its record (macmini01: applied hours ago, 0 runners)
+because a retired host keeps its record (one such host: applied hours ago, 0 runners)
 and flagging every retirement forever trains you to skip the warning.
 """
 
@@ -22,6 +23,8 @@ import json
 from pathlib import Path
 
 import pytest
+
+from tests import _site
 
 REPO = Path(__file__).resolve().parents[1]
 MOD = REPO / "scripts" / "lib" / "fleet" / "config"
@@ -45,6 +48,17 @@ def _load():
     return mod
 
 
+class _Host:
+    """A catalog entry's FQDN and short alias, both generated (tests/_site.py)."""
+
+    def __init__(self, role: str) -> None:
+        self.name = _site.host(role)
+        self.alias = self.name.split(".")[0]
+
+
+IN, OUT, YES = _Host("joined-by-default"), _Host("not-joined"), _Host("joined-explicitly")
+
+
 def _write_catalog(tmp_path: Path, servers: list[dict]) -> Path:
     f = tmp_path / "servers.json"
     f.write_text(json.dumps({"servers": servers}), encoding="utf-8")
@@ -54,14 +68,14 @@ def _write_catalog(tmp_path: Path, servers: list[dict]) -> Path:
 def test_reads_the_not_joined_set(tmp_path, monkeypatch) -> None:
     mod = _load()
     _write_catalog(tmp_path, [
-        {"name": "in01.local", "aliases": ["in01"]},                  # absent = joined
-        {"name": "out02.local", "aliases": ["out02"], "joined": False},
-        {"name": "yes03.local", "aliases": ["yes03"], "joined": True},
+        {"name": IN.name, "aliases": [IN.alias]},                    # absent = joined
+        {"name": OUT.name, "aliases": [OUT.alias], "joined": False},
+        {"name": YES.name, "aliases": [YES.alias], "joined": True},
     ])
     monkeypatch.setenv("FW_SERVERS_FILE", str(tmp_path / "servers.json"))
     got = mod._catalogued_not_joined()
-    assert "out02" in got, got
-    assert "in01" not in got and "yes03" not in got, got
+    assert OUT.alias in got, got
+    assert IN.alias not in got and YES.alias not in got, got
 
 
 def test_missing_catalog_is_not_fatal(tmp_path, monkeypatch) -> None:

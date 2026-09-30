@@ -3,14 +3,13 @@
 ⚠️ Why this exists. `registration_module_available` was `find_spec` alone, which
 LOCATES a module and never executes it. A module whose first line is an
 impossible import passed, so the function did not test the thing its own
-docstring promised. That is how macmini01 advertised 265 facets it could not
+docstring promised. That is how a host below the x86-64-v2 baseline advertised 265 facets it could not
 execute: its 2009 CPU (no SSE4.2/POPCNT, so no x86-64-v2) cannot run the image's
 numpy, every handler module importing numpy raises, and every one of them was
 located successfully. The tasks then failed at DISPATCH, burning retry budget,
 while the host reported healthy.
 """
 import json
-import os
 import sys
 import textwrap
 
@@ -37,7 +36,7 @@ def _module(tmp_path, monkeypatch, name, body):
 
 
 def test_a_module_that_locates_but_cannot_import_is_rejected(tmp_path, monkeypatch):
-    """THE macmini01 CASE — and the one find_spec alone passed."""
+    """THE PRE-x86-64-v2 HOST CASE — and the one find_spec alone passed."""
     n = _module(tmp_path, monkeypatch, "brokenhandler", """
         import a_module_that_cannot_possibly_exist
         def handle(params): return {}

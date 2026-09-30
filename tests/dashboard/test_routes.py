@@ -1582,7 +1582,9 @@ namespace test_ns {
         # Import _collect_workflows from seed
         import sys
 
-        sys.path.insert(0, "/Users/ralph_lemke/facetwork")
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # the repo root, wherever it is
         from docker.seed.seed import _collect_workflows
 
         workflows = _collect_workflows(program_dict)

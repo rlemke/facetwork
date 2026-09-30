@@ -291,12 +291,15 @@ def cmd_get(a):
 def _host_key(name) -> str:
     """Normalize a host name for matching.
 
-    The agent records itself as ``server3.local`` while runners register as
-    ``server3``, so the two collections never joined — every host displayed
-    "no fleet-agent record" and the drift column was meaningless.
+    The agent records its FQDN while runners register a short hostname, so the
+    two collections never joined — every host displayed "no fleet-agent record"
+    and the drift column was meaningless. See catalog.host_key.
     """
-    s = str(name or "?").strip()
-    return s[:-6] if s.endswith(".local") else s
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from facetwork.servers.catalog import host_key  # noqa: PLC0415 - one rule, fleet-wide
+    return host_key(name)
 
 
 

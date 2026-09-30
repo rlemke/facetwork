@@ -2,7 +2,7 @@
 
 `registration_module_available` imports a handler MODULE, which is necessary but
 not sufficient: a dependency imported inside a FUNCTION is never exercised by
-importing the module. Measured on macmini01 (2009 Core 2 Duo, no SSE4.2/POPCNT):
+importing the module. Measured on a 2009 Core 2 Duo host (no SSE4.2/POPCNT):
 `osm_geocoder` imported fine, `numpy` did not, and the host kept advertising 265
 handlers of which 122 were numpy-dependent. No per-handler declaration fixes
 that, because it depends on where an author put an import statement.
@@ -43,7 +43,7 @@ def handler_file(tmp_path: Path) -> Path:
 
 
 def _broken_module(tmp_path: Path, name: str, exc: str) -> None:
-    """An installed module that raises on import — the macmini01 shape."""
+    """An installed module that raises on import — the pre-x86-64-v2 host shape."""
     (tmp_path / f"{name}.py").write_text(f"raise {exc}\n", encoding="utf-8")
     sys.path.insert(0, str(tmp_path))
 

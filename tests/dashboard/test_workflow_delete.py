@@ -33,6 +33,7 @@ except ImportError:
 from facetwork.runtime.entities import StepLogEntry, TaskDefinition
 from facetwork.runtime.memory_store import MemoryStore
 from facetwork.runtime.step import StepDefinition
+from tests import _site
 
 pytestmark_routes = pytest.mark.skipif(
     not FASTAPI_AVAILABLE or not MONGOMOCK_AVAILABLE,
@@ -171,12 +172,12 @@ class TestDeleteRunnerRoutes:
         from facetwork.runtime.entities import User
         from facetwork.runtime.entities.user import RIGHT_DELETE_RUNS
 
-        store.save_user(User(email="deleter@test.local", rights=[RIGHT_DELETE_RUNS]))
+        store.save_user(User(email=_site.email("deleter"), rights=[RIGHT_DELETE_RUNS]))
 
         app = create_app()
         app.dependency_overrides[deps.get_store] = lambda: store
         with TestClient(app) as tc:
-            tc.cookies.set(CURRENT_USER_COOKIE, "deleter@test.local")
+            tc.cookies.set(CURRENT_USER_COOKIE, _site.email("deleter"))
             yield tc, store
         store.drop_database()
         store.close()

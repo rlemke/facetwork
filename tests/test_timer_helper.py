@@ -3,7 +3,7 @@
 ⚠️ Why: every service installer (osm-extracts, osm-replicate, osm-watchdog,
 osm-admin-regen, stocks-snapshot) guarded on `uname != Darwin` and EXITED 1.
 That was invisible while the fleet was two Macs. It is now majority Linux
-(beelink01, three macminis, two atopnucs), so these services were installable on
+(the Linux runner hosts), so these services were installable on
 2 hosts of 7 — and the OSM role could not move to the box with the RAM to run
 it, which is what surfaced this.
 

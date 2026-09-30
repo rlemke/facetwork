@@ -7,6 +7,20 @@ import json
 import pytest
 
 from facetwork.servers import catalog
+from tests import _site
+
+
+# No host name or address is spelled here -- each is a ROLE from tests/_site.py.
+INFRA = _site.host("infra")
+WORKER = _site.host("worker")
+EXTRA = _site.host("extra")
+UNCATALOGUED = _site.host("not-in-catalog")
+PINNED_IP = _site.ip("pinned")
+RESOLVED_IP = _site.ip("resolved")
+SELF_IP = _site.ip("this-host")
+OTHER_IP = _site.ip("other-host")
+LOOPBACK = _site.loopback()
+
 
 
 @pytest.fixture()
@@ -16,7 +30,7 @@ def cat(tmp_path, monkeypatch):
         "version": 1,
         "servers": [
             {
-                "name": "infra.local",
+                "name": INFRA,
                 "aliases": ["afl-mongodb", "afl-minio"],
                 "purpose": "infra",
                 "group": "heavy",
@@ -24,12 +38,12 @@ def cat(tmp_path, monkeypatch):
                 "ip_pin": None,
             },
             {
-                "name": "worker.local",
+                "name": WORKER,
                 "aliases": [],
                 "purpose": "runner",
                 "group": "runner",
                 "infra": False,
-                "ip_pin": "203.0.113.7",
+                "ip_pin": PINNED_IP,
             },
         ],
     }
@@ -41,25 +55,25 @@ def cat(tmp_path, monkeypatch):
 
 def test_servers_and_find(cat):
     names = [s["name"] for s in catalog.servers()]
-    assert names == ["infra.local", "worker.local"]
-    assert catalog.find("afl-mongodb")["name"] == "infra.local"
-    assert catalog.find("worker.local")["purpose"] == "runner"
+    assert names == [INFRA, WORKER]
+    assert catalog.find("afl-mongodb")["name"] == INFRA
+    assert catalog.find(WORKER)["purpose"] == "runner"
     assert catalog.find("nope") is None
 
 
 def test_infra_and_alias_map(cat):
-    assert catalog.infra()["name"] == "infra.local"
-    assert catalog.alias_map() == {"afl-mongodb": "infra.local", "afl-minio": "infra.local"}
+    assert catalog.infra()["name"] == INFRA
+    assert catalog.alias_map() == {"afl-mongodb": INFRA, "afl-minio": INFRA}
 
 
 def test_resolve_ip_pin_wins_and_unknown_none(cat):
-    assert catalog.resolve_ip("worker.local") == "203.0.113.7"
+    assert catalog.resolve_ip(WORKER) == PINNED_IP
     assert catalog.resolve_ip("unknown-host") is None
 
 
 def test_resolve_ip_live_resolution(cat, monkeypatch):
-    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: "192.0.2.5")
-    assert catalog.resolve_ip("afl-minio") == "192.0.2.5"
+    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: RESOLVED_IP)
+    assert catalog.resolve_ip("afl-minio") == RESOLVED_IP
 
 
 def test_resolve_ip_failure_returns_none(cat, monkeypatch):
@@ -67,7 +81,7 @@ def test_resolve_ip_failure_returns_none(cat, monkeypatch):
         raise OSError("no dns")
 
     monkeypatch.setattr(catalog.socket, "gethostbyname", boom)
-    assert catalog.resolve_ip("infra.local") is None
+    assert catalog.resolve_ip(INFRA) is None
 
 
 def test_local_override_merge(cat, monkeypatch):
@@ -80,7 +94,7 @@ def test_local_override_merge(cat, monkeypatch):
             {
                 "servers": [
                     {
-                        "name": "worker.local",
+                        "name": WORKER,
                         "aliases": ["w2"],
                         "purpose": "renamed",
                         "group": "runner",
@@ -88,7 +102,7 @@ def test_local_override_merge(cat, monkeypatch):
                         "ip_pin": None,
                     },
                     {
-                        "name": "extra.local",
+                        "name": EXTRA,
                         "aliases": [],
                         "purpose": "added",
                         "group": "runner",
@@ -96,14 +110,14 @@ def test_local_override_merge(cat, monkeypatch):
                         "ip_pin": None,
                     },
                 ],
-                "_remove": ["infra.local"],
+                "_remove": [INFRA],
             }
         )
     )
     monkeypatch.setattr(catalog, "LOCAL_OVERRIDE", override)
     names = {s["name"] for s in catalog.servers()}
-    assert names == {"worker.local", "extra.local"}
-    assert catalog.find("worker.local")["purpose"] == "renamed"
+    assert names == {WORKER, EXTRA}
+    assert catalog.find(WORKER)["purpose"] == "renamed"
     assert catalog.infra() is None
 
 
@@ -114,17 +128,17 @@ def test_local_override_merge(cat, monkeypatch):
 
 def test_container_ip_remote_infra_is_the_resolved_address(cat, monkeypatch):
     """Infra on another machine: containers still get its live address."""
-    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: "192.0.2.5")
-    monkeypatch.setattr(catalog, "_local_addresses", lambda: {"127.0.0.1", "198.51.100.9"})
+    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: RESOLVED_IP)
+    monkeypatch.setattr(catalog, "_local_addresses", lambda: {LOOPBACK, SELF_IP})
     monkeypatch.setattr(catalog.socket, "gethostname", lambda: "someone-else")
-    assert catalog.container_ip() == "192.0.2.5"
+    assert catalog.container_ip() == RESOLVED_IP
 
 
 def test_container_ip_self_infra_is_the_gateway_alias(cat, monkeypatch):
     """Infra on THIS machine: never an address — a reboot onto a new DHCP lease
     must not strand the containers on an IP that no longer exists."""
-    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: "198.51.100.9")
-    monkeypatch.setattr(catalog, "_local_addresses", lambda: {"127.0.0.1", "198.51.100.9"})
+    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: SELF_IP)
+    monkeypatch.setattr(catalog, "_local_addresses", lambda: {LOOPBACK, SELF_IP})
     monkeypatch.setattr(catalog.socket, "gethostname", lambda: "someone-else")
     assert catalog.container_ip() == catalog.HOST_GATEWAY
 
@@ -136,23 +150,23 @@ def test_container_ip_self_by_hostname_without_dns(cat, monkeypatch):
         raise OSError("no dns")
 
     monkeypatch.setattr(catalog.socket, "gethostbyname", boom)
-    monkeypatch.setattr(catalog.socket, "gethostname", lambda: "infra")
+    monkeypatch.setattr(catalog.socket, "gethostname", lambda: INFRA.split(".")[0])
     assert catalog.container_ip() == catalog.HOST_GATEWAY
 
 
 def test_container_ip_pin_wins_over_gateway(cat, monkeypatch):
     """An explicit ip_pin is a deliberate choice — it outranks the alias."""
-    monkeypatch.setattr(catalog.socket, "gethostname", lambda: "worker")
-    assert catalog.container_ip("worker.local") == "203.0.113.7"
+    monkeypatch.setattr(catalog.socket, "gethostname", lambda: WORKER.split(".")[0])
+    assert catalog.container_ip(WORKER) == PINNED_IP
 
 
 def test_container_ip_uncatalogued_name_still_resolves(cat, monkeypatch):
     """FW_INFRA_HOST may name a host nobody catalogued; that must not become
     'unresolved' (it was plain gethostbyname before this call replaced it)."""
-    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: "192.0.2.9")
-    monkeypatch.setattr(catalog, "_local_addresses", lambda: {"127.0.0.1"})
+    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: OTHER_IP)
+    monkeypatch.setattr(catalog, "_local_addresses", lambda: {LOOPBACK})
     monkeypatch.setattr(catalog.socket, "gethostname", lambda: "someone-else")
-    assert catalog.container_ip("not-in-catalog.local") == "192.0.2.9"
+    assert catalog.container_ip(UNCATALOGUED) == OTHER_IP
 
 
 def test_host_list_falls_back_to_the_catalog():
@@ -175,7 +189,7 @@ def test_host_list_falls_back_to_the_catalog():
 
 def test_the_fallback_skips_unreachable_and_self():
     """A catalogued machine that is simply POWERED OFF is not an error — treating
-    it as one turns 'server1 is down' into a failed rollout. And every caller acts
+    it as one turns 'one host is down' into a failed rollout. And every caller acts
     on this host locally, not over ssh."""
     import pathlib
     src = (pathlib.Path(__file__).resolve().parents[1]

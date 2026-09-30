@@ -36,6 +36,7 @@ def test_no_registration_site_can_omit_it():
     default_factory makes omission impossible.
     """
     import dataclasses
+
     from facetwork.runtime.entities.server import ServerDefinition, container_id
     f = {x.name: x for x in dataclasses.fields(ServerDefinition)}["container"]
     assert f.default_factory is container_id, "must be a default_factory, not a default"
@@ -103,7 +104,7 @@ def test_a_foreign_agent_image_is_exempt_not_flagged():
 
 
 def test_a_container_on_an_old_tag_is_its_own_finding():
-    """⚠️ A real problem the check surfaced: macmini02's generalist was left running
+    """⚠️ A real problem the check surfaced: one host's generalist was left running
     when the host was promoted to 'heavy', so the rollout never recreated it — the
     agent brings roles UP and does not recreate a role it is no longer asked to
     run. It sat on an old image indefinitely. That is not "unregistered"; it is
@@ -127,7 +128,7 @@ def test_the_checker_has_a_registration_grace_period():
     """⚠️ Registration is not instant — the generalist seeds 21 domains and loads
     several hundred handlers first. A container younger than that ALWAYS looks
     unregistered, so without a grace period the check fires on every fresh join
-    and after every rollout. Measured on macmini03: a 7-second-old generalist was
+    and after every rollout. Measured on one host: a 7-second-old generalist was
     flagged and was fine 20 seconds later.
     """
     src = (REPO / "scripts/lib/fleet/unregistered").read_text()

@@ -35,8 +35,10 @@ _ALIVE_MS = 120_000  # heartbeat freshness window
 
 
 def _norm(host) -> str:
-    """fleet-agent records use 'server2.local'; runner heartbeats use 'server2'."""
-    return str(host or "?").removesuffix(".local")
+    """Same-machine key for agent (FQDN) and runner (short) records."""
+    from ....servers.catalog import host_key
+
+    return host_key(host)
 
 
 def _fleet_data(store) -> dict:

@@ -49,6 +49,7 @@ from facetwork.runtime.entities import (
 from facetwork.runtime.persistence import IterationChanges
 from facetwork.runtime.step import StepDefinition
 from facetwork.runtime.types import StepId, VersionInfo, block_id, step_id, workflow_id
+from tests import _site
 
 
 def _use_real_mongodb(request) -> bool:
@@ -1016,7 +1017,7 @@ class TestServerOperations:
             server_group="workers",
             service_name="afl-worker",
             server_name="worker-01",
-            server_ips=["192.0.2.100"],
+            server_ips=[_site.ip("server")],
             topics=["workflow.events"],
             handlers=["StepHandler"],
             handled=[HandledCount(handler="StepHandler", handled=10)],
@@ -1034,14 +1035,14 @@ class TestServerOperations:
 
     def test_get_servers_by_state(self, mongo_store):
         """Test getting servers by state."""
-        server1 = ServerDefinition(
+        running_server = ServerDefinition(
             uuid="s-1",
             server_group="workers",
             service_name="facetwork",
             server_name="w-1",
             state=ServerState.RUNNING,
         )
-        server2 = ServerDefinition(
+        stopped_server = ServerDefinition(
             uuid="s-2",
             server_group="workers",
             service_name="facetwork",
@@ -1049,8 +1050,8 @@ class TestServerOperations:
             state=ServerState.SHUTDOWN,
         )
 
-        mongo_store.save_server(server1)
-        mongo_store.save_server(server2)
+        mongo_store.save_server(running_server)
+        mongo_store.save_server(stopped_server)
 
         running = mongo_store.get_servers_by_state(ServerState.RUNNING)
         assert len(running) == 1

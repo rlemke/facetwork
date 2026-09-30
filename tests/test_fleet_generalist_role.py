@@ -5,10 +5,11 @@ carries a MEMBERSHIP LIST, which no other role has, and every test here pins a
 failure that list makes possible.
 """
 import importlib.util
-import os
 import pathlib
 
 import pytest
+
+from tests import _site
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
@@ -139,7 +140,7 @@ def test_membership_rides_the_child_env_not_the_shared_env_file():
 
 
 # --------------------------------------------------------------------------
-# loopback guard (2026-09-08 server3 outage)
+# loopback guard (2026-09-08 infra-host outage)
 # --------------------------------------------------------------------------
 def _lib():
     import sys
@@ -170,8 +171,8 @@ def test_loopback_mongo_is_refused_for_runner_containers(url, host):
 
 @pytest.mark.parametrize("url", [
     "mongodb://afl-mongodb:27017",
-    "mongodb://192.0.2.67:27017",
-    "mongodb://server3.local:27017",
+    f"mongodb://{_site.ip('infra')}:27017",
+    f"mongodb://{_site.host('infra')}:27017",
     None,
     "",
 ])

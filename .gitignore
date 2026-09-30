@@ -58,3 +58,7 @@ mode.local.json
 mode.cluster.json
 .fw-mode
 servers.local.json.disabled
+
+# Test site config (real host names/addresses for this deployment) -- never committed.
+# See tests/_site.py.
+tests/site.local.json

@@ -3,7 +3,7 @@
 ⚠️ Why this exists. `discover_provided_environments` used to advertise a hash
 on one condition: that `$FW_ENV_ROOT/<hash>/bin/python` existed. That is a claim
 about files on disk, and on real hardware it comes apart from "this host can run
-them". macmini01 is a 2009 Intel Core 2 Duo with no SSE4.2/POPCNT, so it does not
+them". One fleet host is a 2009 Intel Core 2 Duo with no SSE4.2/POPCNT, so it does not
 meet x86-64-v2: `pip install numpy` there SUCCEEDS (the x86_64 wheel is valid)
 and only `import numpy` raises. The host would materialize the venv, advertise
 the hash honestly by the old definition, claim the task, and fail at dispatch —
@@ -32,7 +32,7 @@ def _installed_dist(root: Path, name: str, body: str) -> None:
 
 
 def test_a_package_that_installs_but_raises_on_import_is_rejected(tmp_path, monkeypatch):
-    """THE macmini01 CASE. Installed, discoverable, and fatal when imported."""
+    """THE PRE-x86-64-v2 HOST CASE. Installed, discoverable, and fatal when imported."""
     _installed_dist(tmp_path, "cpuboundpkg",
                     "raise ImportError('built with baseline optimizations (X86_V2) "
                     "but your machine does not support them')")

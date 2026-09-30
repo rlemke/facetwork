@@ -24,6 +24,7 @@ Pure-stdlib (json/os/socket/pathlib) so every consumer can import it cheaply.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import socket
@@ -78,6 +79,26 @@ def load_catalog() -> dict:
 def servers() -> list[dict]:
     """All catalog entries (each: name/aliases/purpose/group/infra/ip_pin)."""
     return list(load_catalog().get("servers") or [])
+
+
+def host_key(name: object) -> str:
+    """The key two records of the SAME machine agree on, whatever their naming.
+
+    A fleet-agent records its FQDN while a runner registers its short hostname,
+    so a join on the raw strings never matches. This used to strip a literal
+    ``.local`` -- correct only on an mDNS network; on a cloud VM
+    (``ip-10-0-0-5.ec2.internal`` vs ``ip-10-0-0-5``) every host would have
+    shown "no fleet-agent record". The first DNS label, lowercased, is the
+    general form. An IP address is kept whole: its first "label" is an octet.
+    """
+    s = str(name or "").strip().lower()
+    if not s:
+        return "?"
+    try:
+        ipaddress.ip_address(s)
+        return s
+    except ValueError:
+        return s.split(".", 1)[0]
 
 
 def find(name_or_alias: str) -> dict | None:

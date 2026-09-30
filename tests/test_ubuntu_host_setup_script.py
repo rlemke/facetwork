@@ -106,12 +106,12 @@ def test_verifies_at_the_end_and_fails_loudly():
 def test_infra_host_is_a_name_resolved_at_run_time():
     """A pinned IP reintroduces exactly the DHCP drift the server catalog exists
     to remove — this fleet's infra host moved three times in two days."""
-    assert 'INFRA_HOST="${FW_INFRA_HOST:-server3.local}"' in SRC
+    assert 'INFRA_HOST="${FW_INFRA_HOST:-' in SRC, "the infra host must come from FW_INFRA_HOST"
     assert "getent hosts" in SRC
 
 
 # --------------------------------------------------------------------------
-# bugs found by the first real run, on atopnuc01 (2026-09-09)
+# bugs found by the first real run, on a light-tier host (2026-09-09)
 # --------------------------------------------------------------------------
 def test_masked_check_does_not_depend_on_systemctl_exit_code():
     """⚠️ `systemctl is-enabled <unit>` exits 1 for a MASKED unit while correctly
@@ -131,14 +131,13 @@ def test_pipefail_is_on_so_the_above_matters():
 def test_no_python3_pip_package():
     """It drags in python3-dev/libpython3-dev/zlib1g-dev — ~42 MB of build headers
     for nothing. `python3 -m venv` provides the only pip this host uses."""
-    import re
     pkgs = SRC[SRC.index("PKGS=("):SRC.index(")", SRC.index("PKGS=("))]
     assert "python3-pip" not in pkgs
 
 
 def test_stale_registry_addresses_are_pruned():
     """⚠️ Appending accumulates one address per DHCP lease the infra host has ever
-    had — measured as server3.local:5050 + .67:5050 + .112:5050 on one machine.
+    had — measured as the registry's name plus two stale addresses on one machine.
     Each entry grants plain-HTTP trust to whatever holds that address TODAY, and a
     released lease gets reassigned to a different device.
     """
@@ -154,7 +153,7 @@ def test_prune_keeps_the_name_and_other_ports():
 
 
 # --------------------------------------------------------------------------
-# bugs found by the first run on a FRESH host, macmini01 (2026-09-09)
+# bugs found by the first run on a FRESH host (2026-09-09)
 # --------------------------------------------------------------------------
 def test_ssh_key_is_validated_before_being_written():
     """⚠️ An unusable key is SILENT. A key pasted through a terminal or chat
