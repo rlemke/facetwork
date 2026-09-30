@@ -163,10 +163,42 @@ def resolve_ip(entry_or_name: dict | str) -> str | None:
     name = entry.get("name")
     if not name:
         return None
+    # THIS machine: ask the routing table, not mDNS. avahi advertises a host's
+    # name on EVERY interface, Docker bridges included, so resolving our own name
+    # can answer the docker0 bridge address -- measured 2026-09-30 on the database host, where
+    # the fleet-agent then judged every correctly-pinned runner "drifted" and
+    # recreated all 23, killing a 30-minute planet rewrite in its last 2%.
+    if _names_this_host(name):
+        lan = _primary_lan_ip()
+        if lan:
+            return lan
     try:
         return socket.gethostbyname(name)
     except OSError:
         return None
+
+
+def _names_this_host(name: str) -> bool:
+    try:
+        me = socket.gethostname().split(".")[0].lower()
+    except OSError:
+        return False
+    return bool(me) and name.split(".")[0].lower() == me
+
+
+def _primary_lan_ip() -> str | None:
+    """The address this machine uses to reach the network (a routing lookup; no
+    packet is sent). None when there is no route at all."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("192.0.2.1", 9))  # TEST-NET: never contacted, only routed
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return None
+    return None if ip.startswith("127.") or ip == "0.0.0.0" else ip
 
 
 # ---------------------------------------------------------------------------
@@ -191,15 +223,9 @@ def _local_addresses() -> set[str]:
             addrs.add(str(sa[0]))
     except OSError:
         pass
-    try:  # primary LAN address (routing lookup only — no packet is sent)
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("192.0.2.1", 9))  # TEST-NET
-            addrs.add(s.getsockname()[0])
-        finally:
-            s.close()
-    except OSError:
-        pass
+    lan = _primary_lan_ip()
+    if lan:
+        addrs.add(lan)
     return addrs
 
 

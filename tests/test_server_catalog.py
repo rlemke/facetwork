@@ -200,3 +200,21 @@ def test_the_fallback_skips_unreachable_and_self():
     assert "catalog.resolve_ip(name)" in src, "must skip machines that do not resolve"
     assert "skip machines that are simply off" in src
     assert 'split(".")[0].lower() == me' in src, "must exclude this host"
+
+
+def test_this_machine_resolves_itself_by_routing_not_mdns(cat, monkeypatch):
+    """avahi advertises a host's name on every interface, Docker bridges included,
+    so resolving OUR OWN name can answer a container-network address. Measured
+    2026-09-30: the fleet-agent then judged every correctly-pinned runner
+    "drifted" and recreated all 23, killing a planet rewrite in its last 2%."""
+    monkeypatch.setattr(catalog.socket, "gethostname", lambda: INFRA.split(".")[0])
+    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: _site.container_net_ip())
+    monkeypatch.setattr(catalog, "_primary_lan_ip", lambda: SELF_IP)
+    assert catalog.resolve_ip(INFRA) == SELF_IP
+
+
+def test_other_machines_still_resolve_by_name(cat, monkeypatch):
+    monkeypatch.setattr(catalog.socket, "gethostname", lambda: "somewhere-else")
+    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: RESOLVED_IP)
+    monkeypatch.setattr(catalog, "_primary_lan_ip", lambda: SELF_IP)
+    assert catalog.resolve_ip(INFRA) == RESOLVED_IP
