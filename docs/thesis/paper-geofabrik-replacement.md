@@ -215,7 +215,7 @@ This is more than a bug fix; it is the property that makes everything downstream
 possible. Because the unit is self-contained, it can be **scheduled, retried,
 migrated, and measured** as a black box. During one German-county run the task
 survived being killed on a smaller-VM host and re-claimed on a larger one — a
-live MaxPro→server3 migration mid-job — precisely because it carried no host
+live laptop→infra-host migration mid-job — precisely because it carried no host
 state. A self-contained region-job is the atom the rest of the system composes.
 
 ## 6. Work effort inside the shape: measure the region, route the region

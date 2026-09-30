@@ -44,7 +44,8 @@ Notes for working with `fw`:
   registry-setup`, `fw runner scale`, `fw maint purge-servers`) are the standard
   fleet/runner ops — prefer them over raw `docker`/`pymongo`. Most take `--dry`.
 - Mongo-touching commands default to `localhost:27017`; on a runner host that isn't
-  the DB, pass `--mongo mongodb://server3.local:27017` (or set `FW_MONGODB_URL`).
+  the DB, pass `--mongo mongodb://afl-mongodb:27017` (resolved through the server
+  catalog) or set `FW_MONGODB_URL`.
 - **`fw install check [--install]`** — dependency analyzer. Statically scans
   `tests/` + `examples/` for imported modules (incl. `pytest.importorskip`), reports
   what isn't importable on this host, and lists example packages vs what's installed.
@@ -125,7 +126,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Codex workflow catalog (store/version/run FFL with no file; `fw_catalog_*` MCP tools) | [docs/architecture/claude-workflow-catalog.md](docs/architecture/claude-workflow-catalog.md) |
 | `use` resolution: file-based compile vs. the catalog (hermetic pinned-dep model) | [docs/architecture/catalog-use-resolution.md](docs/architecture/catalog-use-resolution.md) |
 | Extending with new handlers (NL needs a capability no facet provides → detect gap → scaffold facet+handler+test) — `fw ffl scaffold` | [docs/architecture/extending-with-new-handlers.md](docs/architecture/extending-with-new-handlers.md) |
-| **Server catalog (`servers.json`)** — machines by STABLE NAME + aliases (`afl-mongodb`…); resolved to the current IP at startup/reconcile so DHCP drift self-heals (no `/etc/hosts` edits). `fw fleet servers` | [docs/reference/server-catalog.md](docs/reference/server-catalog.md) |
+| **Server catalog (`servers.json`)** — ⚠️ **site configuration, NEVER committed** (it names this deployment's machines; `servers.example.json` is the template; distribute edits with `fw fleet servers --push`). Machines by STABLE NAME + aliases (`afl-mongodb`, `afl-minio`, `afl-extracts`, `afl-registry`, `afl-backup`; `fw fleet servers --service-host NAME` → the host serving it, else the infra host); resolved to the current IP at startup/reconcile so DHCP drift self-heals (no `/etc/hosts` edits). `fw fleet servers` | [docs/reference/server-catalog.md](docs/reference/server-catalog.md) |
 | **Domain/example catalog (`domains.json`)** — single source of truth for the domain set + per-domain attributes (repo/extras/service/task_list/scaled/fleet_default…) + `defaults` replica counts; field reference, file resolution + `domains.local.json`/`FW_DOMAINS_FILE` override, and add-a-domain / per-deployment walkthroughs. Read by install/migrate/gen-compose/runner-start/fleet | [docs/reference/domain-catalog.md](docs/reference/domain-catalog.md) |
 | Composable facet library (design): orthogonal/complete/discoverable/distributed primitives for LLM-composed workflows + the memory-of-solved-requests moat | [docs/architecture/composable-facet-library.md](docs/architecture/composable-facet-library.md) |
 | Approximate freeway routing (`osm.Network`, design): pure in-process graph search over a tiny noded-freeway artifact — no engine daemon; tiny network → read-once-per-runner, embarrassingly parallel | [docs/architecture/approximate-freeway-routing.md](docs/architecture/approximate-freeway-routing.md) |

@@ -1,16 +1,16 @@
-# MaxPro standalone — running the whole stack on one machine
+# Standalone laptop — running the whole stack on one machine
 
-**Goal:** MaxPro runs Facetwork end to end with **zero dependency on server3** — its own
-MongoDB, its own MinIO, and OSM data on the locally attached `afl_data_local`. server3 can
+**Goal:** the laptop runs Facetwork end to end with **zero dependency on the infra host** — its own
+MongoDB, its own MinIO, and OSM data on the locally attached `afl_data_local`. The infra host can
 then be powered off, rebooted, or left alone without affecting development.
 
-**Status: EXECUTED 2026-07-30.** Data copied and verified, MongoDB restored, and MaxPro cut over to standalone (15/15 runners live against its own Mongo+MinIO). Phases 1-3 below are corrected to as-built — **the original Phase 3 was wrong** and would not have produced a working machine. **Rebuild independence added 2026-07-30 (Phase 3a): a local `registry:2` + one real `fw fleet rollout` verified — server3 is out of the registry path.** **§4 checklist re-run 2026-07-31 with server3 (and server1/2) PHYSICALLY OFF — all pass** (caught + fixed a missing `afl-cache` bucket). The standalone box is fully server3-independent.
+**Status: EXECUTED 2026-07-30.** Data copied and verified, MongoDB restored, and the laptop cut over to standalone (15/15 runners live against its own Mongo+MinIO). Phases 1-3 below are corrected to as-built — **the original Phase 3 was wrong** and would not have produced a working machine. **Rebuild independence added 2026-07-30 (Phase 3a): a local `registry:2` + one real `fw fleet rollout` verified — the infra host is out of the registry path.** **§4 checklist re-run 2026-07-31 with the infra host (and the two Intel minis) PHYSICALLY OFF — all pass** (caught + fixed a missing `afl-cache` bucket). The standalone box is fully independent of the infra host.
 
 ---
 
 ## 1. Where things stand (measured 2026-07-30, not assumed)
 
-### MaxPro already has most of the pieces
+### The laptop already has most of the pieces
 
 | | |
 |---|---|
@@ -27,18 +27,18 @@ then be powered off, rebooted, or left alone without affecting development.
 The internal disk having only 237 GB free is the reason everything below targets
 `afl_data_local`, not `~`.
 
-### What ties MaxPro to server3 today
+### What ties the laptop to the infra host today
 
-1. **`/etc/hosts`** — `<server3-ip>  afl-mongodb afl-minio server3`
-   Every Mongo and S3 call resolves to server3.
+1. **`/etc/hosts`** — `<infra-host-ip>  afl-mongodb afl-minio <infra-host>`
+   Every Mongo and S3 call resolves to the infra host.
 2. **SMB mounts** — `/Volumes/afl_data` (15 TB, 11 TB used) and `/Volumes/bigdata`
-   (3.6 TB) are network mounts **served by server3**. These vanish when server3 does.
+   (3.6 TB) are network mounts **served by the infra host**. These vanish when the infra host does.
 3. **Fleet config** — `mongodb://afl-mongodb:27017`, `http://afl-minio:9000`,
    dashboard `http://afl-mongodb:8080`.
-4. **Image registry** — roles pull `server3.local:5050/facetwork-runner:…`.
-5. `.env` / `.env.fleet` — `FW_MONGODB_URL`, `FW_S3_ENDPOINT`, `FW_INFRA_HOST=server3.local`.
+4. **Image registry** — roles pull `<infra-host>:5050/facetwork-runner:…`.
+5. `.env` / `.env.fleet` — `FW_MONGODB_URL`, `FW_S3_ENDPOINT`, `FW_INFRA_HOST=<infra-host>`.
 
-Note `afl-postgres` is **<postgis-host-ip> — a different machine**, not server3. PostGIS is
+Note `afl-postgres` is **<postgis-host-ip> — a different machine**, not the infra host. PostGIS is
 only needed for the OSM PostGIS import path; if you want that offline too it is a separate
 piece of work, called out in §6.
 
@@ -56,7 +56,7 @@ piece of work, called out in §6.
 | `output/` (published outputs, census-output, maps, osm) | **96 GB** | Plain files — `output/cache` is 87 GB of it |
 
 **Total to move: ~874 GB** — **24% of the 3.6 TB disk.** Nothing needs re-downloading:
-every byte already exists on server3.
+every byte already exists on the infra host.
 
 | Tree | Size | How |
 |---|---:|---|
@@ -110,7 +110,7 @@ MinIO instances.** Use `mc mirror` (S3 to S3), which is what §3 does.
 ## 2. Target architecture
 
 ```
-MaxPro (standalone)
+<laptop> (standalone)
   ├── facetwork-mongodb   :27017   → docker volume (1.3 GB, keep on internal disk)
   ├── facetwork-minio     :9000    → /Volumes/afl_data_local/minio
   ├── facetwork-dashboard :8080
@@ -122,59 +122,59 @@ MaxPro (standalone)
       scratch/         ← FW_LOCAL_SCRATCH, FW_OUTPUT_BASE (must stay local, never S3)
 ```
 
-`afl-mongodb` / `afl-minio` are **re-pointed at MaxPro itself**, so no config that
+`afl-mongodb` / `afl-minio` are **re-pointed at the laptop itself**, so no config that
 references those names has to change — only what they resolve to.
 
 ---
 
 ## 3. Migration steps
 
-### Phase 0 — make server3 safe first (do this before touching anything)
+### Phase 0 — make the infra host safe first (do this before touching anything)
 
 The instruction was "make sure everything is safe." Concretely:
 
 1. **Let the county-atlas fan-out finish** (in progress; watchdog running). Do not migrate
-   mid-run — the runner state lives in server3's Mongo.
+   mid-run — the runner state lives in the infra host's Mongo.
 2. **Verify no other workflow is mid-flight:**
    `fw fleet status` and check for runners in `running` state.
-3. **Take a Mongo dump on server3** and keep it *on server3* as the rollback copy:
-   `docker exec facetwork-mongodb mongodump --archive=/data/db/pre-maxpro.gz --gzip`
+3. **Take a Mongo dump on the infra host** and keep it *on the infra host* as the rollback copy:
+   `docker exec facetwork-mongodb mongodump --archive=/data/db/pre-standalone.gz --gzip`
    then copy it off the container.
-4. **Do not delete anything on server3.** This migration is a *copy*, so server3 stays a
-   complete, working fallback. Rollback = revert `/etc/hosts` on MaxPro.
+4. **Do not delete anything on the infra host.** This migration is a *copy*, so the infra host stays a
+   complete, working fallback. Rollback = revert `/etc/hosts` on the laptop.
 
-### Phase 1 — MongoDB onto MaxPro
+### Phase 1 — MongoDB onto the laptop
 
 Mongo is 1.3 GB, so this is minutes, not hours.
 
-1. On server3, dump **all databases** — pass NO `--db`:
+1. On the infra host, dump **all databases** — pass NO `--db`:
    `mongodump --gzip --archive=/tmp/fw.gz`
 
    ⚠️ **`mongodump` silently keeps only the LAST `--db`.** Writing
    `--db facetwork --db facetwork_examples` dumps *only* the examples DB, skips
    everything that matters, and **exits 0**. That produced a 20 KB archive that
    looked fine; the correct all-databases dump was 56 MB.
-2. `scp` to MaxPro.
-3. On MaxPro, restore into the running `facetwork-mongodb`:
+2. `scp` to the laptop.
+3. On the laptop, restore into the running `facetwork-mongodb`:
    `mongorestore --gzip --archive=/tmp/fw.gz --drop`
-   (`--drop` is required — MaxPro's local Mongo had its own stale data,
-   1,752 steps vs server3's 24,575.)
+   (`--drop` is required — the laptop's local Mongo had its own stale data,
+   1,752 steps vs the infra host's 24,575.)
 4. Verify counts match per collection: `servers`, `runners`, `steps`, `tasks`,
    `handler_registrations`, `flows`, `fleet_config`. As-built: 124,521 documents,
    0 failures, every collection equal.
 
-⚠️ **MaxPro's Mongo may not publish its port.** Its container had a malformed
+⚠️ **The laptop's Mongo may not publish its port.** Its container had a malformed
 binding (`map[27017/tcp:[{invalid IP 27017}]]`) so nothing listened on 27017 and
 `fw` could not reach it. Recreate with an explicit `-p 27017:27017`, reusing the
 named volume `facetwork_mongodb_data` so the restored data survives.
 
 ### Phase 2 — MinIO onto `afl_data_local`
 
-1. Point MaxPro's MinIO at the local disk — `/Volumes/afl_data_local/minio:/data` — and
+1. Point the laptop's MinIO at the local disk — `/Volumes/afl_data_local/minio:/data` — and
    start the (currently stopped) `facetwork-minio` container.
-2. Mirror **bucket by bucket, over S3**, from server3's MinIO to MaxPro's:
+2. Mirror **bucket by bucket, over S3**, from the infra host's MinIO to the laptop's:
    ```
-   mc alias set src http://<server3-ip>:9000 minioadmin minioadmin
+   mc alias set src http://<infra-host-ip>:9000 minioadmin minioadmin
    mc alias set dst http://localhost:9000     minioadmin minioadmin
    mc mb dst/afl-cache dst/osm-extracts
    mc mirror --watch=false src/afl-cache    dst/afl-cache
@@ -190,29 +190,29 @@ Over gigabit this is roughly **1.5–2 hours for the 580 GB of MinIO buckets**, 
 ⚠️ **The original version of this phase was WRONG and would not have produced a
 working standalone machine.** It listed `/etc/hosts` as "the single
 highest-leverage change". In reality there are **five** places pointing at
-server3, and `/etc/hosts` is the least important of them — containers do not
+the infra host, and `/etc/hosts` is the least important of them — containers do not
 even read it. All five are corrected below, as-built.
 
 1. **`servers.local.json` — the one that actually matters.** `fw` resolves the
    infra host from the **server catalog**, not from `/etc/hosts` or
-   `FW_MONGODB_URL`. Until this is changed the CLI keeps reading server3's
+   `FW_MONGODB_URL`. Until this is changed the CLI keeps reading the infra host's
    database (`discovered MongoDB via server catalog (infra):
-   mongodb://<server3-ip>:27017`) while the containers read MaxPro's — a
+   mongodb://<infra-host-ip>:27017`) while the containers read the laptop's — a
    split-brain that is confusing to debug remotely.
 
    Create `servers.local.json` (gitignored, merged over `servers.json`; the
    schema is an **array** under `"servers"`, with `name`/`aliases`/`infra`):
-   move `afl-mongodb` + `afl-minio` and `"infra": true` onto `MaxPro.local`, and
-   leave `afl-postgres` on server3.local (PostGIS is on a *different* machine).
+   move `afl-mongodb` + `afl-minio` and `"infra": true` onto `<laptop>.local`, and
+   leave `afl-postgres` on <infra-host> (PostGIS is on a *different* machine).
 
-2. **`FW_INFRA_IP` → MaxPro's LAN IP (`<maxpro-lan-ip>`), NOT `127.0.0.1`.**
+2. **`FW_INFRA_IP` → the laptop's LAN IP (`<laptop-lan-ip>`), NOT `127.0.0.1`.**
    Containers get `afl-*` from compose `extra_hosts`, driven by this variable.
    Inside a container `127.0.0.1` is the container itself, so loopback here
-   silently breaks every runner. As found, it was pinned at server3
-   (`afl-minio:<server3-ip>`).
+   silently breaks every runner. As found, it was pinned at the infra host
+   (`afl-minio:<infra-host-ip>`).
 
-3. **`FW_MONGODB_URL`** named `server3.local` *directly*
-   (`mongodb://server3.local:27017`), so no hosts-file change could redirect it.
+3. **`FW_MONGODB_URL`** named `<infra-host>` *directly*
+   (`mongodb://<infra-host>:27017`), so no hosts-file change could redirect it.
    Set it to `mongodb://afl-mongodb:27017` so it follows the catalog.
 
 4. **`FW_DATA_DIR`** pointed at the SMB share and breaks the moment it is
@@ -221,8 +221,8 @@ even read it. All five are corrected below, as-built.
    were not picked up in practice; pass `--data-dir` explicitly to
    `fw fleet agent apply`.
 
-5. **MinIO's bind mount** on MaxPro was `/Volumes/afl_data/minio` — the SMB share
-   *from server3*, not the local disk. Recreate the container against
+5. **MinIO's bind mount** on the laptop was `/Volumes/afl_data/minio` — the SMB share
+   *from the infra host*, not the local disk. Recreate the container against
    `/Volumes/afl_data_local/minio`.
 
 6. **`/etc/hosts`** — host-side only (the `fw` CLI, `mc`), *after* the above:
@@ -237,25 +237,25 @@ even read it. All five are corrected below, as-built.
    remove any auto-mount/login item. Stop MinIO first if it still binds them.
 
 8. **`FW_RUNNER_HOSTS=`** (empty) so `fw fleet rollout --stagger` stops trying to
-   SSH to server1/2/3.
+   SSH to the two Intel minis and the infra host.
 
 9. **Recreate the runners** so they pick up the new `extra_hosts`:
    `FW_DATA_DIR=... fw fleet agent apply --data-dir /Volumes/afl_data_local/scratch`.
-   Preflight should print all three ✓ against MaxPro. As-built result: 15/15
+   Preflight should print all three ✓ against the laptop. As-built result: 15/15
    runners live, containers resolving `afl-mongodb`/`afl-minio` to
-   <maxpro-lan-ip>, and server1/2/3 correctly showing as stale records.
+   <laptop-lan-ip>, and the Intel minis and the infra host correctly showing as stale records.
 
-**Images**: MaxPro already has `facetwork-runner:4c37bc7-d3456ea5` cached, so
-*running* existing workflows is fully server3-independent. But *rebuilds* were
+**Images**: the laptop already has `facetwork-runner:4c37bc7-d3456ea5` cached, so
+*running* existing workflows is fully independent of the infra host. But *rebuilds* were
 not — see Phase 3a.
 
 ### Phase 3a — local image registry (rebuild independence) — DONE 2026-07-30
 
 Running cached workflows never touches the registry, but `fw fleet rollout`
 (build → push → point fleet_config → converge) did: `FW_FLEET_REGISTRY` defaulted
-to `server3.local:5050` for both push and pull. With server3 off, a rebuild had
+to `<infra-host>:5050` for both push and pull. With the infra host off, a rebuild had
 nowhere to push and the runners had nowhere to pull from. Fixed by running a local
-`registry:2` on MaxPro and pointing the whole rollout loop at it.
+`registry:2` on the laptop and pointing the whole rollout loop at it.
 
 The one subtlety: **two different clients reach the registry, and they need a name
 that resolves the same from both.** The off-host buildkit builder (a container)
@@ -285,7 +285,7 @@ docker desktop restart
 echo 'FW_FLEET_REGISTRY=host.docker.internal:5050' >> .env   # also in .env.fleet, documented
 
 # 5. Seed the current image so cache-from hits, then do one real rollout
-docker tag  server3.local:5050/facetwork-runner:4c37bc7-d3456ea5 \
+docker tag  <infra-host>:5050/facetwork-runner:4c37bc7-d3456ea5 \
             host.docker.internal:5050/facetwork-runner:4c37bc7-d3456ea5
 docker push host.docker.internal:5050/facetwork-runner:4c37bc7-d3456ea5
 fw fleet rollout          # NOT --stagger — it aborts with no remote hosts
@@ -294,7 +294,7 @@ fw fleet rollout          # NOT --stagger — it aborts with no remote hosts
 ⚠️ **Gotchas hit doing this:**
 - `fw fleet rollout` sources only `_bootstrap.sh` + `_remote.sh`, **not** `_env.sh`,
   so a `FW_FLEET_REGISTRY` set only in `.env` was silently ignored and it defaulted
-  back to `server3.local:5050`. Fixed by teaching `_afl_resolve_remote_env` to read
+  back to `<infra-host>:5050`. Fixed by teaching `_afl_resolve_remote_env` to read
   `FW_FLEET_REGISTRY` from `.env` the same way it already reads `FW_RUNNER_HOSTS`.
   Confirm with `fw fleet rollout --dry` — `image:`/`registry:` must both say
   `host.docker.internal:5050`, not just `cache-from`.
@@ -306,21 +306,21 @@ fw fleet rollout          # NOT --stagger — it aborts with no remote hosts
 
 ✅ **Verified 2026-07-30**: a full `fw fleet rollout` built HEAD (`582efbe`),
 re-cloned + re-baked every `fwh_*` domain **from GitHub** (a rebuild needs source
-somewhere — but that is GitHub, not server3), pushed to the local registry, and
-MaxPro's **15/15 runners pulled `host.docker.internal:5050/facetwork-runner:582efbe`
-and went `[up-to-date]`**. server3 is out of the registry path entirely.
+somewhere — but that is GitHub, not the infra host), pushed to the local registry, and
+the laptop's **15/15 runners pulled `host.docker.internal:5050/facetwork-runner:582efbe`
+and went `[up-to-date]`**. The infra host is out of the registry path entirely.
 
 ⚠️ **The rollout still exits non-zero and prints "NOT converged (1/4 host(s))".**
 That is **cosmetic**: `fleet_config` still lists the three offline hosts
-(server1/2/3) as expected members, so the converge check counts 4 hosts while only
-MaxPro is live. MaxPro itself converges — check the per-host line
-(`MaxPro 15/15 [up-to-date]`), not the exit code. The clean fix is to trim
+(the two Intel minis and the infra host) as expected members, so the converge
+check counts 4 hosts while only the laptop is live. The laptop itself converges — check the per-host line
+(`<laptop> 15/15 [up-to-date]`), not the exit code. The clean fix is to trim
 `fleet_config` to the local host, which belongs to the planned `fw mode local`
 toggle (local profile = just this machine), not a hand-edit here.
 
 ⚠️ **`gh-router` residual**: its `fleet_config` image is still
-`server3.local:5050/osm-gh-router:f2ee20c`, but it runs with `replicas=-` (not
-scheduled on MaxPro), so it is inert — like the `afl-postgres` line in §3.6. It
+`<infra-host>:5050/osm-gh-router:f2ee20c`, but it runs with `replicas=-` (not
+scheduled on the laptop), so it is inert — like the `afl-postgres` line in §3.6. It
 would only bite if OSM routing (embedded GraphHopper) were scheduled here; rebuild
 its image to the local registry first if so.
 
@@ -356,7 +356,7 @@ that ban does not matter.
 
 Once copied, point the extract path at the local tree (`FW_GEOFABRIK_BASE_URL` /
 `FW_OSM_EXTRACT_PROVIDER`) so nothing reaches for the network. If you want the `www/` tree
-served over HTTP on MaxPro the way it was on server3, `server.nohup.log` in that directory
+served over HTTP on the laptop the way it was on the infra host, `server.nohup.log` in that directory
 shows how it was run.
 
 Budget: 762 GB total ≈ **21% of the 3.6 TB disk.** No download needed.
@@ -365,15 +365,15 @@ Budget: 762 GB total ≈ **21% of the 3.6 TB disk.** No download needed.
 
 ## 4. Pre-departure verification checklist
 
-✅ **All items verified 2026-07-31 with server3 (and server1/2) PHYSICALLY POWERED OFF** — the fully honest test:
+✅ **All items verified 2026-07-31 with the infra host (and the two Intel minis) PHYSICALLY POWERED OFF** — the fully honest test:
 
-- [x] `fw fleet status` — MaxPro 15/15, Mongo via `afl-mongodb`; completed in ~6.7 s, **did not hang** reaching for server3
+- [x] `fw fleet status` — the laptop 15/15, Mongo via `afl-mongodb`; completed in ~6.7 s, **did not hang** reaching for the infra host
 - [x] Dashboard loads at `http://localhost:8080` (HTTP 302 → v3)
 - [x] `fw ffl run` a live-domain workflow → completes — `save_earth.workflows.BuildSeismicMap` reached `completed` (county-atlas domain isn't on the fleet; used save-earth instead)
 - [x] A workflow writes to local MinIO — the seismic run fetched USGS quakes + Bird-2002 faults over the network and wrote `cache/save-earth/{earthquakes,faults}/*.geojson` + `cache/save-earth/maps/seismic/index.html` (608 KiB) to `afl-cache`
-- [x] `fw fleet rollout --dry` resolves to the **local** registry (`host.docker.internal:5050`), not `server3.local:5050`
-- [x] One **real** rebuild + rollout end to end — built `582efbe`, pushed to local registry, MaxPro 15/15 `[up-to-date]` (Phase 3a)
-- [x] `mongodump` on MaxPro succeeds — 58 MB local backup written
+- [x] `fw fleet rollout --dry` resolves to the **local** registry (`host.docker.internal:5050`), not `<infra-host>:5050`
+- [x] One **real** rebuild + rollout end to end — built `582efbe`, pushed to local registry, the laptop 15/15 `[up-to-date]` (Phase 3a)
+- [x] `mongodump` on the laptop succeeds — 58 MB local backup written
 
 ⚠️ **Gap the honest test caught — the `afl-cache` bucket did not exist.** Phase 2
 mirrored `osm-extracts` but deliberately skipped the 363 GB `afl-cache` cache — and
@@ -393,12 +393,12 @@ box, create every bucket the fleet writes to, even the ones you skip mirroring.*
 | **Re-downloading the planet** | Easy to assume it is missing — it is not in MinIO | It is at `osm-selfhost/planet-latest.osm.pbf` (87 GB); rsync it | Resumable — just re-run; verify with object counts |
 | **Copying MinIO dirs with `cp`** | Objects are erasure-coded dirs | Always `mc mirror`; never filesystem copy between instances |
 | **SMB mounts silently reappear** | macOS remembers shares | Remove login items; verify after a reboot |
-| **Registry unreachable** | Roles reference `server3.local:5050` | Local registry, tested *before* departure |
-| **PostGIS** is on .76, not server3 | Survives server3 going down, but not a full-offline setup | Only matters for PostGIS import; run a local PostGIS if needed |
+| **Registry unreachable** | Roles reference `<infra-host>:5050` | Local registry, tested *before* departure |
+| **PostGIS** is on a different host, not the infra host | Survives the infra host going down, but not a full-offline setup | Only matters for PostGIS import; run a local PostGIS if needed |
 | **`foreach … limit` can stall a fan-out** | Stranded sub-blocks hold window slots (§6) | Fix before departure, or don't use `limit` on long runs |
 | **Internal disk 87% full** | 237 GB free | Keep all data on `afl_data_local`; watch Docker VM growth |
 | **Commands that exit 0 having done nothing** | `mongodump` keeping only the last `--db`; BSD `sed` ignoring `\+`; a trailing `echo` masking a failed mirror | Verify the *effect* (counts, file contents), never the exit code |
-| **`afl-postgres` redirected to loopback** | PostGIS is on <postgis-host-ip>, unrelated to server3 | Leave that hosts line alone; restore `<postgis-host-ip>` if the import path is needed |
+| **`afl-postgres` redirected to loopback** | PostGIS is on <postgis-host-ip>, unrelated to the infra host | Leave that hosts line alone; restore `<postgis-host-ip>` if the import path is needed |
 
 ---
 
@@ -419,14 +419,14 @@ progressed within a grace period should be resumed inline rather than holding a 
 forever — which also helps uncapped runs.
 
 **Recommendation:** land that fix, rebake, and re-run the fan-out clean *before* the
-migration, so MaxPro starts from a known-good image.
+migration, so the laptop starts from a known-good image.
 
 ---
 
 ## 7. Post-vacation experiment: OrbStack (or colima) vs Docker Desktop
 
 **Not a recommendation yet — a benchmark to run.** Do this *after* the migration
-settles, on MaxPro alone, never mid-trip.
+settles, on the laptop alone, never mid-trip.
 
 ### Why it is worth measuring
 

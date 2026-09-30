@@ -6,17 +6,33 @@ task/continuation targeting it, and — for one frontier step — a DRY-RUN of
 what the evaluator would do if it processed it (against a throwaway
 in-memory copy, so the real DB is untouched).
 
-Usage: python stall_probe.py <workflow_id>
+Usage: python stall_probe.py <workflow_id> [--mongo URL]
+
+The MongoDB URL comes from --mongo, else $FW_MONGODB_URL. There is no default:
+a probe must say which database it read, never assume one site's host.
 """
 
+import argparse
+import os
 import sys
 import time
 from collections import Counter
 
 from pymongo import MongoClient
 
-WID = sys.argv[1]
-db = MongoClient("mongodb://server3.local:27017").facetwork
+_ap = argparse.ArgumentParser(description="read-only continuation-stall probe")
+_ap.add_argument("workflow_id")
+_ap.add_argument(
+    "--mongo",
+    default=os.environ.get("FW_MONGODB_URL"),
+    help="MongoDB URL (default: $FW_MONGODB_URL)",
+)
+_args = _ap.parse_args()
+if not _args.mongo:
+    sys.exit("stall_probe: pass --mongo URL or set FW_MONGODB_URL")
+WID = _args.workflow_id
+MONGO_URL = _args.mongo
+db = MongoClient(MONGO_URL).facetwork
 now = time.time() * 1000
 
 TERMINAL = ("Complete", "Error", "Terminated")
@@ -85,7 +101,7 @@ if frontier:
     from facetwork.runtime.mongo_store import MongoStore
     from facetwork.runtime.telemetry import Telemetry
 
-    src = MongoStore("mongodb://server3.local:27017", "facetwork")
+    src = MongoStore(MONGO_URL, "facetwork")
     r = db.runners.find_one({"workflow_id": WID})
     target = frontier[0]
     sid = target["uuid"]

@@ -8,14 +8,16 @@ After=docker.service network-online.target
 Wants=docker.service network-online.target
 
 [Service]
+# User/Group and /home/fleet/ are PLACEHOLDERS: setup-ubuntu-fleet-host.sh rewrites
+# them for whoever installs the unit.
 Type=simple
-User=ralph_lemke
-Group=ralph_lemke
+User=fleet
+Group=fleet
 # Docker socket access comes from the docker group; without it every reconcile
 # fails with a permission error that reads like a missing binary.
 SupplementaryGroups=docker
-WorkingDirectory=/home/ralph_lemke/facetwork
-ExecStart=/home/ralph_lemke/.facetwork/fleet-agent-watch.sh
+WorkingDirectory=/home/fleet/facetwork
+ExecStart=/home/fleet/.facetwork/fleet-agent-watch.sh
 
 # Equivalent of launchd KeepAlive on the macOS hosts: the watch loop is meant to
 # be permanent, and its own watchdog deliberately hard-exits when a reconcile
@@ -35,8 +37,8 @@ StartLimitIntervalSec=0
 KillMode=process
 TimeoutStopSec=30
 
-StandardOutput=append:/home/ralph_lemke/.facetwork/fleet-agent.log
-StandardError=append:/home/ralph_lemke/.facetwork/fleet-agent.err.log
+StandardOutput=append:/home/fleet/.facetwork/fleet-agent.log
+StandardError=append:/home/fleet/.facetwork/fleet-agent.err.log
 
 [Install]
 WantedBy=multi-user.target

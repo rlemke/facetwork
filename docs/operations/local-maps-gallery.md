@@ -63,7 +63,7 @@ Two ways to publish:
 
 ## Config
 
-All optional; defaults suit the MaxPro standalone box (local MinIO). Read from the
+All optional; defaults suit a standalone single-machine install (local MinIO). Read from the
 environment / `.env` / `.env.fleet`:
 
 | var | default | meaning |

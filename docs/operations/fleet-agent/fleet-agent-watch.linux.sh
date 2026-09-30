@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Facetwork fleet-agent self-heal wrapper (atopnuc01 - light tier, group "runner").
+# Facetwork fleet-agent self-heal wrapper (Linux light-tier host, group "runner").
 #
-# Linux/systemd counterpart of the launchd wrappers on MaxPro and server3. Same
+# Linux/systemd counterpart of the launchd wrappers on the macOS hosts. Same
 # contract: export this host's identity, then exec the watch loop, which polls
 # fleet_config.version and reconciles on every change.
 set -u

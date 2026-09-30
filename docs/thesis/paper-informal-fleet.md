@@ -61,10 +61,10 @@ Four hosts on a home-office LAN:
 
 | Host | Class | Role | Notes |
 |---|---|---|---|
-| server3 | Apple-silicon desktop, 14 TB disk | infra + heavy runner tier | MongoDB, MinIO, dashboard, image registry; never sleeps |
-| MaxPro | Apple-silicon desktop | heavy runner tier | OSM imports, wide fan-outs; may sleep |
-| server1 | mini, 113 GB disk | light runner tier | x86 containers under emulation |
-| server2 | mini | light runner tier | x86 containers under emulation |
+| infra host | Apple-silicon desktop, 14 TB disk | infra + heavy runner tier | MongoDB, MinIO, dashboard, image registry; never sleeps |
+| laptop | Apple-silicon desktop | heavy runner tier | OSM imports, wide fan-outs; may sleep |
+| Intel mini 1 | mini, 113 GB disk | light runner tier | x86 containers under emulation |
+| Intel mini 2 | mini | light runner tier | x86 containers under emulation |
 
 Roughly 55–70 runner containers fleet-wide (one per data domain per host,
 plus scaled tiers), all built from one image. Management primitives:
@@ -173,7 +173,7 @@ addresses; agents pull from a registry that is no longer there.
 leased.
 **Mitigation.** The stable-name server catalog (names + aliases resolved at
 startup/reconcile) replaced every hard-coded address, including the image
-registry's (`server3.local:5050`). Since adoption, drift is a non-event —
+registry's (`<registry-host>:5050`). Since adoption, drift is a non-event —
 the class is closed rather than handled.
 
 ### 4.3 Image-layer disk exhaustion (and the 113 GB mini)

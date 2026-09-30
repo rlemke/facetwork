@@ -428,9 +428,9 @@ If you skip this — e.g. keep `FW_OSM_OUTPUT_BASE` pointed at a *local* path wh
 
 ## MongoDB host (moved off the infra host, 2026-09-13)
 
-The fleet's MongoDB no longer runs on the infra host. It runs on **beelink01**,
+The fleet's MongoDB no longer runs on the infra host. It runs on **its own database host**,
 with its dbPath on that machine's second NVMe; MinIO, PostGIS, the registry, the
-dashboard and the osm-extracts server stayed on **server3**. Consequently the
+dashboard and the osm-extracts server stayed on **the infra host**. Consequently the
 `afl-*` names are resolved **per service** from `servers.json` (each name goes to
 whichever entry claims it as an alias, falling back to the `infra: true` host) —
 see `_fleet_lib.service_ips`. A one-infra-host deployment is unaffected: with no
@@ -446,7 +446,7 @@ Within minutes of the cutover mongod began logging
 
 and stopped accepting connections **while the container still reported `Up`** —
 the whole fleet lost its control plane, and `docker ps` showed nothing wrong.
-Cause: Docker Desktop's VM (server3) hands containers a large default nofile, so
+Cause: Docker Desktop's VM (on the infra host) hands containers a large default nofile, so
 this never appeared there; native Docker on Linux gives the daemon's default of
 **1024**, and this fleet opens 108 runners times a pymongo connection pool.
 MongoDB's own production checklist asks for 64000. The compose service therefore

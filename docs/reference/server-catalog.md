@@ -11,25 +11,61 @@ every host (the recurring infra-host failure this file removes).
 
 | Field | Meaning |
 |-------|---------|
-| `name` | Stable resolvable name (`server3.local`). The authoritative key. |
-| `aliases` | Conventional service names that map to this machine (`afl-mongodb`, `afl-minio`, `afl-postgres`). Replaces the `/etc/hosts` role. |
+| `name` | Stable resolvable name (`<host>.local`). The authoritative key. |
+| `aliases` | Conventional service names that map to this machine (`afl-mongodb`, `afl-minio`, `afl-postgres`, `afl-extracts`, `afl-registry`, `afl-backup`). Replaces the `/etc/hosts` role. |
 | `purpose` | Human description shown by `fw fleet servers`. |
 | `group` | The machine's `FW_SERVER_GROUP` role tag ([server groups](../architecture/server-groups.md)). |
 | `infra` | Exactly one entry `true` — the MongoDB/MinIO/dashboard host; tools use it as the default infra target. |
 | `ip_pin` | **Last resort** for hosts name-resolution can't reach (cross-subnet, no mDNS). A pinned IP goes stale on lease change — leave `null` when you can. |
 
+## Site configuration — never committed
+
+`servers.json` names this deployment's machines, so it is **site configuration,
+not repo content**: it is gitignored and each host keeps its own copy at
+`<repo>/servers.json`. The committed template is
+[`servers.example.json`](../../servers.example.json) — copy it to `servers.json`
+and fill in your hosts. With no catalog at all the tools still start, but resolve
+no service by name and say so.
+
+Nothing in git distributes it, so after editing (or to give a new host its first
+copy):
+
+```bash
+fw fleet servers --push                 # every catalogued, joined, reachable host
+fw fleet servers --push <new-host>      # a host not yet in the catalog
+fw fleet servers --push --dry           # show what would be copied where
+```
+
+The file is validated before copying, and each copy is written atomically. A new
+Ubuntu host can instead receive it at provisioning time:
+`setup-ubuntu-fleet-host.sh --infra-host <infra-host> --catalog servers.json`.
+
+## Service hosts
+
+Scripts never name a host; they ask which host serves a **service alias**:
+
+```bash
+fw fleet servers --service-host afl-registry   # e.g. the image registry host
+fw fleet servers --service-host afl-backup     # where Mongo backups are archived
+```
+
+The entry whose `aliases` claim the service wins; an **unclaimed service falls
+back to the `infra: true` host** (the one-box default). `afl-registry` (image
+registry; scripts append `:5050`) and `afl-backup` (backup archive host) join the
+existing `afl-mongodb`, `afl-minio`, `afl-postgres` and `afl-extracts`.
+`FW_FLEET_REGISTRY` / `FW_BACKUP_HOST` still override.
+
 ## Resolution & override
 
 Same contract as the domain catalog: `FW_SERVERS_FILE=<path>` (full replace) →
 `servers.local.json` (gitignored, merged over by `name`; top-level
-`"_remove": [names]` drops entries) → committed `servers.json`. Template for
-new deployments: [`servers.example.json`](../../servers.example.json).
+`"_remove": [names]` drops entries) → the site's `servers.json` (gitignored).
 
 ## Consumers
 
 - **`fw fleet servers`** — table with live-resolved IPs (`--env` prints
   `FW_INFRA_HOST`/`FW_INFRA_IP` exports; `--infra-name`; `--resolve NAME`;
-  `--container-ip [NAME]`).
+  `--service-host SERVICE`; `--container-ip [NAME]`; `--push [HOST…]`).
 - **`runner/start --fleet`** (also invoked by the fleet-agent every reconcile)
   defaults `FW_INFRA_HOST` from the catalog's infra entry, resolves it on the
   host, and exports `FW_INFRA_IP` for the compose `extra_hosts` mapping —

@@ -37,7 +37,7 @@ Measured, not hypothetical: each row cost real time here.
 | # | Action | Why it needs root | Belongs in | Cost of deferring it |
 |---|---|---|---|---|
 | 1 | Install the agent's systemd unit | writes `/etc/systemd/system` | provision | the agent cannot run at all |
-| 2 | **`systemctl enable`** the unit | `manage-unit-files` | provision | host works, then **silently vanishes at its next reboot**. Measured on atopnuc02: active but `disabled`, and nothing reported it |
+| 2 | **`systemctl enable`** the unit | `manage-unit-files` | provision | host works, then **silently vanishes at its next reboot**. Measured on a light-tier host: active but `disabled`, and nothing reported it |
 | 3 | **Install the polkit rule** | writes `/etc/polkit-1/rules.d` | provision | **every** agent restart needs an interactive sudo — the toil that prompted this document |
 | 4 | docker group membership | `usermod -aG docker` | provision — **already done** by the setup script, which also reports a PEND state because the group does not apply to the shell that just made the change | every `docker` call needs sudo, so nothing about containers is scriptable |
 | 5 | `insecure-registries` + `systemctl restart docker` | `/etc/docker/daemon.json` | provision | cannot pull the fleet image |
@@ -94,7 +94,7 @@ fw fleet allow-restart --check   # verify as the USER, never as root
   proves nothing about the rule.
 - ⚠️ Boot persistence is a **different polkit action** (`manage-unit-files`) from
   restart. A rule covering only restart lets a host pass the restart check and
-  still never come back from a reboot — exactly what happened on atopnuc02, which
+  still never come back from a reboot — exactly what happened on a light-tier host, which
   is why `--check` now reports the two separately.
 
 ### Option B — run the agent as a container
@@ -231,12 +231,12 @@ the sudo we paid by hand this week:
   root. That is the 23-directory `chown` sweep, waiting to happen again.
 - **Nothing verifies the agent is `enable`d.** The verification pass checks
   `sleep.target` is masked but never asks whether the agent survives a reboot —
-  which is precisely how atopnuc02 ran for days, active and disabled, with
+  which is precisely how a light-tier host ran for days, active and disabled, with
   nothing reporting it.
 - The installed polkit rules predate the enable/disable clause, so parking or
   rejoining a host still needs one sudo until `sudo fw fleet allow-restart` is
   re-run.
-- macOS hosts (MaxPro, server3) run the agent under **launchd**, where the owner
+- macOS hosts (the laptop and the infra host) run the agent under **launchd**, where the owner
   can already `launchctl kickstart -k gui/$UID/com.facetwork.fleet-agent` with no
   sudo. They need no equivalent of §4, and `allow-restart` refuses on them and
   says so.

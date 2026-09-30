@@ -10,7 +10,7 @@ fleet.
 assigned in probe order, which depends on controller enumeration and can differ
 between the initramfs and the booted system, between kernels, and between boots.
 
-Measured on beelink01: the root filesystem (UUID `fad5c9ab-…`) is
+Measured on the database host: the root filesystem (UUID `fad5c9ab-…`) is
 `nvme0n1p2` in the booted system, but every boot journal shows the initramfs
 mounting that same UUID as **`nvme1n1p2`** — the two identical 931 GB NVMe drives
 swap names depending on who is looking. A host with `sda`/`sdb` has the same
@@ -92,7 +92,7 @@ sudo reboot
 findmnt /srv/afl_data && docker ps --filter name=facetwork-runner | wc -l
 ```
 
-**What a passing reboot looks like** (beelink01, 2026-09-15). Compare the two
+**What a passing reboot looks like** (the database host, 2026-09-15). Compare the two
 timestamps — the ordering is the half that `mount -a` cannot test:
 
 ```
@@ -109,7 +109,7 @@ If the mount is absent after reboot, read `journalctl -b -1 -u srv-afl_data.moun
 
 ## macOS hosts
 
-The equivalent on server3 is Docker Desktop file sharing rather than fstab. An
+The equivalent on the infra host is Docker Desktop file sharing rather than fstab. An
 external APFS volume that is attached but unmounted makes every bind-mounted
 container fail to start with:
 

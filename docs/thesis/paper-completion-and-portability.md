@@ -396,7 +396,7 @@ half of the new image.
 
 ### 6.3 Measured benefit
 
-Controlled A/B on one machine (server1, i7-8700B), same image content, differing
+Controlled A/B on one machine (an Intel mini, i7-8700B), same image content, differing
 only in architecture:
 
 | metric | native amd64 | emulated arm64 | gain |
@@ -416,9 +416,9 @@ Cross-host reference, same benchmark:
 
 | host | imports | sha256 75 MB | interpreter loop |
 |---|---|---|---|
-| server3 (M2 Max, native) | 0.38 s | 0.03 s | 0.24 s |
-| server1 (i7-8700B, **native**) | 0.57 s | 0.20 s | 0.65 s |
-| server1 (i7-8700B, *emulated*) | 18.21 s | 2.76 s | 45.95 s |
+| The infra host (M2 Max, native) | 0.38 s | 0.03 s | 0.24 s |
+| An Intel mini (i7-8700B, **native**) | 0.57 s | 0.20 s | 0.65 s |
+| An Intel mini (i7-8700B, *emulated*) | 18.21 s | 2.76 s | 45.95 s |
 
 A 2018 Intel part is genuinely slower than an M2 Max — ~2.7× on the loop — but
 that is a *hardware* difference of the same order, whereas emulation was a

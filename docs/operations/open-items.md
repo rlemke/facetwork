@@ -53,7 +53,7 @@ installed-but-raises is. Refusing on absence would silence every numpy-free
 deployment — a worse failure than the one being fixed. Guarded by a test.
 
 ⚠️ **The exception is caught broadly on purpose, and the hardware proves why.**
-Measured in the image on macmini01: numpy reports this as **`RuntimeError`**, not
+Measured in the image on the legacy host: numpy reports this as **`RuntimeError`**, not
 `ImportError`:
 
 ```
@@ -69,11 +69,11 @@ work.
 
 | host | CPU | verdict |
 |---|---|---|
-| macmini01 | Core 2 Duo, **no SSE4.2 / POPCNT** | refuses domain handlers ✓ |
-| atopnuc01 | x86_64, healthy, **same image** | advertises normally ✓ |
-| macmini02 | x86_64, healthy, same image | advertises normally ✓ |
+| legacy host | Core 2 Duo, **no SSE4.2 / POPCNT** | refuses domain handlers ✓ |
+| light-tier host | x86_64, healthy, **same image** | advertises normally ✓ |
+| heavy Linux host | x86_64, healthy, same image | advertises normally ✓ |
 
-**macmini01 can rejoin as an `fw.*`-only host** once the fleet image carries this.
+**The legacy host can rejoin as an `fw.*`-only host** once the fleet image carries this.
 Checked rather than assumed: all six built-in handler modules import there, none
 of them imports numpy/pandas/scipy/fsspec at top level *or inside a function*
 (which would have reproduced this very hole for the ambient facets), and `boto3`
@@ -81,11 +81,11 @@ is present. It becomes a limited but honest host instead of one advertising 265
 handlers it cannot execute.
 
 **Deployed 2026-09-18** in image `eaa5e91c` (fleet_config v218, all 7 live hosts).
-Verified against the BAKED code, no repo mount: macmini01 refuses
+Verified against the BAKED code, no repo mount: the legacy host refuses
 (`numpy … RuntimeError: built with baseline optimizations (X86_V2)`), while
-macmini02, beelink01 and MaxPro all report `core stack OK` — both architectures.
+the heavy Linux host, the database host and the laptop all report `core stack OK` — both architectures.
 
-**Remaining:** macmini01 still needs to be rejoined (one provisioning step). Until then it stays out — and note `systemctl
+**Remaining:** the legacy host still needs to be rejoined (one provisioning step). Until then it stays out — and note `systemctl
 disable` is not enough (a `restart` sweep starts the unit anyway); it needs `stop`
 plus a renamed unit file, which is how it is currently parked (`is-enabled`
 reports `not-found`).
@@ -126,7 +126,7 @@ a keying-rule change, not a parameter.
 
 ### 1.5 A host can run fleet work while excluded from every ops sweep — ✅ FIXED
 
-atopnuc02 was applying **v217 with 2/2 runners up** while catalogued
+A light-tier host was applying **v217 with 2/2 runners up** while catalogued
 `joined: false` and unreachable by ssh from every host in the fleet. It had
 silently missed two rounds of fixes.
 
@@ -141,13 +141,13 @@ replaced with **measured** capacity (x86_64, 2 cores, 6.71 GiB container memory,
 116 GB scratch — previously a self-declared guess, because the host rejected the
 fleet's key), and `joined` restored.
 
-⚠️ It is a **twin of atopnuc01 except for credentials**: no `fleet-secrets.env`.
+⚠️ It is a **twin of the other light-tier host except for credentials**: no `fleet-secrets.env`.
 A credential is a claim-routing capability, so it silently DECLINES work needing
 `CENSUS_API_KEY`/`ANTHROPIC_API_KEY` rather than failing it. Recorded in the entry.
 
 **`fw fleet status` now reports the combination** (`UNMANAGED: catalogued
 joined:false — ops sweeps SKIP it`), gated on **live runners** rather than on
-having a fleet-agent record: a retired host keeps its record (macmini01, 0
+having a fleet-agent record: a retired host keeps its record (the legacy host, 0
 runners), and flagging every retirement forever trains you to skip the warning.
 Regression: `tests/test_fleet_status_unmanaged_flag.py`.
 
@@ -159,41 +159,41 @@ enabled on all five Linux hosts.
 
 ---
 
-### 1.6 server3's link drops packets again — throughput fix held, loss did not
+### 1.6 The infra host's link drops packets again — throughput fix held, loss did not
 
 The 2026-09-16 cable replacement fixed **throughput** (124 → 261 MB/s) and that
 has held. The **loss** is back, with a different signature: measured 2026-09-18
 at idle, not under load.
 
-| source | ICMP loss to server3 |
+| source | ICMP loss to the infra host |
 |---|---|
-| MaxPro | **0%** |
-| beelink01 | 25% |
-| macmini02 | 25–49% |
-| macmini03 | ~33% |
+| laptop | **0%** |
+| database host | 25% |
+| heavy Linux host | 25–49% |
+| medium-tier host | ~33% |
 
 Rate dependence is **inconsistent** (49% at 10 pps in one window, 0% at 10 pps
 minutes later), so nothing rate-based — EEE included — is established by this.
 
 ⚠️ ICMP alone would be weak evidence (macOS rate-limits ICMP). The evidence that
-is not ICMP: a TCP connect from macmini02 to the MinIO port took **4,018 ms**
+is not ICMP: a TCP connect from the heavy Linux host to the MinIO port took **4,018 ms**
 against a **1.1 ms** median — a lost SYN retried by the kernel, landing just
 inside the 5 s probe timeout. NIC error counters remain **all zero**.
 
-**Cost, measured:** server3 hosts MinIO for the fleet, so single-attempt
+**Cost, measured:** the infra host hosts MinIO for the fleet, so single-attempt
 preflights lost a coin flip each cycle and left 1–7 domain runners per mini on
 the old image. **Mitigated, not fixed** — the MinIO preflight now takes 3 attempts
 over ~8 s and *prints* the retries, so a degraded link stays visible.
 
-**Best remaining clue:** MaxPro is clean while three other hosts are not. That
-asymmetry points at the path (switch port / cable segment), not server3's NIC.
+**Best remaining clue:** the laptop is clean while three other hosts are not. That
+asymmetry points at the path (switch port / cable segment), not the infra host's NIC.
 The switch is still the original one.
 
 ---
 
 ### 1.7 A reconcile could exit non-zero in silence — ✅ ROOT-CAUSED AND FIXED
 
-macmini02 failed `reconcile of v217` **94 times** with **zero bytes on either
+A heavy Linux host failed `reconcile of v217` **94 times** with **zero bytes on either
 stream**. Two independent defects, both fixed:
 
 - **`_env.sh`** resolved `afl-mongodb` from the catalog with
@@ -232,7 +232,7 @@ silent).
 |---|---|
 | **polkit rules predate the enable/disable clause** | Installed on all five Linux hosts during the 2026-09-18 15:28–15:33 sweep, i.e. the version covering only start/stop/restart/reload. Boot persistence is a separate polkit action, so parking or rejoining a host still needs sudo until `sudo fw fleet allow-restart` is re-run. Nothing is broken today — every agent is `enabled` — so this is hygiene, not a defect. |
 | **`country_width: 4` awaiting a real run** | Committed (`7b88e9d`) but the FFL is baked into the image, so it needs a rollout. Will show its effect on the first run with real work — a run with nothing to rebuild leaves the slots idle regardless. |
-| **server3 selfhost leftovers** | A 1 MB stand-in `master.osm.pbf` and assorted logs in `~/.facetwork/osm-selfhost/`, now that the role has moved. |
+| **infra-host selfhost leftovers** | A 1 MB stand-in `master.osm.pbf` and assorted logs in `~/.facetwork/osm-selfhost/`, now that the role has moved. |
 
 ---
 
@@ -275,6 +275,6 @@ closely* it reproduced a published result.
 
 | Item | Status |
 |---|---|
-| server3 link | ✅ **Resolved 2026-09-16** — cable. 34–55% loss under load → 0%; 124 → 261 MB/s, old switch kept. |
-| macmini01 | Dropped from the fleet (2009 CPU, no SSE4.2/POPCNT). Repurposed as the **backup archive host** — a role needing only sshd and disk. |
-| atopnuc02 | In the catalog, `joined: false`, never provisioned. |
+| infra-host link | ✅ **Resolved 2026-09-16** — cable. 34–55% loss under load → 0%; 124 → 261 MB/s, old switch kept. |
+| legacy host | Dropped from the fleet (2009 CPU, no SSE4.2/POPCNT). Repurposed as the **backup archive host** — a role needing only sshd and disk. |
+| light-tier host 2 | In the catalog, `joined: false`, never provisioned. |

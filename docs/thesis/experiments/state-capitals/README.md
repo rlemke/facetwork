@@ -156,7 +156,7 @@ Facetwork's variant with a width cap is `capitals.FindStateCapitalsCapped`
 (`foreach … limit $.width`) — same 50 states, same result, only concurrency
 changes.
 
-## Measured, 2026-08-11 (MaxPro, local Mongo, shared warm cache)
+## Measured, 2026-08-11 (the laptop, local Mongo, shared warm cache)
 
 | | wall-clock | notes |
 |---|---|---|

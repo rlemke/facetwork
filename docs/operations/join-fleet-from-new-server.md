@@ -9,7 +9,7 @@ starts a database or object store locally.
 
 ⚠️ **There is no longer a single "infra host".** Until 2026-09-13 one machine
 served both MongoDB and MinIO, and every doc and default said "the infra host".
-MongoDB then moved to beelink01 while MinIO stayed on server3, and **each
+MongoDB then moved to the database host while MinIO stayed on the infra host, and **each
 `afl-*` name is now resolved INDEPENDENTLY** from whichever `servers.json` entry
 claims it (`_fleet_lib.service_ips`). A name no entry claims falls back to the
 `infra: true` host, which is the historical one-box behaviour — so the old
@@ -17,28 +17,30 @@ single-host model still works, it is just no longer what this fleet does.
 
 | What | Where it lives now | How to re-derive |
 |------|--------------------|------------------|
-| MongoDB | `afl-mongodb` -> **beelink01** | `./fw fleet servers`, or `catalog.resolve_ip("afl-mongodb")` |
-| MinIO | `afl-minio` -> **server3**, bucket `afl-cache` | same; published `0.0.0.0:9000` |
-| OSM extract server | `afl-extracts` -> **beelink01** | same; serves the self-hosted Geofabrik tree on `:8088` |
-| PostGIS | `afl-postgres` -> **server3** | same |
+| MongoDB | `afl-mongodb` -> **the database host** | `./fw fleet servers`, or `catalog.resolve_ip("afl-mongodb")` |
+| MinIO | `afl-minio` -> **the infra host**, bucket `afl-cache` | same; published `0.0.0.0:9000` |
+| OSM extract server | `afl-extracts` -> **the OSM host** (currently the database host) | same; serves the self-hosted Geofabrik tree on `:8088` |
+| PostGIS | `afl-postgres` -> **the infra host** | same |
 | MinIO creds | `minioadmin` / `minioadmin` | bundled dev default (use the secret store for prod — see below) |
 
 ⚠️ **Ask the catalog, not a doc.** These assignments move — three of the four
 above changed within one week — and a table in a document is a snapshot that
 cannot page you when it goes stale. `./fw fleet servers` is generated from
-`servers.json` and is always current. This table exists to show the SHAPE
+`servers.json` and is always current. (`servers.json` is site configuration,
+not committed — `servers.example.json` is the template, and `fw fleet servers
+--push` distributes a site's copy to every host.) This table exists to show the SHAPE
 (services are addressed by name and resolved per service), not to be the source
 of truth for any particular host.
 
 ⚠️ A cautionary case from 2026-09-15: the `afl-extracts` entry was *documented*
-as pointing at server3, but no host entry actually claimed that alias, so
+as pointing at the infra host, but no host entry actually claimed that alias, so
 `catalog.resolve_ip("afl-extracts")` returned `None`. The documentation and the
 resolution had drifted apart, and only the documentation was ever read by a
 human. Verify with `resolve_ip`, not by reading.
 
 > **Use the infra host's IP in `.env.fleet`, not a `.local`/mDNS name.** The runners
 > run in Docker containers, and Docker's DNS does **not** resolve mDNS/`.local`
-> names, and containers don't read the host's `/etc/hosts`. So `mongodb://server3.local:27017`
+> names, and containers don't read the host's `/etc/hosts`. So `mongodb://<infra-host>.local:27017`
 > works for `fleet status` (which runs on the host) but the **runner container
 > can't reach it → the runner never registers** (the #1 "my runner doesn't show
 > up" cause). If the IP changes, update it in `.env.fleet` (one place). To use a

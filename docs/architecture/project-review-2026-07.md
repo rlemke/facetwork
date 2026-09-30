@@ -712,7 +712,7 @@ gate role starts.
    tasks (honestly conceded in `docs/operations/fleet-rollouts.md:420-473`).
 8. **CONFIRMED — One home fleet's IPs baked in as repo defaults** (registry
    `<infra-host-ip>:5050` in `fleet/rollout:25`, `fleet/registry-setup:12`;
-   `server3.local`); single plain-HTTP unauthenticated registry as rollout
+   the infra host's `.local` name); single plain-HTTP unauthenticated registry as rollout
    SPOF.
 9. **CONFIRMED — `_env.sh` silently retargets Mongo to localhost** on a 2 s
    unreachability (`_helpers/_env.sh:56-60`) — mutating commands can operate

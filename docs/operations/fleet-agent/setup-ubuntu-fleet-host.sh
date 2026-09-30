@@ -9,13 +9,14 @@
 # Every non-obvious step below is here because it FAILED somewhere on this fleet.
 # The comments say which; do not "simplify" one away without reading it.
 #
-# Validated against atopnuc01 (Ubuntu 26.04.1 LTS, python 3.14.4, docker.io
+# Validated against a light-tier host (Ubuntu 26.04.1 LTS, python 3.14.4, docker.io
 # 29.1.3, docker-compose-v2 2.40.3), which joined and survived a reboot unattended.
 #
 set -euo pipefail
 
 # ---------------------------------------------------------------- parameters
-INFRA_HOST="${FW_INFRA_HOST:-server3.local}"   # stable NAME; resolved, never pinned
+INFRA_HOST="${FW_INFRA_HOST:-}"                 # stable NAME; resolved, never pinned. REQUIRED.
+CATALOG=""                                       # a copy of an existing host's servers.json
 REGISTRY_PORT="${FW_REGISTRY_PORT:-5050}"
 REPO_URL="${FW_REPO_URL:-https://github.com/rlemke/facetwork.git}"
 SERVER_GROUP="${FW_SERVER_GROUP:-runner}"      # 'runner' = light tier. See below.
@@ -45,7 +46,12 @@ usage: $0 [options]
                          the host's RAM - that is what the runner advertises and
                          what the OOM killer enforces.
   --data-dir PATH        large LOCAL scratch dir (default: \$HOME/fw_data)
-  --infra-host NAME      infra host's stable name (default: server3.local)
+  --infra-host NAME      infra host's stable name (REQUIRED -- no site's host name
+                         is built into the repo)
+  --catalog FILE         this site's server catalog (servers.json from any existing
+                         fleet host). It is site configuration, never committed, so
+                         a fresh clone has none; without it the host resolves
+                         nothing by service name and starts no runner.
   --rdp MODE             remote-login | xrdp | none   (default: remote-login)
   --ssh-key 'ssh-ed25519 AAAA...'   append to authorized_keys
   --no-join              set everything up but do not start the fleet agent
@@ -57,6 +63,7 @@ while [ $# -gt 0 ]; do
         --group) SERVER_GROUP="$2"; shift 2 ;;
         --data-dir) DATA_DIR="$2"; shift 2 ;;
         --infra-host) INFRA_HOST="$2"; shift 2 ;;
+        --catalog) CATALOG="$2"; shift 2 ;;
         --rdp) RDP_MODE="$2"; shift 2 ;;
         --ssh-key) SSH_KEY="$2"; shift 2 ;;
         --no-join) JOIN=0; shift ;;
@@ -66,6 +73,8 @@ while [ $# -gt 0 ]; do
 done
 
 REPO_DIR="$HOME/facetwork"
+[ -n "$INFRA_HOST" ] || { echo "ERROR: --infra-host NAME is required (or FW_INFRA_HOST)" >&2; exit 2; }
+[ -z "$CATALOG" ] || [ -r "$CATALOG" ] || { echo "ERROR: --catalog $CATALOG is not readable" >&2; exit 2; }
 say()  { printf '\n=== %s\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
 warn() { printf '    WARNING: %s\n' "$*" >&2; }
@@ -131,7 +140,7 @@ run sudo apt-get install -y "${PKGS[@]}"
 
 # ⚠️ Do NOT install Docker via Homebrew on Linux. Two daemons then fight over
 # /var/run/docker.pid and the service fails to start with an opaque
-# "control process exited with error code". Seen on atopnuc01.
+# "control process exited with error code". Seen on a light-tier host.
 if command -v brew >/dev/null 2>&1 && brew list docker >/dev/null 2>&1; then
     warn "Homebrew 'docker' is installed and will conflict with docker.io."
     warn "Remove it:  brew uninstall docker    (then re-run this script)"
@@ -181,7 +190,7 @@ if [ -n "$SSH_KEY" ]; then
             # -i is NOT optional. Without it ssh-copy-id picks an identity itself
             # (agent keys first, then whatever it finds in ~/.ssh) and will happily
             # install a key the client never OFFERS to this host — measured on
-            # macmini01, where it installed a repo deploy key while the client kept
+            # one host, where it installed a repo deploy key while the client kept
             # offering id_rsa. Auth then fails with a valid key in authorized_keys.
             warn "    ssh-copy-id -i ~/.ssh/id_rsa.pub $USER@$(hostname).local"
             SSH_KEY=""
@@ -259,7 +268,7 @@ info "$INFRA_HOST -> $INFRA_IP"
 # an omission. It used to point all four afl-* names at $INFRA_IP, which was true
 # when one machine held every service and became actively WRONG on 2026-09-13 when
 # MongoDB moved to another host (MinIO stayed) -- and again when afl-extracts
-# followed the OSM role. A dry run on macmini01 on 2026-09-18 showed it about to
+# followed the OSM role. A dry run on one host on 2026-09-18 showed it about to
 # write afl-mongodb -> the infra host, which has not served Mongo for five days.
 #
 # The fleet deleted these entries on every host for exactly that reason: a name
@@ -317,7 +326,7 @@ cur = list(cfg.get("insecure-registries") or [])
 
 # ⚠️ PRUNE stale IP entries for this registry port before adding the current one.
 # Naively appending accumulates one address per DHCP lease the infra host has
-# ever had (measured: server3.local:5050 + .67:5050 + .112:5050 on one host).
+# ever had (measured: the registry's name plus two stale addresses on one host).
 # That is not merely untidy -- each entry grants plain-HTTP trust to whatever
 # machine holds that address TODAY, and a released lease gets reassigned. Keep
 # the NAME (which follows the host) plus exactly the current IP.
@@ -356,6 +365,15 @@ if [ -d "$REPO_DIR/.git" ]; then
     run git -C "$REPO_DIR" reset -q --hard origin/main
 else
     run git clone -q "$REPO_URL" "$REPO_DIR"
+fi
+# The server catalog is SITE configuration: never committed, so a clone has none.
+# Untracked and gitignored, it also survives the `reset --hard` above on re-runs.
+if [ -n "$CATALOG" ]; then
+    run install -m 644 "$CATALOG" "$REPO_DIR/servers.json"
+    info "server catalog installed from $CATALOG"
+elif [ ! -f "$REPO_DIR/servers.json" ]; then
+    warn "no server catalog ($REPO_DIR/servers.json). Copy one from an existing host --"
+    warn "  e.g. from that host: fw fleet servers --push <this-host> -- or re-run with --catalog"
 fi
 run mkdir -p "$DATA_DIR"
 # ⚠️ Pre-create EVERY bind-mount source, as this user, before any container can
@@ -482,7 +500,7 @@ chk "registry reachable"          "curl -sf http://$REG/v2/ -o /dev/null"
 # host — worse than a false pass, in a script whose non-zero exit says
 # "do not trust this host".
 # ⚠️ Boot persistence and unprivileged control are what this script exists to
-# establish, so VERIFY them rather than assuming the install worked. atopnuc02 ran
+# establish, so VERIFY them rather than assuming the install worked. One host ran
 # for days active-but-disabled -- working, and guaranteed to vanish at its next
 # reboot -- because nothing ever asked. Compare the OUTPUT of is-enabled, not its
 # exit code (it exits 1 for a masked unit while printing the right answer).

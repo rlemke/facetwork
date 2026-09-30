@@ -66,7 +66,7 @@ python scripts/download_reactors.py --outdir runs/x --use-mock   # no engine at 
 python compare_outputs.py --run facetwork=runs/facetwork --run nextflow=runs/nextflow
 ```
 
-## Measured, 2026-08-11 (MaxPro, local Mongo, ~15 fleet runners also live)
+## Measured, 2026-08-11 (the laptop, local Mongo, ~15 fleet runners also live)
 
 Mock data, so no network and no throttling — this isolates orchestration:
 

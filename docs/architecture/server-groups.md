@@ -200,39 +200,39 @@ would thrash or crash on it.
 ### 6.4 Current fleet assignment (worked example, 2026-09-15)
 
 Six live hosts, 73 runners. The fleet was physically relocated on 2026-09-13:
-**server1 and server2 were decommissioned**, macmini01-03 / atopnuc01 / atopnuc02
-are their replacements, and every host's address changed. Nothing in this table
+**the two Intel minis were decommissioned**, five new hosts (three Mac minis
+running Linux and two small NUCs) are their replacements, and every host's address changed. Nothing in this table
 is keyed on an IP — hosts are named in `servers.json` and resolved at
 startup/reconcile, which is what let a whole-site move happen without a config
 edit (see [server-catalog.md](../reference/server-catalog.md)).
 
 | Host | Group | Container memory | Scratch free | Runs |
 |------|-------|------------------|--------------|------|
-| **beelink01** | `heavy` | 30.48 GiB | 608 GB | **MongoDB** + **the whole OSM role** (planet, extract server, replication timers) + all 23 roles |
-| **macmini02** | `heavy` | 30.69 GiB | 847 GB | all 23 roles incl. the osm tier |
-| **MaxPro** | `heavy` | 31.29 GiB | 3342 GB | all 23 roles incl. the osm tier |
-| **server3** | `heavy` | 23.43 GiB | 3581 GB | **MinIO + the registry** + all 23 roles; no longer the OSM host |
-| **macmini03** | `medium` | 30.69 GiB | **84 GB** | all 15 domain roles + generalist; **no osm/gh-router** |
-| **atopnuc01** | `runner` | 6.71 GiB | 91 GB | ffl + one generalist |
-| **atopnuc02** | `runner` | — | — | **not provisioned** |
-| ~~macmini01~~ | — | 3.26 GiB | 416 GB | **DROPPED 2026-09-15** — see below |
+| **database host** | `heavy` | 30.48 GiB | 608 GB | **MongoDB** + **the whole OSM role** (planet, extract server, replication timers) + all 23 roles |
+| **heavy Linux host** | `heavy` | 30.69 GiB | 847 GB | all 23 roles incl. the osm tier |
+| **laptop** | `heavy` | 31.29 GiB | 3342 GB | all 23 roles incl. the osm tier |
+| **infra host** | `heavy` | 23.43 GiB | 3581 GB | **MinIO + the registry** + all 23 roles; no longer the OSM host |
+| **medium-tier host** | `medium` | 30.69 GiB | **84 GB** | all 15 domain roles + generalist; **no osm/gh-router** |
+| **light-tier host 1** | `runner` | 6.71 GiB | 91 GB | ffl + one generalist |
+| **light-tier host 2** | `runner` | — | — | **not provisioned** |
+| ~~legacy host~~ | — | 3.26 GiB | 416 GB | **DROPPED 2026-09-15** — see below |
 
 **Two changes since 2026-09-13 that the tiers alone could not express:**
 
-**The OSM role moved from server3 to beelink01 (2026-09-15).** Both are `heavy`,
-so the group gate could not distinguish them — and server3 was the wrong host:
+**The OSM role moved from the infra host to the database host (2026-09-15).** Both are `heavy`,
+so the group gate could not distinguish them — and the infra host was the wrong host:
 32 GB of physical RAM shared between a 24 GiB Docker VM, MinIO, the registry and
 23 runners. Under a planet update it reached **60 MB of free memory**, its runner
 wedged, the 120s dead-server reaper reclaimed the task, and the reclaimed
 execution started a *fresh 92 GB copy* while the original kept running. Four ran
 concurrently. What actually moved the work was not a group but the
 **`dataset_planet_gb` routing dimension**: the 92 GB planet file now exists only
-on beelink01, so `Requires(dataset_planet_gb = 80)` resolves there and nowhere
+on the database host, so `Requires(dataset_planet_gb = 80)` resolves there and nowhere
 else. The tier says which roles a host *starts*; the dataset says which host can
 *claim*. This is the §2 point made concrete — placement by capability beats
 placement by label.
 
-**macmini01 was dropped, and the reason is instructive.** It is an Intel Core 2
+**The legacy host was dropped, and the reason is instructive.** It is an Intel Core 2
 Duo P8800 (2009): SSSE3 and CX16, but no SSE4.2 and no POPCNT, so it does not
 meet **x86-64-v2**. numpy in the runner image is built to that baseline, so
 `pip install numpy` there SUCCEEDS and only `import numpy` raises. Handler
@@ -248,21 +248,21 @@ The three tiers, and the axis that separates each pair:
 - **`heavy` vs everything else — memory.** The tier's defining workload is a
   europe OSM cut, measured peaking at **18.9 GB**. A host that cannot hold that
   does not belong in `heavy`, and the group gate is the cheap way to say so.
-- **`medium` vs `runner` — also memory**, but at the other end: macmini03 has
-  30.69 GiB, *more than server3*, and was sitting in the light tier running two
+- **`medium` vs `runner` — also memory**, but at the other end: the medium-tier host has
+  30.69 GiB, *more than the infra host*, and was sitting in the light tier running two
   containers while a 7.75 GiB host ran 23. `medium` exists (added 2026-09-13) so
   that a box with ample RAM but modest disk can take every domain role.
-- **`medium` vs `heavy` — scratch disk.** macmini03's memory would qualify it for
+- **`medium` vs `heavy` — scratch disk.** The medium-tier host's memory would qualify it for
   `heavy`; its ~84 GB of free root filesystem does not, because an OSM cut stages
   tens of GB there. Promoting it requires moving `FW_DATA_DIR` off `/` first.
 
 ⚠️ **A group is a floor, not a schedule.** Two things it deliberately does not do:
 
 1. It cannot separate hosts *within* a tier — the case that motivated
-   resource-aware claim routing (§ runtime), where MaxPro and server3 were both
+   resource-aware claim routing (§ runtime), where the laptop and the infra host were both
    `heavy` and only one could hold a Kreise split.
 2. It says nothing about **credentials**, which are just as much a capability as
-   RAM. Measured 2026-09-13: macmini02 was correctly gated `heavy` and ran the
+   RAM. Measured 2026-09-13: a heavy Linux host was correctly gated `heavy` and ran the
    census + anthropic per-domain runners **with no API keys at all** — it would
    claim those tasks and dead-letter every one. Group placement looked right and
    the host was incapable. Check keys whenever a host gains a role.
@@ -294,7 +294,7 @@ fw fleet set --role-groups census-us:heavy,medium --role-groups anthropic:heavy,
 
 ⚠️ `generalist` is gated `runner,medium`, **not** `runner` alone, deliberately: it
 covers the cold domains that have no dedicated role (energy, gibraltar, uspanel,
-stocks, amr…). Moving macmini03 out of `runner` would otherwise have silently
+stocks, amr…). Moving the medium-tier host out of `runner` would otherwise have silently
 dropped a generalist from the fleet — gaining 15 roles while losing coverage of
 the ones nobody names.
 
@@ -304,7 +304,7 @@ restart. The agent reads the group from that file, so a config that references a
 group no host claims starts nothing and reports nothing.
 
 Verified end-to-end 2026-07-10: an `osm.heatmap.ContinentHeatmap` fan-out over 3
-leaves ran **all 13 osm tasks on MaxPro** and **zero on the emulated minis** — the
+leaves ran **all 13 osm tasks on the laptop** and **zero on the emulated minis** — the
 gate kept the heavy PBF/tiling work on the only box provisioned for it, while the
 minis kept serving their light domains. Emulation lesson worth carrying: baking
 every domain into the image (so containers skip the per-start `pip install`)
@@ -320,7 +320,7 @@ tier off them.
 - `fw fleet agent apply --dry-run` on a host — prints exactly which roles it would
   **start** and which it would **skip ("not in group")**, so placement is
   auditable before it takes effect.
-- Confirm at runtime by which host actually ran a role's tasks (the osm-on-MaxPro
+- Confirm at runtime by which host actually ran a role's tasks (the osm-on-the-laptop
   check above): a mis-tier shows up as tasks pending (no capable host) or as heavy
   work landing on a host that thrashes.
 

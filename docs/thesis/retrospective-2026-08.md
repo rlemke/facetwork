@@ -219,7 +219,7 @@ enumerate. They stat, and they lie. `ls` is what tells the truth.
 - **Multi-host contention is untested** for wide fan-outs; both acceptance runs
   were single-host.
 - **Cluster hosts are unchanged.** The consolidation and the self-hosted OSM
-  work are per-deployment (`domains.local.json`), so server1/2/3 are untouched.
+  work are per-deployment (`domains.local.json`), so the Intel minis and the infra host are untouched.
 
 ## 9. If there is one thing to carry forward
 

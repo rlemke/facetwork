@@ -7,7 +7,7 @@ image build, `fw ffl bake-envs` on hosts). v91 hands-off verification: 38/39
 live runners advertised the canonical environment straight from the image
 and a cold pilot submit completed with zero manual steps. Lazy materialization (§4.2) shipped and
 live-verified on v92: a workflow pinning a never-baked manifest
-(`PyHumanOld@39133371`) completed hands-off — a MaxPro runner's demand scan
+(`PyHumanOld@39133371`) completed hands-off — a laptop runner's demand scan
 built the venv, re-registered advertising both the baked and the new hash,
 and claimed. First production migration verified (fwh_osm
 c841719, fleet v93): osm.emergency's four param-only facets moved from

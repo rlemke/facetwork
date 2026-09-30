@@ -86,7 +86,7 @@ every server can pull from, then point the central config at the new tag.
 > immutable tag, so correctness no longer depends on the pre-pull.
 
 > **Image garbage collection**: every rollout pulls a fresh ~2GB tag, and old
-> tags used to accumulate until a host filled its disk (server1 hit 100% after
+> tags used to accumulate until a host filled its disk (an Intel mini hit 100% after
 > six generations, wedging its reconcile with ENOSPC). The fleet-agent now
 > prunes superseded runner-image tags after each successful reconcile — it
 > keeps the just-applied tag plus the newest other tag (one-step rollback) and

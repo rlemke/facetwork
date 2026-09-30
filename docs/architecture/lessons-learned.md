@@ -366,7 +366,7 @@ Two startup gotchas burned ~50 minutes of a North-America tiled render this sess
 **Upfront requirement**:
 - **Print the effective value on the banner**, tagged with its source. The shipped form distinguishes `(env)` from `(default in .env)`:
   ```
-  FW_OUTPUT_BASE: /Users/ralph_lemke/osm-route-cache/output  (env)
+  FW_OUTPUT_BASE: $HOME/osm-route-cache/output  (env)
   FW_OUTPUT_BASE: /tmp/output  (default in .env)
   ```
 - **Probe writability on the spot.** `mkdir -p` + `-w` test; a non-writable target emits a STDERR warning. Catches the original osm.Network case where `/Volumes/afl_data/output` doesn't exist on the host.
@@ -458,7 +458,7 @@ There is no setting that converts every region on this host; the feasible region
 
 ### C. A wedged Docker-Desktop VM network needs a FULL teardown, not a reopen
 
-When the large-VM attempt crashed Docker Desktop, the VM's linuxkit network wedged: the host log (`~/Library/Containers/com.docker.docker/Data/log/host/*.log`) showed `no route to host 192.168.65.7:2376` and `tx dropped packets`. A simple quit-and-reopen of Docker Desktop did **not** clear it. Recovery required a full process teardown: quit Docker, `pkill com.docker`, `pkill com.docker.backend`, wait ~20s for the processes to actually exit, then `open -a Docker`. Worth knowing before you burn time reopening a half-dead daemon. (The VM `MemoryMiB` itself lives in `~/Library/Group Containers/group.com.docker/settings-store.json` — host config, not a repo file.)
+When the large-VM attempt crashed Docker Desktop, the VM's linuxkit network wedged: the host log (`~/Library/Containers/com.docker.docker/Data/log/host/*.log`) showed `no route to host <docker-vm-ip>:2376` and `tx dropped packets`. A simple quit-and-reopen of Docker Desktop did **not** clear it. Recovery required a full process teardown: quit Docker, `pkill com.docker`, `pkill com.docker.backend`, wait ~20s for the processes to actually exit, then `open -a Docker`. Worth knowing before you burn time reopening a half-dead daemon. (The VM `MemoryMiB` itself lives in `~/Library/Group Containers/group.com.docker/settings-store.json` — host config, not a repo file.)
 
 ### D. Resolution: a size gate makes the infeasible explicit instead of failing it slowly
 

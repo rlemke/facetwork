@@ -124,9 +124,9 @@ Singleton jobs, deliberately on one host each — not per-host.
 
 | Host | When | Job |
 |---|---|---|
-| beelink01 | 02:40 daily | `backup-mongo` — control-plane dump to the archive host |
-| beelink01 | 03:15 daily | `osm-replicate` — publish new per-region diffs |
-| beelink01 | every 12 h | `osm-watchdog` — independent alarm on a stalled stream |
+| the database host | 02:40 daily | `backup-mongo` — control-plane dump to the archive host |
+| the database host | 03:15 daily | `osm-replicate` — publish new per-region diffs |
+| the database host | every 12 h | `osm-watchdog` — independent alarm on a stalled stream |
 
 Read the truth with `crontab -l` (Linux) or `launchctl list | grep com.facetwork`
 (macOS), and per-command with `fw <group> <name> --status`. This table is a

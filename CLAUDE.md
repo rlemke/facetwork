@@ -45,7 +45,18 @@ Notes for working with `fw`:
   registry-setup`, `fw runner scale`, `fw maint purge-servers`) are the standard
   fleet/runner ops — prefer them over raw `docker`/`pymongo`. Most take `--dry`.
 - Mongo-touching commands default to `localhost:27017`; on a runner host that isn't
-  the DB, pass `--mongo mongodb://server3.local:27017` (or set `FW_MONGODB_URL`).
+  the DB, pass `--mongo mongodb://afl-mongodb:27017` (resolved through the server
+  catalog) or set `FW_MONGODB_URL`.
+- ⚠️ **No host name, address or personal path is committed — anywhere.** They
+  come from site configuration: the server catalog (`servers.json`, gitignored;
+  `servers.example.json` is the template; `fw fleet servers --push` distributes
+  it), `.env`/`.env.fleet`, and for tests `tests/_site.py` (reads an uncommitted
+  `tests/site.local.json`, else generates reserved-range values). Scripts look a
+  service's host up with `fw_service_host afl-<service>` (in `_bootstrap.sh`),
+  never a literal default. Docs and comments name machines by ROLE ("the infra
+  host", "the database host"). `tests/test_no_site_identifiers.py` enforces the
+  test side. A new host gets the catalog via `setup-ubuntu-fleet-host.sh
+  --infra-host NAME --catalog FILE`.
 - **`fw install check [--install]`** — host-readiness analyzer, three sections.
   (1) Statically scans `tests/` + `examples/` for imported modules (incl.
   `pytest.importorskip`) and reports what isn't importable here. (2) Lists the
@@ -76,7 +87,7 @@ Notes for working with `fw`:
   proves nothing), and it reports **two** dimensions: an unprivileged restart AND
   `is-enabled`. Boot persistence is a *different* polkit action
   (`manage-unit-files`), so a host can pass the restart check and still never
-  return from a reboot — measured on atopnuc02, which ran for days active and
+  return from a reboot — measured on a light-tier host, which ran for days active and
   disabled with nothing reporting it. Exits non-zero naming whichever leg failed.
   Refuses on macOS, where launchd already needs no sudo (`launchctl kickstart -k
   gui/$UID/com.facetwork.fleet-agent`). Full rationale and the 10 -> 1000 machine
@@ -152,7 +163,7 @@ Notes for working with `fw`:
   Real names go to **stdout only**, which never leaves the machine.
   ⚠️ `--install` **refuses** an unreachable endpoint rather than installing a
   timer that fails every tick, and it does **not guess** which store is the
-  fleet's: MaxPro's leftover standalone MinIO answers on `localhost:9000` with
+  fleet's: a laptop's leftover standalone MinIO answers on `localhost:9000` with
   an `osm-extracts` bucket of its own, so an auto-fallback pinned the job to a
   stale parallel world and reported it authoritatively.
 - **`fw svc osm-watchdog [--install] [--every-hours N] [--status]`** — an
@@ -229,7 +240,7 @@ Notes for working with `fw`:
   with *"getcwd: Operation not permitted"*; the wrapper cd's itself after
   waiting for the mount. Producer side: `fwh_osm`'s
   `publish-replication.sh` (see that repo's `docs/replication-publishing.md`).
-  ⚠️ **`--container` (nginx) is the right mode on some hosts, and server3 is
+  ⚠️ **`--container` (nginx) is the right mode on some hosts, and the infra host is
   one.** macOS Sequoia withholds Local Network permission from native processes
   unless something can prompt for it, which a launchd job cannot — there, the
   python server answered `localhost` with 200 and **timed out from every other
@@ -332,7 +343,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Claude workflow catalog (store/version/run FFL with no file; `fw_catalog_*` MCP tools) | [docs/architecture/claude-workflow-catalog.md](docs/architecture/claude-workflow-catalog.md) |
 | `use` resolution: file-based compile vs. the catalog (hermetic pinned-dep model) | [docs/architecture/catalog-use-resolution.md](docs/architecture/catalog-use-resolution.md) |
 | Extending with new handlers (NL needs a capability no facet provides → detect gap → scaffold facet+handler+test) — `fw ffl scaffold` | [docs/architecture/extending-with-new-handlers.md](docs/architecture/extending-with-new-handlers.md) |
-| **Server catalog (`servers.json`)** — machines by STABLE NAME + aliases (`afl-mongodb`…); resolved to the current IP at startup/reconcile so DHCP drift self-heals (no `/etc/hosts` edits). `fw fleet servers` | [docs/reference/server-catalog.md](docs/reference/server-catalog.md) |
+| **Server catalog (`servers.json`)** — ⚠️ **site configuration, NEVER committed** (it names this deployment's machines; `servers.example.json` is the template; distribute edits with `fw fleet servers --push`). Machines by STABLE NAME + aliases (`afl-mongodb`, `afl-minio`, `afl-extracts`, `afl-registry`, `afl-backup`; `fw fleet servers --service-host NAME` → the host serving it, else the infra host); resolved to the current IP at startup/reconcile so DHCP drift self-heals (no `/etc/hosts` edits). `fw fleet servers` | [docs/reference/server-catalog.md](docs/reference/server-catalog.md) |
 | **Domain/example catalog (`domains.json`)** — single source of truth for the domain set + per-domain attributes (repo/extras/service/task_list/scaled/fleet_default…) + `defaults` replica counts; field reference, file resolution + `domains.local.json`/`FW_DOMAINS_FILE` override, and add-a-domain / per-deployment walkthroughs. Read by install/migrate/gen-compose/runner-start/fleet | [docs/reference/domain-catalog.md](docs/reference/domain-catalog.md) |
 | Composable facet library (design): orthogonal/complete/discoverable/distributed primitives for LLM-composed workflows + the memory-of-solved-requests moat | [docs/architecture/composable-facet-library.md](docs/architecture/composable-facet-library.md) |
 | **Script environments (SHIPPED + fleet-verified)**: named `environment` decls (language + frozen dep manifest) + `in environment` on script-bearing decls; environment = claim-routing dimension (tasks carry the manifest hash, runners advertise provided envs); venvs baked at image build (`facetwork.envbake`) or lazily materialized on demand; foreign languages ride the polyglot agent protocol; canonical example `11-environment-script.ffl` | [docs/architecture/script-environments.md](docs/architecture/script-environments.md) |
@@ -347,12 +358,12 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`fw fleet simulate`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
 | **Fleet rollouts & runner lifecycle** — image-based change deployment (buildx→registry→`fleet set --image`), what happens to running tasks during a rollout (graceful drain → reaper recovery → retry/dead-letter), start/stop/drain runners from the CLI, and how this auto-deploy compares to Kubernetes/Temporal-grade pipelines | [docs/operations/fleet-rollouts.md](docs/operations/fleet-rollouts.md) |
 | **Informal fleet — your team's own machines as the cluster** — only central MongoDB+MinIO must be stable; runner machines (desktops/laptops) are stateless & disposable and can come/go (reaper → re-claim); who this model is for (small/research teams); large-scale data-center operation is architecturally **possible but untested** — treat it as a real engineering investment (hardening/scheduling/observability), not a config change | [docs/operations/informal-fleet.md](docs/operations/informal-fleet.md) |
-| **Mounting a data disk on a fleet host** — name the filesystem by **UUID, never a device path** (measured: beelink01's root fs is `nvme0n1p2` booted but `nvme1n1p2` in the initramfs — two identical NVMes swap names by context, and `sda`/`sdb` has the same exposure); `nofail` + `x-systemd.device-timeout` so an absent disk cannot drop a headless host to an emergency shell; and **order Docker after the mount** (`RequiresMountsFor`) — a bind whose source mounts 4.5 min after Docker silently resolves to the empty dir *underneath* it and containers write to the wrong disk. ⚠️ `mount -a` proves the entry parses, not that it survives a boot — only a reboot does. macOS (Docker Desktop file-sharing) equivalent included | [docs/operations/mounting-a-data-disk.md](docs/operations/mounting-a-data-disk.md) |
+| **Mounting a data disk on a fleet host** — name the filesystem by **UUID, never a device path** (measured: the database host's root fs is `nvme0n1p2` booted but `nvme1n1p2` in the initramfs — two identical NVMes swap names by context, and `sda`/`sdb` has the same exposure); `nofail` + `x-systemd.device-timeout` so an absent disk cannot drop a headless host to an emergency shell; and **order Docker after the mount** (`RequiresMountsFor`) — a bind whose source mounts 4.5 min after Docker silently resolves to the empty dir *underneath* it and containers write to the wrong disk. ⚠️ `mount -a` proves the entry parses, not that it survives a boot — only a reboot does. macOS (Docker Desktop file-sharing) equivalent included | [docs/operations/mounting-a-data-disk.md](docs/operations/mounting-a-data-disk.md) |
 | **Open items** — what is outstanding and why, ordered by consequence: known defects with no fix yet (no co-location primitive; capability advertisement cannot see a lazy import; nothing rewrites absolute paths after a migration; 53 permanently-stale country extracts), deployment hygiene, the parked `fw:sys` control channel, and queued ideas. The architectural roadmap in lessons-learned.md tracks DESIGN work; this tracks what accumulates in practice | [docs/operations/open-items.md](docs/operations/open-items.md) |
 | **Prompts for working with Facetwork** — ready-to-use Claude Code prompts by task: what to install for your situation (own handlers only / a subset of domains), the four deployment shapes, swapping the object store or database (**with the honest cost** — storage is genuinely pluggable; `PersistenceAPI` is 68 methods and a green test suite would NOT prove a new backend correct), writing facets in your own repo, environments, Docker operations, and diagnosis prompts drawn from real failures. Every prompt asks for what was MEASURED | [docs/getting-started/prompts.md](docs/getting-started/prompts.md) |
 | **Research papers** — nine standalone write-ups grounded in this fleet's operating record, indexed by theme. Most relevant to operations: **Moving State** (relocating a database and 298 GB of bulk data; storage-identity failures and **seven probes that reported health while the system was broken**), **An Informal Fleet**, and **Green Is Not Done**. ⚠️ Papers are historical records — they are NOT retrofitted when the system changes | [docs/thesis/README.md](docs/thesis/README.md) |
 | **Local maps gallery (`fw svc maps`)** — browse every map straight from MinIO (read-only proxy, streamed on demand; no git repo, no bucket-policy change), grouped by domain. Decouples *keeping* maps (big/tiled/data stay in the object store) from *publishing* selected ones to the public `facetwork-maps` site. `http://localhost:8090/` | [docs/operations/local-maps-gallery.md](docs/operations/local-maps-gallery.md) |
-| **`fw mode` — day-cluster / night-local switch** — two SEPARATE models: **join/leave** (Model A — stop/start lending this machine to the cluster as a runner; near-free, reaper re-claims; the common "night" case) and **local/cluster** (Model B — flip WHERE infra lives via gitignored `mode.{local,cluster}.json` profiles + recreate runners; `cluster` REFUSES if the target infra is unreachable so it can't strand the box). ⚠️ Model B does NOT merge state — local and cluster are separate Mongo+object-store worlds. Built on the MaxPro standalone setup | [docs/operations/fw-mode.md](docs/operations/fw-mode.md) |
+| **`fw mode` — day-cluster / night-local switch** — two SEPARATE models: **join/leave** (Model A — stop/start lending this machine to the cluster as a runner; near-free, reaper re-claims; the common "night" case) and **local/cluster** (Model B — flip WHERE infra lives via gitignored `mode.{local,cluster}.json` profiles + recreate runners; `cluster` REFUSES if the target infra is unreachable so it can't strand the box). ⚠️ Model B does NOT merge state — local and cluster are separate Mongo+object-store worlds. Built on the standalone-laptop setup | [docs/operations/fw-mode.md](docs/operations/fw-mode.md) |
 | **Comparison to Hadoop / Spark / Kubernetes** — honest assessment of our install/deploy machinery against platforms solving the same shape of problem at a different scale of assurance. Where we match them (desired state in a DB + per-host reconcile loop = kubelet; leaderless, so there is no master to lose; Temporal-style capability-filtered claiming; immutable image deploys; drain-before-stop) and where we are behind, ordered by consequence — ⚠️ **the control plane is unauthenticated** (measured: Mongo `authenticatedUsers: []`, MinIO default creds, plain-HTTP registry), no rollback or readiness gating on deploy, no metrics pipeline, `fleet_config` is mutable state rather than a versioned spec. Ends with a ranked list of what to actually fix, and what NOT to build | [docs/operations/comparison-to-production-platforms.md](docs/operations/comparison-to-production-platforms.md) |
 | **Operating a fleet without sudo** — privilege ESTABLISHES a host, it must never OPERATE one. Inventory of every root-requiring action with where it belongs and what deferring it costs (measured: an `enable` nobody verified, 23 bind sources Docker invented as root, a polkit rule missing so every restart needed a password); the three mechanisms (scoped polkit rule / containerised agent / user unit + linger) with their trade-offs; and the 10 → 100 → 1000 path, where all three tiers run the SAME idempotent script — if the 1000-machine path needs a different mechanism, the small one was manual work wearing a script's clothes | [docs/operations/zero-sudo-operations.md](docs/operations/zero-sudo-operations.md) |
 | **Diagnosis field notes** — traps that have actually cost time here, organised by the MISTAKE not the component: the **probe that cannot fail** (10 measured instances — `timeout` absent on macOS, `pgrep` matching its own command line, `stat -f` succeeding on Linux with a *filesystem* report), **stale artifacts read as current** (a checksum 8 weeks old, a log 4 days stale, a daemon running 3-day-old code), BSD/GNU divergence, the four ways a 298 GB migration was incomplete, and Docker bind/mount ordering | [docs/operations/diagnosis-field-notes.md](docs/operations/diagnosis-field-notes.md) |
@@ -703,11 +714,11 @@ filters. This is the third capability dimension alongside `environment_hash` and
 `required_features`, and follows their contract exactly: **absent means
 unconstrained**, so it is inert for work that does not use it.
 
-Motivating measurement (2026-08-26): MaxPro (7.75 GiB Docker VM) and server3
+Motivating measurement (2026-08-26): a laptop (7.75 GiB Docker VM) and the infra host
 (13.63 GiB) are BOTH in the `heavy` server group, so group-based placement could
-not tell them apart. MaxPro claimed a German Kreise split, OOM'd at a 5.8 GB
-budget, failed, and only then retried onto server3. A floor of `memory_gb=10`
-skips MaxPro at claim time instead.
+not tell them apart. The laptop claimed a German Kreise split, OOM'd at a 5.8 GB
+budget, failed, and only then retried onto the infra host. A floor of `memory_gb=10`
+skips the laptop at claim time instead.
 
 Set a floor with a `Requires` mixin, on the facet or at the call site (call site
 wins, exactly like `Timeout`). Values may be literals or reference one of the

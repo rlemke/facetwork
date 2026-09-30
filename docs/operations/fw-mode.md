@@ -38,7 +38,7 @@ usually means.
 
 This flips **where infra lives** and recreates the runners against it. Use it only
 on a machine that has its own local deployment (Mongo + MinIO + registry + data),
-such as MaxPro ([maxpro-standalone.md](maxpro-standalone.md)).
+such as the laptop ([standalone-laptop.md](standalone-laptop.md)).
 
 Each switch is driven by a gitignored, host-local profile — `mode.local.json` and
 `mode.cluster.json` — holding the handful of values that differ:
@@ -51,7 +51,7 @@ Each switch is driven by a gitignored, host-local profile — `mode.local.json` 
 
 **In `local` mode the containers get no address at all.** Since infra *is* this machine, `FW_INFRA_IP` is written as Docker's **`host-gateway`** alias (`catalog.container_ip()`), which Docker maintains — so the mapping survives a reboot onto a new DHCP lease, a subnet change, or no network at all, with nothing to re-resolve and no per-reboot edit. Only `cluster` mode carries a real address, because there infra is a different machine. `fw mode status` shows both: the live-resolved IP it probes, and what the containers actually use. See [server-catalog.md](../reference/server-catalog.md#when-infra-is-this-machine-host-gateway-not-an-address).
 
-| `fleet_registry` | `host.docker.internal:5050` (local `registry:2`) | `server3.local:5050` |
+| `fleet_registry` | `host.docker.internal:5050` (local `registry:2`) | `<registry-host>:5050` (from the server catalog) |
 | `mongodb_url` / `s3_endpoint` | `afl-mongodb` / `afl-minio` → localhost | → the infra host |
 | `data_dir` / `data_root` | local scratch + `s3://afl-cache` | same names, remote |
 | `server_catalog` | `local` (writes `servers.local.json`) | `none` (committed defaults govern) |
@@ -83,7 +83,7 @@ fleet; the first offline run of each domain is just slower.
 
 ### Standing up a machine for Model B
 
-See [maxpro-standalone.md](maxpro-standalone.md) for the full one-time setup (local
+See [standalone-laptop.md](standalone-laptop.md) for the full one-time setup (local
 Mongo restore, MinIO, a local `registry:2` for rebuild independence, and data). Note
 in particular: **create every bucket the fleet writes to** (e.g. `afl-cache`), even
 the ones you skip mirroring, or the first output write fails `NoSuchBucket`.

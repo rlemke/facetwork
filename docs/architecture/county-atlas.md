@@ -279,7 +279,7 @@ a calculated-indicator panel. Size/quality techniques (rural county **6.5 MB →
 per-county OSM PBF tree (`north-america/us/<state>/<county>-latest.osm.pbf`, produced by
 `osm.planet.BuildAdminFanout`) → **3,167 county atlases, 0 failed**, ~7.0 GB in MinIO
 (avg 2.5 MB), then `BuildMasterIndex` → 51-state index. Run by **7 native detached runners
-(14 workers) on server3**, ~23 s/county warm.
+(14 workers) on the infra host**, ~23 s/county warm.
 
 **Why native runners, not the Docker fleet:** the seeded FFL handlers carry `file://`
 handler paths that a native runner reads as host paths directly; containerized fleet
@@ -299,13 +299,13 @@ every domain — a red herring).
 
 - **Fleet config**: in `domains.json` (`task_list=county`, `fleet_default`, `scaled`),
   `gen-compose`'d, FFL seeded, repo made public. **Baked into the fleet image**
-  (`server3.local:5050/facetwork-runner:46de3bc`, 1 of 19 baked domains) for permanence.
+  (`<registry-host>:5050/facetwork-runner:46de3bc`, 1 of 19 baked domains) for permanence.
   **Not** a standing runner role — it's a batch domain, so bake = on-demand availability;
   no `runner-county-atlas` container auto-starts (fine; add a role only if continuous
   serving is wanted).
 - **Full set (local)**: the `osm-extracts` MinIO bucket is whole-bucket public (the
   self-hosted-Geofabrik PBF serving) → the 3,167-county archive browses at
-  `http://server3.local:9000/osm-extracts/county-atlas/index.html`.
+  `http://<infra-host>:9000/osm-extracts/county-atlas/index.html`.
 - **GitHub Pages (curated, 2026-07-28)**: **4 small examples** (Coos OR, San Juan CO,
   Loving TX, Petroleum MT) + a custom `county-atlas/index.html` linking the full local
   archive. The **2 large examples** (Santa Clara CA, Harris TX) are **local-only** — 404 on
@@ -330,7 +330,7 @@ unbounded again.** The reasoning below still holds and the cap should return —
 after the liveness defect at the end of this section is fixed.
 
 **Why, measured on the national run itself:** it created **3,290 tasks / 9,505 steps**,
-but the work was executed by **7 native runners (14 workers) on server3** (§9.4) — so
+but the work was executed by **7 native runners (14 workers) on the infra host** (§9.4) — so
 ~3,150 sub-blocks existed only to sit pending. Width beyond the number of workers
 serving `BuildCountyAtlas` buys no throughput; it costs step and task records, block
 cascade work on every sweep, and scratch disk for each county PBF in flight.

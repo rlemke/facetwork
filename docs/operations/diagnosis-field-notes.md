@@ -63,8 +63,8 @@ compare the process start against its own source's mtime:
 
 | host | agent code mtime | process started | |
 |---|---|---|---|
-| server3 | 15:33 | **14:12** | 81 min older than its code |
-| MaxPro | Sep **17** 07:28 | Sep **15** 20:53 | **2 days** older than its code |
+| infra host | 15:33 | **14:12** | 81 min older than its code |
+| laptop | Sep **17** 07:28 | Sep **15** 20:53 | **2 days** older than its code |
 
 Both reported `up to date (v218)` while running a container on the previous image:
 their older logic compared only the config version, never the container's image.
@@ -108,7 +108,7 @@ something plausible.
 | `rsync` | macOS ships **openrsync**, which rejects many options. Use `--rsync-path=/opt/homebrew/bin/rsync` |
 
 ⚠️ **A non-interactive ssh session on macOS does not have Docker on its PATH.**
-Measured on server3: `ssh host 'docker ps'` returns `command not found` while the
+Measured on the infra host: `ssh host 'docker ps'` returns `command not found` while the
 same command works in an interactive shell, because Docker Desktop's PATH entry
 comes from a profile that a non-login shell never reads. It reads exactly like a
 dead daemon. Use an absolute path in any scripted ssh:
@@ -169,8 +169,8 @@ were out of the fleet at that moment, and both kept their stale pins:
 
 | host | pins | wrong |
 |---|---|---|
-| macmini01 | 4 | **4** — all at an address holding none of these services |
-| atopnuc02 | 4 | **2** — `afl-mongodb` and `afl-extracts` moved hosts since |
+| legacy host | 4 | **4** — all at an address holding none of these services |
+| light-tier host | 4 | **2** — `afl-mongodb` and `afl-extracts` moved hosts since |
 
 Both later rejoined, carrying the exact configuration the cleanup existed to
 remove. They function only because the host-side helpers were separately taught to
@@ -191,15 +191,15 @@ on evidence:
 
 | line | verdict | how it was decided |
 |---|---|---|
-| `192.168.68.112 afl-mongodb afl-minio` | stale | probed both ports on `.112` — **closed** |
-| `127.0.0.1 afl-postgres` | stale | 5432 **closed** locally on both hosts; catalog says `.117` |
-| `192.168.68.127 afl-mongodb` (server3) | correct, redundant | matches the catalog |
+| `<old-ip> afl-mongodb afl-minio` | stale | probed both ports on that address — **closed** |
+| `127.0.0.1 afl-postgres` | stale | 5432 **closed** locally on both hosts; catalog says the infra host |
+| `<db-host-ip> afl-mongodb` | correct, redundant | matches the catalog |
 | `127.0.0.1 afl-hadoop-{hdfs,yarn}` | **left alone** | not in the catalog at all; HDFS is not deployed |
 
 A name pointed at loopback is legitimate *when the service really runs there* — so
 the deciding test is whether the port answers, not whether the line looks unusual.
-And one correct-looking result is not the same as a correct rule: server3
-resolves `afl-minio` to `127.0.0.1` **because server3 is the MinIO host**, which is
+And one correct-looking result is not the same as a correct rule: the infra host
+resolves `afl-minio` to `127.0.0.1` **because the infra host is the MinIO host**, which is
 proper self-resolution, not drift.
 
 17. **Decide a cleanup line-by-line against a probe, not by pattern.** A pattern
@@ -228,7 +228,7 @@ proper self-resolution, not drift.
     targeting (`_remote.sh`) and name resolution (`_env.sh`, `_catalog_ip`) — and
     **not participation**. A host set false still runs its agent, applies
     fleet_config, starts runners and claims work; it is simply invisible to every
-    ops sweep, so it silently misses fixes. Measured: atopnuc02 applied v217 with
+    ops sweep, so it silently misses fixes. Measured: a light-tier host applied v217 with
     2/2 runners up while no host in the fleet could ssh to it. Same shape as the
     rule above, and the same defence: **check the OUTCOME you care about** (is it
     running work? does it survive a reboot?) rather than trusting a flag's name.
@@ -256,7 +256,7 @@ proper self-resolution, not drift.
     domain's tasks` and moves on. That is right when one domain is broken. When
     *every* start fails for a shared reason, the same rule reports the reconcile as
     successful with **all** containers left on the old image — measured on
-    macmini03: `[up-to-date]` while running **17 stale containers**. A tolerance
+    a medium-tier host: `[up-to-date]` while running **17 stale containers**. A tolerance
     scoped per item needs an aggregate check: *did any of them succeed?* The
     image-level check (`_containers_on_wrong_image`) is what finally made it
     visible, because it asks about the outcome rather than the attempts.
@@ -268,7 +268,7 @@ proper self-resolution, not drift.
 
 ## 7. Shell semantics that produce a silent non-zero exit
 
-The macmini02 outage (94 failed reconciles, **zero bytes of output**) was one line:
+The heavy-Linux-host outage (94 failed reconciles, **zero bytes of output**) was one line:
 
 ```bash
 VAR="$(python -c '... sys.exit(1) ...')"     # exits 1 to mean "declined"
