@@ -53,6 +53,10 @@ x-fleet-runner: &fleet-runner
   # rollout finishes in-flight tasks instead of killing them. Override per-host with
   # FW_RUNNER_STOP_GRACE if some handlers need longer.
   stop_grace_period: ${FW_RUNNER_STOP_GRACE:-35s}
+  # Runners are batch work: when a host runs out of memory they -- and the
+  # osmium they spawn, which inherits the score -- must be the kernel's first
+  # choice, never MongoDB or the agent. See docker-compose.mongodb.yml (-1000).
+  oom_score_adj: ${FW_RUNNER_OOM_SCORE_ADJ:-500}
   # Register under a meaningful name (set by start-runner to this host's hostname
   # / FW_FLEET_HOST) so `fleet status` shows the server by name, not a random id.
   hostname: ${FW_FLEET_HOST:-}
