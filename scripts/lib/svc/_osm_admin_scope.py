@@ -129,6 +129,11 @@ def main() -> int:
         "stale data, so only use this deliberately",
     )
     ap.add_argument("--list-sets", action="store_true")
+    ap.add_argument(
+        "--allow-unschedulable",
+        action="store_true",
+        help='expand a set marked "schedulable": false (verified to produce nothing)',
+    )
     a = ap.parse_args()
 
     path = os.environ.get("FW_OSM_REGEN_SETS_FILE") or DEFAULT_SETS
@@ -147,6 +152,16 @@ def main() -> int:
     if not spec:
         print(f"unknown set {a.set_name!r}; known: {', '.join(sorted(sets))}", file=sys.stderr)
         return 2
+    # A set can be kept in the catalogue as a RECORD ("tried, produces nothing,
+    # here is why") without being runnable. Its description said "do not
+    # schedule" in prose, which nothing read -- it was submitted anyway on
+    # 2026-09-30 and burned ~3 host-hours across four hosts re-proving it.
+    if spec.get("schedulable") is False and not a.allow_unschedulable:
+        print(
+            f"set {a.set_name!r} is marked unschedulable: {spec.get('description', '')}",
+            file=sys.stderr,
+        )
+        return 1
 
     try:
         client = _s3()

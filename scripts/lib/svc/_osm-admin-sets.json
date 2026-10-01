@@ -188,7 +188,8 @@
         "force_refresh"
       ],
       "expect": 0,
-      "expect_prefix": null
+      "expect_prefix": null,
+      "schedulable": false
     },
     "rest-of-world": {
       "description": "All five stale continent country-tiers, one submission each",
