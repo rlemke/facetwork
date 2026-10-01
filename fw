@@ -19,11 +19,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/_helpers/_bootstrap.sh"
 _fw_resolve_service_urls() {
     local v urls=() out i=0 fromfile
     for v in FW_MONGODB_URL FW_S3_ENDPOINT; do
-        # Same precedence as _env.sh / _dotenv.py: the environment wins, else .env.
-        if [ -z "${!v:-}" ] && [ -f "$FW_ROOT/.env" ]; then
-            fromfile="$(sed -nE "s/^(export[[:space:]]+)?$v=[\"']?([^\"'#[:space:]]*).*/\\2/p" "$FW_ROOT/.env" | tail -1)"
+        # Precedence: the environment, then .env, then .env.fleet -- the order the
+        # commands themselves use (osm-admin-regen and svc maps lift the S3 trio
+        # from .env.fleet). Resolving here means they find it already set.
+        for f in "$FW_ROOT/.env" "$FW_ROOT/.env.fleet"; do
+            [ -z "${!v:-}" ] && [ -f "$f" ] || continue
+            fromfile="$(sed -nE "s/^(export[[:space:]]+)?$v=[\"']?([^\"'#[:space:]]*).*/\\2/p" "$f" | tail -1)"
             [ -n "$fromfile" ] && export "$v=$fromfile"
-        fi
+        done
         urls+=("${!v:-}")
     done
     case "${urls[*]}" in *afl-*) ;; *) return 0 ;; esac
