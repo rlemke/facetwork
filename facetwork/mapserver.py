@@ -510,18 +510,18 @@ def _actions(m: dict, can_publish: bool) -> str:
 
 
 def render_gallery(maps: list[dict], can_publish: bool = False) -> str:
+    blocks = [
+        '<h2>World</h2><div class="grid"><div class="card"><div class="t">'
+        '<a href="/lz/" style="color:inherit">Low-zoom road maps of the world →</a></div>'
+        '<div class="d">by continent, then country, then region</div></div></div>'
+    ]
     if not maps:
         body = (
             '<div class="empty">No maps in the store yet. Run a map workflow '
             f"(its output lands in MinIO under <code>{escape(PREFIX)}&lt;domain&gt;/maps/…</code>) "
             "and refresh.</div>"
         )
-        return _PAGE.format(bucket=escape(BUCKET), count=0, body=body)
-    blocks = [
-        '<h2>World</h2><div class="grid"><div class="card"><div class="t">'
-        '<a href="/lz/" style="color:inherit">Low-zoom road maps of the world →</a></div>'
-        '<div class="d">by continent, then country, then region</div></div></div>'
-    ]
+        return _PAGE.format(bucket=escape(BUCKET), count=0, body="".join(blocks) + body)
     by_domain: dict[str, list[dict]] = {}
     for m in maps:
         by_domain.setdefault(m["domain"], []).append(m)

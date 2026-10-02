@@ -72,3 +72,7 @@ def test_unknown_region_and_missing_plan():
 def test_world_maps_are_not_listed_in_the_flat_gallery():
     key = ms.PREFIX + ms.LZ_REL + "europe/monaco/index.html"
     assert ms._classify(key)[2].startswith(ms.LZ_REL)
+
+
+def test_the_gallery_links_the_world_index_even_when_empty():
+    assert 'href="/lz/"' in ms.render_gallery([])

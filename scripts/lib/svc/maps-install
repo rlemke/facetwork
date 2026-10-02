@@ -87,14 +87,21 @@ cat > "$WRAPPER" <<WRAP
 set -u
 export PYTHONUNBUFFERED=1
 PORT="\${FW_MAPS_PORT:-$PORT}"
-# The gallery reads maps from the local MinIO. Bring Docker + MinIO up first so it
-# doesn't crash-restart on boot (KeepAlive retries regardless).
-if ! docker info >/dev/null 2>&1; then
-  open -a Docker >/dev/null 2>&1 || true
-  for i in \$(seq 1 80); do docker info >/dev/null 2>&1 && break; sleep 3; done
-fi
+# Wait for the store the gallery will ACTUALLY read -- resolved by the same code
+# the gallery uses (the server catalog), not an assumed localhost. This used to
+# poll localhost:9000 unconditionally: in cluster mode that is a stopped leftover
+# MinIO, so every start sat out a 3-minute wait and then served nothing.
+EP="\$(cd "$FW_ROOT" && .venv/bin/python -c 'from facetwork.mapserver import ENDPOINT; print(ENDPOINT)' 2>/dev/null)"
+case "\$EP" in
+  *localhost*|*127.0.0.1*)
+    # A local store: bring Docker up first so it doesn't crash-restart on boot.
+    if ! docker info >/dev/null 2>&1; then
+      open -a Docker >/dev/null 2>&1 || true
+      for i in \$(seq 1 80); do docker info >/dev/null 2>&1 && break; sleep 3; done
+    fi ;;
+esac
 for i in \$(seq 1 60); do
-  curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1 && break
+  curl -sf "\${EP:-http://localhost:9000}/minio/health/live" >/dev/null 2>&1 && break
   sleep 3
 done
 # Publish token (OPT-IN): a LaunchAgent can't read gh's token from the macOS
