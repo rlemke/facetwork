@@ -27,6 +27,13 @@ if [ -n "${FW_OSM_SELFHOST_WWW:-}" ]; then
     if [ -z "${FW_OSM_SELFHOST_POLYS:-}" ] && [ -d "$_fw_osm_root/polys" ]; then
         export FW_OSM_SELFHOST_POLYS="$_fw_osm_root/polys"
     fi
+    # Where those indexes live. Unset, tag_index falls back to /tmp: the
+    # publisher then opened a NEW empty index there every night and failed with
+    # "no expression -- build it first" while the real one (151,819 rows) sat
+    # untouched beside the tree.
+    if [ -z "${FW_OSM_INDEX_ROOT:-}" ] && [ -d "$_fw_osm_root/indexes" ]; then
+        export FW_OSM_INDEX_ROOT="$_fw_osm_root/indexes"
+    fi
     # The tag indexes kept beside the tree. An index that exists here exists to
     # be kept current; leaving it out of the nightly list is how alpr stopped
     # advancing on 2026-09-14 with nothing reporting it. Set the variable
