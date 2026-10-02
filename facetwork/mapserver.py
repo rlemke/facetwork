@@ -34,11 +34,32 @@ from urllib.parse import unquote
 
 # --- config ---------------------------------------------------------------
 
-ENDPOINT = os.environ.get("FW_S3_ENDPOINT", "http://localhost:9000")
-# afl-minio only resolves via /etc/hosts (→ localhost on a standalone box); prefer
-# an explicit localhost so the host process always reaches the local MinIO.
-if "afl-minio" in ENDPOINT:
-    ENDPOINT = "http://localhost:9000"
+
+def _resolve_endpoint(url: str) -> str:
+    """The object store this host should read, by the server catalog.
+
+    ⚠️ This used to rewrite any afl-minio URL to localhost:9000. On a laptop that
+    has run standalone, localhost:9000 is a LEFTOVER private MinIO -- so in
+    cluster mode the gallery served a stale parallel world as if it were the
+    fleet's. The catalog says where afl-minio really is; localhost is only the
+    fallback when the name resolves nowhere (a standalone box with no catalog).
+    """
+    try:
+        from facetwork.servers import catalog
+
+        url = catalog.resolve_url(url)
+    except Exception:  # noqa: BLE001 - no catalog: fall through to DNS
+        pass
+    host = url.split("//", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    if host == "afl-minio":
+        try:
+            socket.gethostbyname(host)
+        except OSError:
+            return url.replace("afl-minio", "localhost", 1)
+    return url
+
+
+ENDPOINT = _resolve_endpoint(os.environ.get("FW_S3_ENDPOINT", "http://afl-minio:9000"))
 ACCESS = os.environ.get("FW_S3_ACCESS_KEY", "minioadmin")
 SECRET = os.environ.get("FW_S3_SECRET_KEY", "minioadmin")
 BUCKET = os.environ.get("FW_MAPS_BUCKET") or os.environ.get("FW_S3_BUCKET", "afl-cache")
@@ -219,6 +240,8 @@ def list_maps(s3) -> list[dict]:
     # keeps the gallery instant. `metas` is unused now but the listing pass is free.
     for key, size, mtime in index_keys:
         domain, name, map_rel = _classify(key)
+        if map_rel.startswith(LZ_REL):
+            continue  # the world low-zoom tree has its own index (/lz/)
         maps.append(
             {
                 "domain": domain,
@@ -233,6 +256,153 @@ def list_maps(s3) -> list[dict]:
         )
     maps.sort(key=lambda x: x["generated_at"], reverse=True)
     return maps
+
+
+# --- world low-zoom index ----------------------------------------------------
+#
+# The world low-zoom run (fwh_osm_lz tools/lz_world.py) publishes one map per
+# country, or per sub-region where a country is too big, under
+# <PREFIX>osm/maps/lz/<continent>/<country>[/<region>...]/, and writes the whole
+# plan to _status.json there. These pages walk that tree ONE LEVEL AT A TIME --
+# continent, then country, then region -- so no page lists more than one
+# level's children, however many maps there are. Regions that are planned,
+# being built, or failed are listed too, with the reason: a gap is never silent.
+
+LZ_REL = "osm/maps/lz/"
+_lz_cache: dict = {"status": None, "ts": 0.0}
+
+
+def lz_status(s3, ttl: float = 30.0) -> dict | None:
+    now = time.time()
+    if _lz_cache["status"] is not None and now - _lz_cache["ts"] < ttl:
+        return _lz_cache["status"]
+    try:
+        obj = s3.get_object(Bucket=BUCKET, Key=PREFIX + LZ_REL + "_status.json")
+        st = json.loads(obj["Body"].read())
+    except Exception:  # noqa: BLE001 - absent or unreadable: serve the last good one
+        return _lz_cache["status"]
+    _lz_cache["status"], _lz_cache["ts"] = st, now
+    return st
+
+
+def _lz_counts(nodes: dict, key: str) -> tuple[int, int, int]:
+    """(maps done, maps planned in total, failed) under ``key``."""
+    n = nodes.get(key) or {}
+    if n.get("kind") == "map":
+        s = n.get("state")
+        return (1 if s == "done" else 0), 1, (1 if s == "failed" else 0)
+    done = total = failed = 0
+    for c in n.get("children") or []:
+        d, t, f = _lz_counts(nodes, c)
+        done, total, failed = done + d, total + t, failed + f
+    return done, total, failed
+
+
+_BADGE = {
+    "done": ("#6ee7a8", "built"),
+    "building": ("#ffd36e", "building now"),
+    "cutting": ("#ffd36e", "cutting sub-regions"),
+    "planned": ("#8a93a6", "planned"),
+    "failed": ("#ff8a8a", "failed"),
+    "skipped": ("#6f7788", "skipped"),
+}
+
+
+def render_lz(status: dict | None, path: str) -> tuple[int, str]:
+    """One level of the world tree. ``path`` is '' (the continents) or a node key."""
+    if not status:
+        body = (
+            '<div class="empty">No world low-zoom run has published a plan yet '
+            f"(<code>{escape(PREFIX + LZ_REL)}_status.json</code>).</div>"
+        )
+        return 200, _PAGE.format(bucket=escape(BUCKET), count=0, body=body)
+    nodes = status.get("nodes") or {}
+    key = path.strip("/")
+    if key and key not in nodes:
+        return 404, _PAGE.format(
+            bucket=escape(BUCKET),
+            count=0,
+            body=f'<div class="empty">No region <code>{escape(key)}</code>.</div>',
+        )
+    children = (status.get("continents") or []) if not key else (nodes[key].get("children") or [])
+    crumbs = ['<a href="/">gallery</a>', '<a href="/lz/">world</a>']
+    parts = key.split("/") if key else []
+    for i in range(len(parts)):
+        k = "/".join(parts[: i + 1])
+        crumbs.append(
+            f'<a href="/lz/{escape(k)}/">{escape((nodes.get(k) or {}).get("label", k))}</a>'
+        )
+    done, total, failed = (
+        _lz_counts(nodes, key)
+        if key
+        else (
+            sum(_lz_counts(nodes, c)[0] for c in children),
+            sum(_lz_counts(nodes, c)[1] for c in children),
+            sum(_lz_counts(nodes, c)[2] for c in children),
+        )
+    )
+    title = nodes[key]["label"] if key else "World low-zoom road maps"
+    rows = []
+    for c in sorted(children, key=lambda k: str((nodes.get(k) or {}).get("label") or k).lower()):
+        n = nodes.get(c) or {}
+        lab = escape(n.get("label", c))
+        kind, state = n.get("kind"), n.get("state", "planned")
+        mb = n.get("mb") or 0
+        if kind == "map":
+            colour, word = _BADGE.get(state, _BADGE["planned"])
+            link = (
+                f'<a class="btn view" href="/m/{escape(LZ_REL + c)}/" target="_blank" '
+                f'rel="noopener">View map ↗</a>'
+                if state == "done"
+                else ""
+            )
+            why = (
+                f'<div class="d">{escape(n.get("reason", ""))}</div>'
+                if state in ("failed", "skipped")
+                else ""
+            )
+            rows.append(
+                f'<div class="card"><div class="t">{lab}</div>'
+                f'<div class="meta">{mb:,.0f} MB extract · '
+                f'<span style="color:{colour}">{word}</span></div>{why}'
+                f"{'<div class=actions>' + link + '</div>' if link else ''}</div>"
+            )
+        elif kind == "skip":
+            rows.append(
+                f'<div class="card" style="opacity:.55"><div class="t">{lab}</div>'
+                f'<div class="d">skipped: {escape(n.get("reason", ""))}</div></div>'
+            )
+        else:
+            d, t, f = _lz_counts(nodes, c)
+            colour, word = _BADGE.get(
+                state if kind == "needs_cut" else "planned", _BADGE["planned"]
+            )
+            note = (
+                f'<span style="color:{colour}">{word}</span>'
+                if kind == "needs_cut"
+                else f"{d} of {t} maps built"
+                + (f' · <span style="color:#ff8a8a">{f} failed</span>' if f else "")
+            )
+            rows.append(
+                f'<div class="card"><div class="t"><a href="/lz/{escape(c)}/" '
+                f'style="color:inherit">{lab} →</a></div>'
+                f'<div class="meta">{note}</div>'
+                f'<div class="d">{escape(n.get("reason", ""))}</div></div>'
+            )
+    head = (
+        f'<div class="sub" style="margin-bottom:10px">{" / ".join(crumbs)}</div>'
+        f"<h2>{escape(title)} — {done} of {total} maps built"
+        + (f", {failed} failed" if failed else "")
+        + "</h2>"
+        f'<div class="meta">plan updated {escape(str(status.get("generated_at", "?")))} · '
+        f"one map per region up to {status.get('max_mb', '?')} MB of extract; "
+        "bigger ones are broken into their regions</div>"
+    )
+    return 200, _PAGE.format(
+        bucket=escape(BUCKET),
+        count=done,
+        body=head + f'<div class="grid" style="margin-top:16px">{"".join(rows)}</div>',
+    )
 
 
 # --- rendering ------------------------------------------------------------
@@ -347,10 +517,14 @@ def render_gallery(maps: list[dict], can_publish: bool = False) -> str:
             "and refresh.</div>"
         )
         return _PAGE.format(bucket=escape(BUCKET), count=0, body=body)
+    blocks = [
+        '<h2>World</h2><div class="grid"><div class="card"><div class="t">'
+        '<a href="/lz/" style="color:inherit">Low-zoom road maps of the world →</a></div>'
+        '<div class="d">by continent, then country, then region</div></div></div>'
+    ]
     by_domain: dict[str, list[dict]] = {}
     for m in maps:
         by_domain.setdefault(m["domain"], []).append(m)
-    blocks = []
     for domain in sorted(by_domain):
         cards = []
         for m in by_domain[domain]:
@@ -404,6 +578,10 @@ class _Handler(BaseHTTPRequestHandler):
                     f"store (it may be under heavy load): <code>{escape(str(e))}</code>."
                     f"<br>Retry in a moment.</p>",
                 )
+            return
+        if path == "/lz" or path.startswith("/lz/"):
+            code, html = render_lz(lz_status(s3), path[len("/lz") :])
+            self._send(code, html)
             return
         if path == "/healthz":
             self._send(200, "ok", "text/plain")
