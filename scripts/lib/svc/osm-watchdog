@@ -26,6 +26,7 @@
 #   fw svc osm-watchdog --status
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
+source "$FW_LIB/_helpers/_osm_selfhost_env.sh"   # tree/polys/base-url/indexes from this host's config.env when unset
 set -uo pipefail   # NOT -e: this must report a failing check, not die on it
 
 LABEL="com.facetwork.osm-watchdog"
