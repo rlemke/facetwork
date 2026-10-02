@@ -68,7 +68,11 @@ run)
     if [ -f "$MAINT_HEALTH" ]; then
         m_rc="$(sed -n 's/^rc=//p' "$MAINT_HEALTH" | head -1)"
         m_at="$(sed -n 's/^at=//p' "$MAINT_HEALTH" | head -1)"
-        m_age_h="$(( ( $(date +%s) - $(stat -f %m "$MAINT_HEALTH" 2>/dev/null || echo 0) ) / 3600 ))"
+        # GNU stat first: BSD-first (`stat -f %m`) crashed this watchdog on EVERY
+        # Linux run from 2026-09-16 to 2026-10-02 (32 runs) -- GNU -f prints a
+        # filesystem report whose "File:" landed in the arithmetic under set -u.
+        # The watchdog could not alarm the whole time.
+        m_age_h="$(( ( $(date +%s) - $(stat -c %Y "$MAINT_HEALTH" 2>/dev/null || stat -f %m "$MAINT_HEALTH" 2>/dev/null || echo 0) ) / 3600 ))"
         if [ "${m_rc:-1}" != "0" ]; then
             echo "  maintain: LAST RUN FAILED (rc=${m_rc:-?}) at ${m_at:-?}" >> "$HEALTH"
             rc=1

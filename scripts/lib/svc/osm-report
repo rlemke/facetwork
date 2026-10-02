@@ -99,7 +99,7 @@ status)
         # you only read the contents.
         echo "report:  $R"
         echo "         generated $(sed -n 's/^\*\*Generated \(.*\)\*\* on.*/\1/p' "$R" | head -1)"
-        AGE=$(( ( $(date +%s) - $(stat -f %m "$R" 2>/dev/null || stat -c %Y "$R") ) / 3600 ))
+        AGE=$(( ( $(date +%s) - $(stat -c %Y "$R" 2>/dev/null || stat -f %m "$R") ) / 3600 ))
         echo "         file age  ${AGE}h"
         [ "$AGE" -gt 48 ] && echo "         ⚠️ older than 48h — the numbers in it describe the past, not now"
     else
