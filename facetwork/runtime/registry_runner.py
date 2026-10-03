@@ -365,7 +365,7 @@ class RegistryRunner(BaseRunner):
                     task_list=self._poll_task_lists(),
                     server_id=self._server_id,
                     known_features=_known_ast_features(),
-                    resources=self._measured_resources(),
+                    resources=self._claim_resources(),
                 )
                 if task is None:
                     break
@@ -388,7 +388,7 @@ class RegistryRunner(BaseRunner):
                     task_list=CONTINUATION_TASK_LIST,
                     server_id=self._server_id,
                     known_features=_known_ast_features(),
-                    resources=self._measured_resources(),
+                    resources=self._claim_resources(),
                 )
                 if task is None:
                     break
@@ -492,7 +492,7 @@ class RegistryRunner(BaseRunner):
                     task_list=self._poll_task_lists(),
                     server_id=self._server_id,
                     known_features=_known_ast_features(),
-                    resources=self._measured_resources(),
+                    resources=self._claim_resources(),
                 )
                 if task is None:
                     break
@@ -524,7 +524,7 @@ class RegistryRunner(BaseRunner):
                     task_list=CONTINUATION_TASK_LIST,
                     server_id=self._server_id,
                     known_features=_known_ast_features(),
-                    resources=self._measured_resources(),
+                    resources=self._claim_resources(),
                 )
                 if task is None:
                     break

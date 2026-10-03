@@ -78,13 +78,43 @@ case "$ACTION" in
 run)
     [ -x "$PUBLISH" ] || { echo "not found: $PUBLISH — is fwh_osm installed?" >&2; exit 1; }
     echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] publishing up to $DAYS day(s)"
-    IDX_ARGS=()
-    # `:-` because this runs under set -u: unset used to abort the whole job here,
-    # every night from 2026-09-16 to 2026-10-02.
-    _idx="${FW_OSM_NIGHTLY_INDEXES:-}"
-    for i in ${_idx//,/ }; do IDX_ARGS+=(--update-index "$i"); done
-    "$PUBLISH" --days "$DAYS" "${IDX_ARGS[@]+"${IDX_ARGS[@]}"}"
-    rc=$?
+    # The publish runs as the osm.planet.PublishReplicationDiffs WORKFLOW, not as
+    # osmium launched from here. Measured 2026-10-03: this job's 8-region cut,
+    # run on the planet host outside the runtime, reached 19.7 GB and the kernel
+    # killed four runner processes before killing it -- the fleet could not see
+    # it, so nothing could make room or make it wait. As a task it is claimed
+    # only where the tree lives and only when the memory is actually free.
+    # FW_OSM_REPLICATE_LOCAL=1 runs the script directly (a host with no fleet).
+    if [ "${FW_OSM_REPLICATE_LOCAL:-0}" = "1" ]; then
+        IDX_ARGS=()
+        _idx="${FW_OSM_NIGHTLY_INDEXES:-}"
+        for i in ${_idx//,/ }; do IDX_ARGS+=(--update-index "$i"); done
+        "$PUBLISH" --days "$DAYS" "${IDX_ARGS[@]+"${IDX_ARGS[@]}"}"
+        rc=$?
+    else
+        FFL="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm/src/osm_geocoder/handlers/planet/ffl/osmplanet.ffl"
+        so="$("$FW_ROOT/fw" ffl run --primary "$FFL" --workflow osm.planet.PublishReplicationDiffs \
+                --inputs "{\"days\": $DAYS}" 2>&1)" && rc=0 || rc=$?
+        runner="$(printf '%s' "$so" | grep -oE '[0-9a-f]{8}-[0-9a-f-]{27}' | head -1)"
+        if [ "$rc" -ne 0 ] || [ -z "$runner" ]; then
+            printf '%s\n' "$so" >&2
+            echo "submit failed" >&2
+            rc=1
+        else
+            echo "submitted osm.planet.PublishReplicationDiffs $runner"
+            deadline=$(( $(date +%s) + ${FW_OSM_REPLICATE_WAIT_HOURS:-6} * 3600 ))
+            state=""
+            while :; do
+                state="$("$FW_ROOT/fw" maint workflow-stats "$runner" --json 2>/dev/null \
+                    | "$FW_ROOT/.venv/bin/python" -c 'import json,sys; print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
+                case "$state" in completed|failed|terminated) break ;; esac
+                [ "$(date +%s)" -ge "$deadline" ] && { state="still-running"; break; }
+                sleep 60
+            done
+            echo "$runner $state"
+            [ "$state" = completed ] && rc=0 || rc=1
+        fi
+    fi
 
     # Verify the chain, and make a stall LOUD. Every other failure in this
     # pipeline reports itself; a stopped stream does not, because consumers

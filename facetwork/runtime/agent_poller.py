@@ -61,7 +61,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..ast_features import known_features as _known_ast_features
-from .base_runner import measured_resources
+from .base_runner import claim_resources, measured_resources
 from .cancellation import HandlerCancelled
 from .entities import (
     RunnerState,
@@ -358,7 +358,7 @@ class AgentPoller:
                 task_list=self._poll_task_lists(),
                 server_id=self._server_id,
                 known_features=_known_ast_features(),
-                resources=measured_resources(),
+                resources=claim_resources(),
             )
             if task is None:
                 break
@@ -556,7 +556,7 @@ class AgentPoller:
                 task_list=self._poll_task_lists(),
                 server_id=self._server_id,
                 known_features=_known_ast_features(),
-                resources=measured_resources(),
+                resources=claim_resources(),
             )
             if task is None:
                 break

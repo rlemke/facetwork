@@ -525,7 +525,7 @@ class RunnerService(BaseRunner):
                     # test_every_claim_site_passes_the_capability_kwarg exists
                     # because a NEW poll loop that omits them claims work the
                     # runner cannot serve — and it caught this one.
-                    resources=self._measured_resources(),
+                    resources=self._claim_resources(),
                     known_features=self._known_ast_features(),
                 )
                 if task is None:
@@ -543,7 +543,7 @@ class RunnerService(BaseRunner):
                     task_names=event_names,
                     task_list=poll_lists,
                     server_id=self._server_id,
-                    resources=self._measured_resources(),
+                    resources=self._claim_resources(),
                     known_features=self._known_ast_features(),
                 )
                 if task is None:
@@ -569,7 +569,7 @@ class RunnerService(BaseRunner):
                 task_names=[RESUME_TASK_NAME],
                 task_list=poll_lists,
                 server_id=self._server_id,
-                resources=self._measured_resources(),
+                resources=self._claim_resources(),
                 known_features=self._known_ast_features(),
             )
             if task is None:
@@ -586,7 +586,7 @@ class RunnerService(BaseRunner):
                     task_names=builtin_names,
                     task_list=poll_lists,
                     server_id=self._server_id,
-                    resources=self._measured_resources(),
+                    resources=self._claim_resources(),
                     known_features=self._known_ast_features(),
                 )
                 if task is None:
@@ -608,7 +608,7 @@ class RunnerService(BaseRunner):
                     task_names=[CONTINUATION_TASK_NAME],
                     task_list=CONTINUATION_TASK_LIST,
                     server_id=self._server_id,
-                    resources=self._measured_resources(),
+                    resources=self._claim_resources(),
                     known_features=self._known_ast_features(),
                 )
                 if task is None:

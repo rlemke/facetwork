@@ -93,6 +93,66 @@ def measured_resources() -> dict:
     return _RESOURCES_CACHE
 
 
+#: Live memory is re-read at most this often; a claim loop polls every second.
+_LIVE_TTL_S = 5.0
+_live_cache: dict = {"at": 0.0, "gb": None}
+
+
+def _available_memory_gb() -> float | None:
+    """Memory this process could get RIGHT NOW: host (or Docker VM) MemAvailable,
+    capped by the container's remaining cgroup headroom where one is set."""
+    import time as _time
+
+    now = _time.monotonic()
+    if now - _live_cache["at"] < _LIVE_TTL_S:
+        return _live_cache["gb"]
+    avail = None
+    try:
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable"):
+                    avail = int(line.split()[1]) * 1024
+                    break
+    except OSError:
+        avail = None
+    try:
+        lim = open("/sys/fs/cgroup/memory.max").read().strip()
+        cur = open("/sys/fs/cgroup/memory.current").read().strip()
+        if lim.isdigit() and cur.isdigit() and int(lim) < (1 << 62):
+            head = max(0, int(lim) - int(cur))
+            avail = head if avail is None else min(avail, head)
+    except OSError:
+        pass
+    gb = round(avail / (1024**3), 2) if avail is not None else None
+    _live_cache.update(at=now, gb=gb)
+    return gb
+
+
+def claim_resources() -> dict:
+    """What to offer ``claim_task``: measured capacity, with memory cut to what
+    is free on this host NOW.
+
+    The server record advertises static CAPACITY (fleet status and the
+    unsatisfiable-task check read it), but claiming against capacity alone is a
+    floor, not a reservation: every runner on a host decides independently,
+    nothing deducts what is already running, and work outside the runtime is
+    invisible. Measured 2026-10-03: a 30 GB host running ~23 runners, a router
+    and a nightly cron job OOM-killed four runner processes. Offering live
+    availability makes a task with a memory floor WAIT in the queue until the
+    memory is actually there, instead of starting into an OOM. Tasks with no
+    floor are unaffected. ``FW_CLAIM_LIVE_MEMORY=0`` restores capacity-only.
+    """
+    import os as _os
+
+    res = dict(measured_resources())
+    if _os.environ.get("FW_CLAIM_LIVE_MEMORY", "1") == "0" or "memory_gb" not in res:
+        return res
+    live = _available_memory_gb()
+    if live is not None:
+        res["memory_gb"] = min(res["memory_gb"], live)
+    return res
+
+
 def _measure() -> dict:
     """MEASURED capacity of this host, for resource-aware claim routing.
 
@@ -580,6 +640,10 @@ class BaseRunner:
     def _measured_resources(self) -> dict:
         """Measured capacity of this host (see module-level measured_resources)."""
         return measured_resources()
+
+    def _claim_resources(self) -> dict:
+        """Capacity offered when CLAIMING: memory is what is free now (claim_resources)."""
+        return claim_resources()
 
     def _heartbeat_loop(self) -> None:
         """Periodically update the server's ping_time, self-healing the record.
