@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: the token gets read access unless a job asks for more
+# (docker.yml's build job declares packages: write to push images).
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest

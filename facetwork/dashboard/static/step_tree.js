@@ -38,7 +38,9 @@ export function initStepTree() {
                     node.style.display = "";
                     // Remove any highlight
                     summary.querySelectorAll(".search-highlight").forEach(function(hl) {
-                        hl.outerHTML = hl.textContent;
+                        // A text node, never outerHTML: textContent is UNESCAPED, so
+                        // a step name containing markup would be parsed as HTML.
+                        hl.replaceWith(document.createTextNode(hl.textContent));
                     });
                     return;
                 }

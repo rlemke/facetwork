@@ -63,8 +63,11 @@ export function initCommandPalette() {
             items[idx].classList.add("active");
             items[idx].scrollIntoView({block: "nearest"});
         } else if (e.key === "Enter") {
-            if (active && active.getAttribute("data-href")) {
-                window.location.href = active.getAttribute("data-href");
+            var href = active && active.getAttribute("data-href");
+            // Same-site paths only: a result's href must never be able to run
+            // script (javascript:) or leave the dashboard (//host, https://).
+            if (href && href.charAt(0) === "/" && href.charAt(1) !== "/" && href.charAt(1) !== "\\") {
+                window.location.href = href;
                 close();
             }
         }

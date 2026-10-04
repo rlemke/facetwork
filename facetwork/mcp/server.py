@@ -1695,9 +1695,33 @@ _FORBIDDEN_SQL = re.compile(
 
 # A read query must START with SELECT or WITH (after leading comments/whitespace),
 # which blocks top-level SET/DO/etc. that a bare keyword scan could miss.
-_READ_QUERY_PREFIX = re.compile(
-    r"^(?:\s|--[^\n]*\n|/\*.*?\*/)*\b(?:SELECT|WITH)\b", re.IGNORECASE | re.DOTALL
-)
+_READ_QUERY_KEYWORD = re.compile(r"(?:SELECT|WITH)\b", re.IGNORECASE)
+
+
+def _starts_with_read_keyword(sql: str) -> bool:
+    """Skip leading whitespace and comments by scanning, then test the keyword.
+
+    Was one regex, ``^(?:\\s|--…|/\\*.*?\\*/)*\\b(?:SELECT|WITH)\\b``: a repeated group
+    containing a lazy ``.*?`` backtracks polynomially on a long run of unclosed
+    ``/*`` (CodeQL py/redos). This is linear: each step consumes input or stops.
+    """
+    i, n = 0, len(sql)
+    while i < n:
+        if sql[i].isspace():
+            i += 1
+        elif sql.startswith("--", i):
+            j = sql.find("\n", i)
+            if j < 0:
+                return False
+            i = j + 1
+        elif sql.startswith("/*", i):
+            j = sql.find("*/", i + 2)
+            if j < 0:
+                return False
+            i = j + 2
+        else:
+            break
+    return bool(_READ_QUERY_KEYWORD.match(sql, i))
 
 
 def _reject_reason(sql: str) -> str | None:
@@ -1711,7 +1735,7 @@ def _reject_reason(sql: str) -> str | None:
     body = stripped.rstrip().rstrip(";").rstrip()
     if ";" in body:
         return "Only a single statement is allowed (no ';' separators)"
-    if not _READ_QUERY_PREFIX.match(sql):
+    if not _starts_with_read_keyword(sql):
         return "Only SELECT / WITH read queries are allowed"
     if _FORBIDDEN_SQL.search(stripped):
         return "Only read-only SELECT queries are allowed (write/DDL/side-effecting keyword found)"

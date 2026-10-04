@@ -11,6 +11,11 @@ env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository }}
 
+# Least privilege: the token gets read access unless a job asks for more
+# (docker.yml's build job declares packages: write to push images).
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

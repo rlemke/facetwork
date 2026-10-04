@@ -17,6 +17,8 @@
 from __future__ import annotations
 
 import time
+from html import escape
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
@@ -58,7 +60,9 @@ def toggle_quarantine(server_id: str, store=Depends(get_store)):
     checked = "checked" if quarantined else ""
     return HTMLResponse(
         f'<input type="checkbox" {checked} '
-        f'hx-post="/servers/{server_id}/quarantine" '
+        # The id comes from the request path: quote it into the URL and escape
+        # the attribute, so it can never close the tag (reflected XSS).
+        f'hx-post="/servers/{escape(quote(server_id, safe=""))}/quarantine" '
         f'hx-swap="outerHTML" '
         f'title="Quarantine this server (stop claiming tasks)">'
     )

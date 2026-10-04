@@ -70,6 +70,21 @@ _ENVF_PREFIX = ".env.fleet-agent."
 DB = os.environ.get("FW_MONGODB_DATABASE", "facetwork")
 
 
+
+_SENSITIVE = ("SECRET", "ACCESS", "KEY", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL")
+
+
+def _redact(name, value):
+    """A value fit to print. --dry used to mask only names containing SECRET or
+    ACCESS, so GITHUB_TOKEN, ANTHROPIC_API_KEY and friends were printed in full,
+    and a URL's embedded user:password always was."""
+    import re as _re
+
+    if any(w in name.upper() for w in _SENSITIVE):
+        return "***"
+    return _re.sub(r"(://)[^/@\s]+@", r"\1***@", str(value))
+
+
 def _sweep_stranded_env_files():
     """Delete decrypted-cred env files left by a prior agent that exited without
     running its cleanup (watchdog os._exit / SIGKILL). Covers both the new private
@@ -586,7 +601,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
     if dry_run:
         for k, v in env.items():
-            print(f"    {k}={'***' if ('SECRET' in k or 'ACCESS' in k) else v}")
+            print(f"    {k}={_redact(k, v)}")
         if osm_here:
             print(f"    + would bring up the osm tier (osm-geocoder + osm-lz) x{replicas}")
         else:
