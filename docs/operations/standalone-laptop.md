@@ -1,5 +1,9 @@
 # Standalone laptop — running the whole stack on one machine
 
+> **For the routine switch** (cluster → this machine for travel, and back), use
+> `fw mode` and its runbooks in [fw-mode.md](fw-mode.md#runbook--going-standalone-for-travel-cluster--one-machine).
+> This page records how the standalone deployment was first built (2026-07).
+
 **Goal:** the laptop runs Facetwork end to end with **zero dependency on the infra host** — its own
 MongoDB, its own MinIO, and OSM data on the locally attached `afl_data_local`. The infra host can
 then be powered off, rebooted, or left alone without affecting development.
