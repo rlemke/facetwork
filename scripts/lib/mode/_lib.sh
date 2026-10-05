@@ -267,6 +267,17 @@ _mode_apply() {
     # was about to be powered off for a week. The one-shot `agent apply` below
     # cannot fix that on its own; the daemon has to be re-exec'd so it re-resolves
     # afl-mongodb through the newly-active catalog.
+    # ⚠️ Re-resolve the infra URLs NOW, through the catalog this switch just
+    # activated. The `fw` dispatcher resolves afl-* names to addresses when the
+    # command STARTS -- before servers.local.json was flipped above -- and exports
+    # them, so everything below inherited the OLD world's addresses. Measured
+    # 2026-10-04: `fw mode local` applied the agent against the cluster Mongo,
+    # and 25 of 25 runners stayed on the cluster that was about to power off.
+    FW_MONGODB_URL="$("$FW_ROOT/.venv/bin/python" -m facetwork.servers --resolve-url "$mongo" 2>/dev/null || echo "$mongo")"
+    FW_S3_ENDPOINT="$("$FW_ROOT/.venv/bin/python" -m facetwork.servers --resolve-url "$s3" 2>/dev/null || echo "$s3")"
+    export FW_MONGODB_URL FW_S3_ENDPOINT
+    echo "  infra for '$target': mongo=$FW_MONGODB_URL s3=$FW_S3_ENDPOINT"
+
     echo "=== restarting the fleet-agent so it re-resolves infra for '$target' ==="
     if [ "$(uname -s)" = "Darwin" ]; then
         if launchctl kickstart -k "gui/$(id -u)/com.facetwork.fleet-agent" 2>/dev/null; then

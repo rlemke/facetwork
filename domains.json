@@ -5,8 +5,8 @@
     "replicas": 1,
     "scaled_replicas": 3
   },
-  "_index_dir_comment": "Host directory holding the maintained OSM tag indexes, mounted READ-ONLY into runner-generalist as /opt/fw_osm_indexes. Shared (not host-local) so `fw util gen-compose` produces the SAME file on every host — a per-host value here silently desyncs the committed artefact. A host whose tree lives elsewhere overrides the PATH with FW_OSM_INDEX_HOST_DIR, no regeneration needed. A host with no tree at all mounts an empty dir, which the consumers handle: index_file() returns None when the .sqlite is absent and they fall back to Overpass.",
-  "index_dir": "/Volumes/afl_data/osm-selfhost/indexes",
+  "_index_dir_comment": "Host directory holding the maintained OSM tag indexes, mounted READ-ONLY into runner-generalist as /opt/fw_osm_indexes. Shared (not host-local) so `fw util gen-compose` produces the SAME file on every host — a per-host value here silently desyncs the committed artefact. A host whose tree lives elsewhere overrides the PATH with FW_OSM_INDEX_HOST_DIR, no regeneration needed. Relative to FW_DATA_DIR, like the /planet mount beside it: an absolute path that exists only on the infra host made Docker Desktop fail the WHOLE runner elsewhere (\"mkdir /host_mnt/Volumes/afl_data: permission denied\", measured 2026-10-04 on a laptop going standalone). A host with no tree at all mounts an empty dir, which the consumers handle: index_file() returns None when the .sqlite is absent and they fall back to Overpass.",
+  "index_dir": "${FW_DATA_DIR:-/Volumes/afl_data}/osm-selfhost/indexes",
   "domains": {
     "anthropic": {
       "repo": "fwh_anthropic",
