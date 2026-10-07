@@ -76,3 +76,15 @@ def test_world_maps_are_not_listed_in_the_flat_gallery():
 
 def test_the_gallery_links_the_world_index_even_when_empty():
     assert 'href="/lz/"' in ms.render_gallery([])
+
+
+def test_a_finished_map_carries_its_build_date_in_the_tag():
+    st = {**STATUS, "nodes": {**STATUS["nodes"]}}
+    st["nodes"]["central-america/haiti"] = {
+        **st["nodes"]["central-america/haiti"],
+        "built": "2026-10-07",
+    }
+    _, html = ms.render_lz(st, "/central-america/")
+    assert "built 2026-10-07" in html
+    # a failed map shows no date: it was never built
+    assert html.count("2026-10-07") == 1

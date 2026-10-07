@@ -361,10 +361,15 @@ def render_lz(status: dict | None, path: str) -> tuple[int, str]:
                 if state in ("failed", "skipped")
                 else ""
             )
+            # The build date is part of the tag: maps in one tree are built weeks
+            # apart, by different selection rules, so "built" alone says too little.
+            built = n.get("built") if state == "done" else None
+            if built:
+                word = f"{word} {built}"
             rows.append(
                 f'<div class="card"><div class="t">{lab}</div>'
                 f'<div class="meta">{mb:,.0f} MB extract · '
-                f'<span style="color:{colour}">{word}</span></div>{why}'
+                f'<span style="color:{colour}">{escape(word)}</span></div>{why}'
                 f"{'<div class=actions>' + link + '</div>' if link else ''}</div>"
             )
         elif kind == "skip":
