@@ -25,6 +25,7 @@ from typing import Any
 from .entities import StepLogEntry, StepLogLevel, StepLogSource, TaskState
 from .persistence import PersistenceAPI
 from .states import StepState
+from .task_liveness import make_task_heartbeat
 from .types import generate_id
 
 logger = logging.getLogger(__name__)
@@ -119,20 +120,15 @@ class TaskProcessor:
         payload["_step_log"] = _step_log_callback
 
         # Heartbeat callback
-        def _task_heartbeat_callback(
-            progress_pct: int | None = None,
-            progress_message: str | None = None,
-        ) -> None:
-            now = _current_time_ms()
-            self._persistence.update_task_heartbeat(
-                task.uuid,
-                now,
-                progress_pct=progress_pct,
-                progress_message=progress_message,
-                # Ownership-gate the renewal so a reclaimed zombie can't renew
-                # the new owner's lease (task.server_id is this runner's claim).
-                expected_server_id=getattr(task, "server_id", ""),
-            )
+        # Best-effort; ownership-gated so a reclaimed zombie can't renew the
+        # new owner's lease (task.server_id is this runner's claim).
+        _task_heartbeat_callback = make_task_heartbeat(
+            self._persistence,
+            task.uuid,
+            getattr(task, "server_id", ""),
+            facet_name=task.name,
+            now_ms=lambda: _current_time_ms(),
+        )
 
         payload["_task_heartbeat"] = _task_heartbeat_callback
         payload["_task_uuid"] = task.uuid

@@ -76,6 +76,7 @@ from .errors import PermanentError
 from .evaluator import Evaluator, ExecutionResult, ExecutionStatus
 from .persistence import PersistenceAPI
 from .runner_config import BaseRunnerConfig
+from .task_liveness import make_task_heartbeat
 from .types import AttributeValue, generate_id
 
 logger = logging.getLogger(__name__)
@@ -818,20 +819,15 @@ class AgentPoller:
 
             # Inject _task_heartbeat callback so long-running handlers can
             # signal progress and avoid being reaped by the orphan detector.
-            def _task_heartbeat_callback(
-                progress_pct: int | None = None,
-                progress_message: str | None = None,
-            ) -> None:
-                now = _current_time_ms()
-                self._persistence.update_task_heartbeat(
-                    task.uuid,
-                    now,
-                    progress_pct=progress_pct,
-                    progress_message=progress_message,
-                    # Only renew while we still own the task — a reclaimed
-                    # zombie must not extend the new owner's lease.
-                    expected_server_id=self._server_id,
-                )
+            # Best-effort (a store outage must not raise inside the handler);
+            # ownership-gated so a reclaimed zombie can't renew the new owner's lease.
+            _task_heartbeat_callback = make_task_heartbeat(
+                self._persistence,
+                task.uuid,
+                self._server_id,
+                facet_name=task.name,
+                now_ms=lambda: _current_time_ms(),
+            )
 
             payload["_task_heartbeat"] = _task_heartbeat_callback
 

@@ -129,6 +129,7 @@ def _stuck_message(task_info: dict[str, str], reclaimer_name: str = "") -> str:
 
 from ..base_runner import BaseRunner
 from ..runner_config import BaseRunnerConfig
+from ..task_liveness import make_stage_budget_setter, make_task_heartbeat
 
 _SENTINEL = -1
 
@@ -660,32 +661,21 @@ class RunnerService(BaseRunner):
                 details=details,
             )
 
-        def _task_heartbeat_callback(
-            progress_pct: int | None = None,
-            progress_message: str | None = None,
-        ) -> None:
-            self._persistence.update_task_heartbeat(
-                task.uuid,
-                _current_time_ms(),
-                progress_pct=progress_pct,
-                progress_message=progress_message,
-                # Only renew while we still own the task — a reclaimed zombie
-                # must not extend the new owner's lease.
-                expected_server_id=self._server_id,
-            )
-
-        def _set_stage_budget_callback(
-            timeout_ms: int,
-            stage_name: str = "",
-        ) -> None:
-            if timeout_ms <= 0:
-                return
-            budget_expires = _current_time_ms() + int(timeout_ms)
-            self._persistence.update_task_stage_budget(
-                task.uuid,
-                budget_expires,
-                stage_name=stage_name,
-            )
+        # Best-effort: a store outage must not raise inside the handler.
+        # Only renews while we still own the task (ownership-gated).
+        _task_heartbeat_callback = make_task_heartbeat(
+            self._persistence,
+            task.uuid,
+            self._server_id,
+            facet_name=task.name,
+            now_ms=lambda: _current_time_ms(),
+        )
+        _set_stage_budget_callback = make_stage_budget_setter(
+            self._persistence,
+            task.uuid,
+            facet_name=task.name,
+            now_ms=lambda: _current_time_ms(),
+        )
 
         def _fetch_step_callback(ref: object) -> dict:
             from ..types import StepReference, serialize_attribute_value
