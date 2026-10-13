@@ -629,6 +629,23 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             print(f"    - would SKIP (host group '{grp}' not listed): {', '.join(skipped)}")
         return
 
+    # A role this host's group does not run must not keep a container here. One
+    # survives when the host changes group (e.g. `fw mode cluster` applies as
+    # `runner`, then the agent re-applies as `heavy`), and since a skipped role
+    # is never reconciled, its container stays on the OLD image. Measured
+    # 2026-10-13: the wrong-image check then saw it every cycle and force-
+    # recreated EVERY runner on the host -- five times in 33 min, killing a
+    # multi-hour build on each pass until it dead-lettered.
+    _role_services = {"osm-geocoder": ["runner-osm-geocoder", "runner-osm-lz"],
+                      "gh-router": ["runner-gh-router"], "graphhopper": ["runner-graphhopper"],
+                      "ffl-runner": ["runner-ffl"], "generalist": ["runner-generalist"]}
+    for _n in skipped:
+        for _svc in _role_services.get(_n, [f"runner-{_n}"]):
+            _gone = _fleet_lib.remove_service_containers(_svc)
+            if _gone:
+                print(f"fleet-agent[{HOST}]: removed {len(_gone)} container(s) of {_svc} "
+                      f"-- role not in host group '{grp}'", flush=True)
+
     os.makedirs(_RUNDIR, mode=0o700, exist_ok=True)
     fd, envf = tempfile.mkstemp(prefix=_ENVF_PREFIX, dir=_RUNDIR)
     try:

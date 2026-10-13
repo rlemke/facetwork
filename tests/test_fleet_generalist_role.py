@@ -212,3 +212,20 @@ def test_agent_does_not_reimplement_the_parse():
     src = (REPO / "scripts/lib/fleet/agent").read_text()
     assert "_fleet_lib.container_unusable_host(mongo)" in src
     assert 'strip("[]")' not in src, "the hand-rolled parse is what missed [::1]"
+
+
+def test_a_role_outside_the_host_group_has_its_containers_removed():
+    """A container of a skipped role is never reconciled, so it stays on the old image.
+
+    Measured 2026-10-13: after `fw mode cluster` applied a heavy host as group
+    `runner`, its generalist container outlived the agent's re-apply as `heavy`.
+    The wrong-image check saw it every cycle and force-recreated every runner on
+    the host, killing a multi-hour build five times until it dead-lettered.
+    """
+    src = (REPO / "scripts/lib/fleet/agent").read_text()
+    i = src.index("for _n in skipped:")
+    assert "_fleet_lib.remove_service_containers(_svc)" in src[i:i + 400]
+    # ...on a real apply only (after the dry-run return), before any compose up.
+    assert src.index("would SKIP (host group") < i < src.index("fd, envf = tempfile.mkstemp")
+    assert '"generalist": ["runner-generalist"]' in src
+    assert '"osm-geocoder": ["runner-osm-geocoder", "runner-osm-lz"]' in src
