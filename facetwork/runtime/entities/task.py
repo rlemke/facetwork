@@ -38,6 +38,9 @@ class TaskDefinition:
     server_id: str = ""  # Claiming server's ID (for orphan detection)
     timeout_ms: int = 0  # Handler timeout (0 = use registration default)
     task_heartbeat: int = 0  # Handler-level heartbeat timestamp (ms)
+    lease_expires: int = 0  # Epoch ms; renewed by each heartbeat
+    progress_pct: int | None = None  # Last handler-reported progress (0-100)
+    progress_message: str | None = None  # Last handler-reported progress text
     retry_count: int = 0  # Number of times this task has been retried
     max_retries: int = 5  # Max retries before dead-lettering (0 = infinite)
     next_retry_after: int = 0  # Epoch ms; task not claimable until this time

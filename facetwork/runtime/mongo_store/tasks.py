@@ -822,6 +822,18 @@ class TaskMixin(_MixinBase):
             "next_retry_after": task.next_retry_after,
             "stage_budget_expires": task.stage_budget_expires,
             "stage_name": task.stage_name,
+            # ⚠️ The heartbeat fields were MISSING from both directions, the
+            # required_features shape again. A read dropped task_heartbeat, so
+            # the runner's execution-timeout watchdog measured from the CLAIM
+            # and killed every task at 4 h however recently it heartbeated
+            # (measured 2026-10-13: a US low-zoom build reset at 4h00m while
+            # reporting progress each minute). And save_task REPLACES the doc,
+            # so every save erased the heartbeat and lease that heartbeats had
+            # written.
+            "task_heartbeat": task.task_heartbeat,
+            "lease_expires": task.lease_expires,
+            "progress_pct": task.progress_pct,
+            "progress_message": task.progress_message,
             "environment_hash": task.environment_hash,
             "kind": task.kind,
             # ⚠️ required_features was MISSING here: the claim filter queries it,
@@ -859,6 +871,10 @@ class TaskMixin(_MixinBase):
             next_retry_after=doc.get("next_retry_after", 0),
             stage_budget_expires=doc.get("stage_budget_expires", 0),
             stage_name=doc.get("stage_name", ""),
+            task_heartbeat=doc.get("task_heartbeat") or 0,
+            lease_expires=doc.get("lease_expires") or 0,
+            progress_pct=doc.get("progress_pct"),
+            progress_message=doc.get("progress_message"),
             environment_hash=doc.get("environment_hash", ""),
             kind=doc.get("kind", ""),
             required_features=list(doc.get("required_features") or []),
