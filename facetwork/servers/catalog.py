@@ -204,9 +204,28 @@ def resolve_ip(entry_or_name: dict | str) -> str | None:
         if lan:
             return lan
     try:
-        return socket.gethostbyname(name)
+        first = socket.gethostbyname(name)
     except OSError:
         return None
+    try:
+        addrs = socket.gethostbyname_ex(name)[2] or [first]
+    except OSError:
+        addrs = [first]
+    # ⚠️ A host with two addresses (measured 2026-10-15: the database host on
+    # a new wired adapter holding both its DHCP lease and a static address)
+    # resolves to BOTH, in an order that varies by host and over time. Every
+    # flip changed the address baked into runner environments, and the next
+    # compose apply recreated every runner on the host, killing a build twice.
+    # So the choice is deterministic: the lowest address. Pin with ``ip_pin``
+    # to choose a different one.
+    return min(addrs, key=_ip_key) if addrs else None
+
+
+def _ip_key(ip: str) -> tuple:
+    try:
+        return tuple(int(x) for x in ip.split("."))
+    except ValueError:
+        return (999,)
 
 
 def _names_this_host(name: str) -> bool:
