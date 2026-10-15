@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+# fw-summary: per-region GraphHopper routers: add/remove/list/wait (placed by fleet-agents)
+"""fleet router — run one GraphHopper router PER REGION, anywhere in the fleet.
+
+  fw fleet router add REGION [--profile car] [--replicas 1] [--heap 4g] [--groups heavy,medium]
+  fw fleet router remove REGION [--profile car]
+  fw fleet router list
+  fw fleet router wait REGION [--profile car] [--timeout 2700]
+
+`add` records the region as wanted; it does not start anything itself. Every
+fleet-agent reconciles routers each cycle and the first eligible host claims a
+free slot (one per host per cycle, so regions spread out). The router pulls the
+graph from the object store cache -- build it first (osm.Routing GraphHopper
+build) or the container refuses and the slot reads `failed`.
+
+Handlers find a router through the slot registry by the region in their graph
+path, so builds of DIFFERENT regions run at the same time. `wait` exits 0 when a
+replica is ready, 1 on timeout -- the driver step before a build.
+
+Placement rules (scripts/lib/_helpers/_routers.py):
+  * --groups limits which hosts may claim (default: roles.graphhopper.server_groups)
+  * at most FW_GH_MAX_ROUTERS / roles.graphhopper.max_per_host per host (default 2)
+  * never two replicas of one region on one host
+  * a host that stops renewing loses its slots after 5 min; another host claims them
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+try:
+    import pymongo  # noqa: F401
+except ModuleNotFoundError:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_helpers"))
+    from _fleet_bootstrap import bootstrap_and_reexec
+
+    bootstrap_and_reexec()
+    import pymongo  # noqa: F401
+
+import argparse
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_helpers"))
+import _fleet_lib  # noqa: E402
+import _routers  # noqa: E402
+from pymongo import MongoClient  # noqa: E402
+
+DB = os.environ.get("FW_MONGODB_DATABASE", "facetwork")
+
+
+def _db(a):
+    url = _fleet_lib.resolve_mongo(a.mongo, log=lambda m: None)
+    return MongoClient(url, serverSelectionTimeoutMS=5000)[DB]
+
+
+def cmd_add(a) -> int:
+    db = _db(a)
+    key = _routers.desired_key(a.region, a.profile)
+    groups = [g for g in (a.groups or "").split(",") if g]
+    db[_routers.DESIRED].update_one(
+        {"_id": key},
+        {"$set": {"region": a.region, "profile": a.profile, "replicas": a.replicas,
+                  "heap": a.heap, "server_groups": groups},
+         "$setOnInsert": {"added": time.time()}},
+        upsert=True)
+    print(f"router {key}: wanted x{a.replicas} (heap {a.heap}"
+          + (f", groups {','.join(groups)}" if groups else "") + ") -- fleet-agents place it")
+    return 0
+
+
+def cmd_remove(a) -> int:
+    r = _db(a)[_routers.DESIRED].delete_one({"_id": _routers.desired_key(a.region, a.profile)})
+    print(f"router {a.region}|{a.profile}: " + ("removed; holders stop it next cycle"
+                                                 if r.deleted_count else "was not wanted"))
+    return 0 if r.deleted_count else 1
+
+
+def cmd_list(a) -> int:
+    db = _db(a)
+    now = time.time()
+    slots = {}
+    for s in db[_routers.SLOTS].find():
+        slots.setdefault(f"{s['region']}|{s['profile']}", []).append(s)
+    wanted = list(db[_routers.DESIRED].find().sort("_id"))
+    if not wanted and not slots:
+        print("no routers wanted")
+        return 0
+    for d in wanted:
+        print(f"{d['_id']}  x{d.get('replicas', 1)}  heap {d.get('heap')}"
+              + (f"  groups {','.join(d['server_groups'])}" if d.get("server_groups") else ""))
+        for s in sorted(slots.pop(d["_id"], []), key=lambda s: s["replica"]):
+            age = now - s.get("updated", now)
+            lease = "EXPIRED" if s.get("lease_expires", 0) < now else f"renewed {age:.0f}s ago"
+            print(f"    [{s['replica']}] {s.get('state', '?'):8} {s.get('host')} "
+                  f"{s.get('url') or ':' + str(s.get('port'))}  {lease}")
+        for i in range(int(d.get("replicas", 1))):
+            if not any(s["replica"] == i for s in db[_routers.SLOTS].find({"_id": f"{d['_id']}|{i}"})):
+                print(f"    [{i}] unclaimed")
+    for key, ss in slots.items():
+        print(f"{key}  (no longer wanted; {len(ss)} slot(s) still held -- released next cycle)")
+    return 0
+
+
+def cmd_wait(a) -> int:
+    db = _db(a)
+    key = _routers.desired_key(a.region, a.profile)
+    if not db[_routers.DESIRED].find_one({"_id": key}):
+        print(f"router {key}: not wanted -- `fw fleet router add {a.region}` first", file=sys.stderr)
+        return 2
+    deadline = time.time() + a.timeout
+    last = None
+    while True:
+        now = time.time()
+        ready = list(db[_routers.SLOTS].find({"region": a.region, "profile": a.profile,
+                                              "state": "ready", "lease_expires": {"$gt": now}}))
+        if ready:
+            print(f"router {key}: ready on {', '.join(s['host'] for s in ready)}")
+            return 0
+        states = sorted(f"{s.get('host')}={s.get('state')}"
+                        for s in db[_routers.SLOTS].find({"region": a.region, "profile": a.profile}))
+        if states != last:
+            print(f"router {key}: {', '.join(states) or 'unclaimed'}", flush=True)
+            last = states
+        if now >= deadline:
+            print(f"router {key}: not ready after {a.timeout}s", file=sys.stderr)
+            return 1
+        time.sleep(10)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="fw fleet router", description=__doc__.split("\n\n")[0])
+    ap.add_argument("--mongo", default=None, help="MongoDB URL (default: discovered)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    for name in ("add", "remove", "wait"):
+        sp = sub.add_parser(name)
+        sp.add_argument("region", help="graph region, e.g. north-america/us-major-roads")
+        sp.add_argument("--profile", default="car")
+        if name == "add":
+            sp.add_argument("--replicas", type=int, default=1)
+            sp.add_argument("--heap", default=_routers.DEFAULT_HEAP, help="JVM -Xmx (default 4g)")
+            sp.add_argument("--groups", default="", help="server groups that may claim it")
+        if name == "wait":
+            sp.add_argument("--timeout", type=int, default=2700)
+    sub.add_parser("list")
+    a = ap.parse_args()
+    return {"add": cmd_add, "remove": cmd_remove, "list": cmd_list, "wait": cmd_wait}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

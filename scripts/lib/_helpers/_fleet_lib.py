@@ -890,14 +890,22 @@ def remove_service_containers(service: str) -> list[str]:
     """Force-remove every container of compose ``service`` on this host.
 
     For a container that cannot run here at all (wrong architecture): it is
-    ``restart: unless-stopped``, so leaving it means a restart loop forever."""
+    ``restart: unless-stopped``, so leaving it means a restart loop forever.
+
+    ⚠️ Spares the per-region routers (compose projects ``fw-gh-*``, see
+    ``_routers.py``): they run the same ``runner-graphhopper`` SERVICE as the
+    legacy fleet-wide router, so a host skipping that legacy role would
+    otherwise delete every region router it holds, every cycle."""
     try:
-        ids = subprocess.run(
-            ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.service={service}"],
+        rows = subprocess.run(
+            ["docker", "ps", "-a", "--filter", f"label=com.docker.compose.service={service}",
+             "--format", '{{.ID}}\t{{.Label "com.docker.compose.project"}}'],
             capture_output=True,
             text=True,
             timeout=30,
-        ).stdout.split()
+        ).stdout.splitlines()
+        ids = [r.split("\t", 1)[0] for r in rows
+               if r.strip() and not r.split("\t", 1)[-1].startswith("fw-gh-")]
         if ids:
             subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, timeout=60)
         return ids

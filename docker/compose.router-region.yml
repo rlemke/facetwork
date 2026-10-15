@@ -1,0 +1,11 @@
+# Overlay for a per-region GraphHopper router (fleet-agent `_routers.py`).
+#
+# Each region runs as its OWN compose project (fw-gh-<slug>) so one host can
+# serve several. The stack's default network pins a fixed IPv6 subnet, and a
+# second project would try to create a second network with that same subnet
+# and fail; a router needs no compose network at all -- it reaches MinIO by
+# the extra_hosts names and is reached on its published port -- so it uses the
+# plain bridge.
+services:
+  runner-graphhopper:
+    network_mode: bridge

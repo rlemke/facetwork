@@ -45,6 +45,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_helpers"))
 import _fleet_lib  # noqa: E402
+import _routers  # noqa: E402
 
 # fw execs this file, so the shebang picked the SYSTEM python — which on three
 # of four hosts here has no pymongo. Degrade to a no-op if the helper is
@@ -221,7 +222,9 @@ def _run_compose(cmd, env):
 #: Source files whose change should make this daemon reload itself.
 _SELF_SOURCES = (__file__,
                  os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "..", "_helpers", "_fleet_lib.py"))
+                              "..", "_helpers", "_fleet_lib.py"),
+                 os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "..", "_helpers", "_routers.py"))
 
 
 def _source_fingerprint() -> tuple:
@@ -652,6 +655,14 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         with os.fdopen(fd, "w") as f:
             for k, v in env.items():
                 f.write(f"{k}={v}\n")
+        # The per-region routers start between applies (they are reconciled
+        # every cycle, not per config version), so they need this env to outlive
+        # the call. Same content and the same private directory.
+        _rfd = os.open(_ROUTER_ENVF + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(_rfd, "w") as f:
+            for k, v in env.items():
+                f.write(f"{k}={v}\n")
+        os.replace(_ROUTER_ENVF + ".tmp", _ROUTER_ENVF)
         child_env = os.environ.copy()
         child_env["PATH"] = (
             child_env.get("PATH", "")
@@ -814,6 +825,100 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             os.unlink(envf)
         except OSError:
             pass
+
+
+_ROUTER_ENVF = os.path.join(_RUNDIR, "routers.env")
+_ROUTER_OVERLAY = os.path.join(REPO, "docker", "compose.router-region.yml")
+
+
+def _docker_out(*args, timeout=30) -> str:
+    try:
+        return subprocess.run(["docker", *args], capture_output=True, text=True,
+                              timeout=timeout).stdout
+    except Exception:  # noqa: BLE001 - unanswerable reads as "nothing there"
+        return ""
+
+
+def _router_docker() -> "_routers.Docker":
+    """Container operations for the per-region routers (see _routers.py)."""
+    import json as _json
+    import urllib.request
+
+    child_env = os.environ.copy()
+    child_env["PATH"] = child_env.get("PATH", "") + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+
+    def start(proj, region, profile, port, heap):
+        if not os.path.exists(_ROUTER_ENVF):
+            print(f"fleet-agent[{HOST}]: router {proj}: no runner env yet (first apply has "
+                  "not succeeded) -- not starting", flush=True)
+            return False
+        env = dict(child_env, COMPOSE_PROJECT_NAME=proj, FW_GRAPHHOPPER_REGION=region,
+                   FW_GRAPHHOPPER_PROFILE=profile, FW_GRAPHHOPPER_PORT=str(port),
+                   FW_GRAPHHOPPER_JAVA_OPTS=f"-Xmx{heap}", FW_FLEET_EXTRA_COMPOSE=_ROUTER_OVERLAY)
+        r = _run_compose(["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"),
+                          "--fleet", "--env", _ROUTER_ENVF, "--example", "graphhopper",
+                          "--replicas", "1"], env)
+        if r.returncode != 0:
+            print(f"fleet-agent[{HOST}]: router {proj}: start failed (exit {r.returncode}): "
+                  f"{(r.stderr or r.stdout)[-400:]}", flush=True)
+            return False
+        print(f"fleet-agent[{HOST}]: router {proj}: started {region}/{profile} on :{port} "
+              f"(heap {heap})", flush=True)
+        return True
+
+    def state(proj):
+        out = _docker_out("ps", "-a", "--filter", f"label=com.docker.compose.project={proj}",
+                          "--format", "{{.State}}").split()
+        return out[0] if out else None
+
+    def probe(port):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=3) as r:
+                if r.status != 200:
+                    return None
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/info", timeout=5) as r:
+                info = _json.loads(r.read())
+            return info if info.get("bbox") else None
+        except Exception:  # noqa: BLE001 - not answering yet is "starting"
+            return None
+
+    def stop(proj):
+        ids = _docker_out("ps", "-aq", "--filter", f"label=com.docker.compose.project={proj}").split()
+        if ids:
+            _docker_out("rm", "-f", *ids, timeout=60)
+            print(f"fleet-agent[{HOST}]: router {proj}: removed {len(ids)} container(s)", flush=True)
+
+    def projects():
+        out = _docker_out("ps", "-a", "--filter", "label=com.docker.compose.project",
+                          "--format", '{{.Label "com.docker.compose.project"}}')
+        return {p for p in out.split() if p.startswith(_routers.PROJECT_PREFIX)}
+
+    def port_busy(port):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sk:
+            sk.settimeout(1)
+            return sk.connect_ex(("127.0.0.1", port)) == 0
+
+    return _routers.Docker(start=start, state=state, probe=probe, stop=stop, projects=projects,
+                           port_busy=port_busy)
+
+
+def _reconcile_routers(cfg, mongo) -> None:
+    """Hold, renew, claim or release per-region GraphHopper routers (_routers.py).
+
+    Runs every cycle, not per config version: a lease is renewed by being here,
+    and a router whose host died is claimed by whoever runs this next."""
+    role = (cfg.get("roles") or {}).get("graphhopper") or {}
+    address = _fleet_lib.lan_ip()
+    if not address:
+        print(f"fleet-agent[{HOST}]: routers: no LAN address -- skipping this cycle", flush=True)
+        return
+    max_here = int(os.environ.get("FW_GH_MAX_ROUTERS") or role.get("max_per_host")
+                   or _routers.DEFAULT_MAX_PER_HOST)
+    rec = _routers.RouterReconciler(
+        _db(mongo), HOST, _fleet_lib.host_server_group(), address, _router_docker(),
+        max_here=max_here, default_groups=role.get("server_groups") or [],
+        log=lambda m: print(f"fleet-agent[{HOST}]: {m}", flush=True))
+    rec.reconcile()
 
 
 def cmd_apply(a):
@@ -1091,6 +1196,10 @@ def cmd_watch(a):
                 else:
                     print(f"fleet-agent[{HOST}]: up to date (v{version})", flush=True)
                     fails, failing_version = 0, None
+            try:
+                _reconcile_routers(cfg, mongo)
+            except Exception as exc:  # noqa: BLE001 - a router fault must not stall runner reconcile
+                print(f"fleet-agent[{HOST}]: routers: {type(exc).__name__}: {exc}", flush=True)
         except Exception as exc:  # noqa: BLE001 - keep the daemon alive across transient errors
             # Transient (Mongo/read/discovery) error — not tied to a config
             # version, so back off on a separate counter and rebuild the client.
