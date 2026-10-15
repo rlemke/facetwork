@@ -145,3 +145,75 @@ def test_a_container_that_cannot_be_inspected_is_skipped_not_fatal(monkeypatch):
     except RuntimeError as exc:
         raise AssertionError("one bad container aborted the sweep") from exc
     assert ("good", "FW_MONGODB_URL", STALE) in got
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-14: a FAILED lookup read as drift. The Mongo host's catalog entry did
+# not resolve for a moment, service_ips() filled the gap with the infra IP, and
+# every correct FW_MONGODB_URL was flagged -- the agent recreated all 24 runners
+# on a host 8 times and restarted a 3-hour build each time.
+# ---------------------------------------------------------------------------
+
+MONGO_HOST = _site.ip("database-host")
+
+
+def test_a_service_missing_from_the_map_is_not_judged(monkeypatch):
+    _with_env(monkeypatch, {"runner-a": {"FW_MONGODB_URL": f"mongodb://{MONGO_HOST}:27017",
+                                         "FW_S3_ENDPOINT": f"http://{INFRA}:9000"}})
+    # afl-mongodb did not resolve, so it is absent; MinIO is on the infra host.
+    assert fl.stale_env_containers({"afl-minio": INFRA}) == []
+
+
+def test_a_resolved_service_is_still_judged(monkeypatch):
+    _with_env(monkeypatch, {"runner-a": {"FW_MONGODB_URL": f"mongodb://{STALE}:27017"}})
+    got = fl.stale_env_containers({"afl-minio": INFRA, "afl-mongodb": MONGO_HOST})
+    assert got == [("runner-a", "FW_MONGODB_URL", STALE)]
+
+
+class _Catalog:
+    """A catalog whose afl-mongodb entry exists but does not resolve."""
+
+    def __init__(self, resolved):
+        self.resolved = resolved
+
+    def find(self, name):
+        return {"name": name} if name in ("afl-mongodb", "afl-minio") else None
+
+    def resolve_ip(self, entry):
+        return self.resolved.get(entry["name"])
+
+
+def _with_catalog(monkeypatch, resolved):
+    import sys
+    import types
+
+    mod = types.ModuleType("facetwork.servers.catalog")
+    cat = _Catalog(resolved)
+    mod.find, mod.resolve_ip = cat.find, cat.resolve_ip
+    pkg = types.ModuleType("facetwork.servers")
+    pkg.catalog = mod
+    monkeypatch.setitem(sys.modules, "facetwork.servers", pkg)
+    monkeypatch.setitem(sys.modules, "facetwork.servers.catalog", mod)
+    monkeypatch.setattr(fl, "resolve_infra_ip", lambda log=None: INFRA)
+
+
+def test_strict_leaves_out_an_entry_that_did_not_resolve(monkeypatch):
+    _with_catalog(monkeypatch, {"afl-minio": INFRA})
+    svc = fl.service_ips(strict=True)
+    assert "afl-mongodb" not in svc and svc["afl-minio"] == INFRA
+
+
+def test_non_strict_keeps_the_infra_fallback(monkeypatch):
+    _with_catalog(monkeypatch, {"afl-minio": INFRA})
+    assert fl.service_ips()["afl-mongodb"] == INFRA
+
+
+def test_strict_and_a_resolved_entry_agree(monkeypatch):
+    _with_catalog(monkeypatch, {"afl-minio": INFRA, "afl-mongodb": MONGO_HOST})
+    assert fl.service_ips(strict=True)["afl-mongodb"] == MONGO_HOST
+
+
+def test_the_agent_recreates_only_on_two_agreeing_polls():
+    src = (Path(__file__).resolve().parent.parent / "scripts/lib/fleet/agent").read_text()
+    assert "service_ips(strict=True)" in src
+    assert "confirmed = set(stale) & prev_stale" in src

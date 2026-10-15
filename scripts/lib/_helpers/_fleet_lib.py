@@ -267,7 +267,7 @@ def resolve_infra_ip(*, log=None) -> str | None:
         return None
 
 
-def service_ips(*, log=None) -> dict[str, str]:
+def service_ips(*, log=None, strict: bool = False) -> dict[str, str]:
     """Map each ``INFRA_HOST_NAMES`` entry to the IP it should resolve to.
 
     ⚠️ These names used to ALL point at the single ``infra: true`` host, because
@@ -281,6 +281,14 @@ def service_ips(*, log=None) -> dict[str, str]:
     entry carries the name as an alias, that entry's IP wins. A name no entry
     claims falls back to the infra host, which is exactly the previous
     behaviour — so this is inert for any fleet that still runs one infra box.
+
+    ⚠️ ``strict=True`` is for callers that ACT destructively on the answer. A
+    name whose catalog entry exists but does not resolve right now (its host's
+    WiFi dropped, mDNS was slow) is then LEFT OUT rather than given the infra
+    host's address. Measured 2026-10-14: the Mongo host's lookup failed
+    intermittently, the fallback named the infra host, and the env-drift check
+    recreated all 24 runners on a host 8 times, restarting a 3-hour build each
+    time. "Could not resolve" is not "moved to the infra host".
     """
     out: dict[str, str] = {}
     infra_ip = resolve_infra_ip(log=log)
@@ -298,10 +306,18 @@ def service_ips(*, log=None) -> dict[str, str]:
                 if ip and (ip.startswith("127.") or ip == "::1"):
                     ip = lan_ip() or ip
             if not ip:
+                if entry and strict:
+                    if log:
+                        log(f"{name}: its host did not resolve; left unjudged")
+                    continue
                 ip = infra_ip
             if ip:
                 out[name] = ip
     except Exception as exc:  # noqa: BLE001
+        if strict:
+            if log:
+                log(f"service-IP resolve failed ({exc}); nothing judged this time")
+            return {}
         if log:
             log(f"service-IP resolve failed ({exc}); falling back to one infra IP")
         if infra_ip:
@@ -642,7 +658,15 @@ def stale_env_containers(ip_or_map, *, log=None) -> list[tuple[str, str, str]]:
         infra_ip = svc.get("afl-minio") or next(iter(svc.values()), None)
 
     def _want(var: str) -> str | None:
-        return svc.get(_ENDPOINT_VAR_SERVICE.get(var, ""), infra_ip)
+        # A variable whose service is missing from the map is not judged: the
+        # map leaves out what it could not resolve (service_ips strict), and
+        # filling the gap with the infra IP is what flagged every correct
+        # FW_MONGODB_URL as drift. Only the legacy single-IP form and variables
+        # with no service of their own compare against the infra IP.
+        service = _ENDPOINT_VAR_SERVICE.get(var)
+        if service and svc:
+            return svc.get(service)
+        return infra_ip
 
     out: list[tuple[str, str, str]] = []
     for c in _runner_containers():

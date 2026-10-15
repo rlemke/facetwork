@@ -954,7 +954,7 @@ def cmd_refresh_hosts(a):
     # different machines since 2026-09-13 (Mongo moved to its own host; MinIO
     # stayed on the infra host). Collapsing them would point the object store at the
     # Mongo host and take every runner's cache and outputs down with it.
-    svc = _fleet_lib.service_ips(log=lambda m: print(f"  {m}"))
+    svc = _fleet_lib.service_ips(log=lambda m: print(f"  {m}"), strict=True)
     if not svc:
         print(f"fleet-agent[{HOST}]: could not resolve the afl-* addresses — nothing to do")
         return
@@ -1110,6 +1110,10 @@ def cmd_watch(a):
     fails = 0
     failing_version = None
     _src_baseline = _source_fingerprint()
+    # Env drift seen on the previous poll. A recreate kills every running task
+    # on this host, so it needs the same finding twice in a row: one bad lookup
+    # must never be enough.
+    prev_stale: set = set()
     while not stop["v"]:
         # Reload our own code before anything else in the cycle: a pulled fix
         # that never runs is indistinguishable from a fix that did not work.
@@ -1223,7 +1227,7 @@ def cmd_watch(a):
             # patches each runner's afl-* /etc/hosts, so runners auto-reconnect to
             # Mongo/MinIO without waiting for a rollout/recreate.
             try:
-                svc = _fleet_lib.service_ips()
+                svc = _fleet_lib.service_ips(strict=True)
                 ip = svc.get("afl-minio") or _fleet_lib.resolve_infra_ip()
                 if svc:
                     _fleet_lib.refresh_container_hosts(
@@ -1245,6 +1249,13 @@ def cmd_watch(a):
                     # Mongo move would mark every correct runner as drifted and
                     # recreate the whole fleet on every poll, forever.
                     stale = _fleet_lib.stale_env_containers(svc)
+                    confirmed = set(stale) & prev_stale
+                    if stale and not confirmed:
+                        print(f"fleet-agent[{HOST}]: env drift on {len(stale)} "
+                              f"container env(s); recreating only if the next poll "
+                              f"agrees", flush=True)
+                    prev_stale = set(stale)
+                    stale = sorted(confirmed)
                     if stale:
                         names = sorted({c for c, _v, _o in stale})
                         for c, var, old_ip in stale:
