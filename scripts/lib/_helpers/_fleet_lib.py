@@ -634,6 +634,38 @@ def _container_env(name: str) -> dict:
         return {}
 
 
+_DEFAULT_PORTS = {"mongodb": 27017, "http": 80, "https": 443, "postgresql": 5432,
+                  "postgres": 5432}
+_answer_cache: dict[tuple[str, int], tuple[float, bool]] = {}
+
+
+def _endpoint_answers(value: str, ip: str, timeout: float = 3.0) -> bool:
+    """Whether ``ip`` accepts a TCP connection on the port ``value`` (a URL)
+    names. Cached for a minute; unparseable values count as not answering."""
+    import socket
+    import time as _time
+    from urllib.parse import urlsplit
+
+    try:
+        u = urlsplit(value)
+        port = u.port or _DEFAULT_PORTS.get(u.scheme.split("+")[0])
+    except ValueError:
+        return False
+    if not port:
+        return False
+    key = (ip, int(port))
+    hit = _answer_cache.get(key)
+    if hit and _time.time() - hit[0] < 60:
+        return hit[1]
+    try:
+        with socket.create_connection(key, timeout=timeout):
+            ok = True
+    except OSError:
+        ok = False
+    _answer_cache[key] = (_time.time(), ok)
+    return ok
+
+
 def stale_env_containers(ip_or_map, *, log=None) -> list[tuple[str, str, str]]:
     """(container, variable, stale_ip) for env endpoints pinned to the wrong IP.
 
@@ -648,8 +680,18 @@ def stale_env_containers(ip_or_map, *, log=None) -> list[tuple[str, str, str]]:
     ⚠️ Reports rather than fixes, because a container's environment is IMMUTABLE
     after creation. The only cure is recreation, which belongs to whoever owns
     the compose invocation — so this returns findings and the agent acts.
+
+    ⚠️ A pinned address that still ANSWERS is not drift. Recreating is
+    justified only because a stale endpoint means the runner is already dead;
+    an address that differs from today's lookup but serves is a live runner.
+    Measured 2026-10-15: the Mongo host gained a second address (a new wired
+    adapter beside the old one), its name resolved to either, and the agent
+    recreated all 24 runners on a host whenever the lookup flipped -- killing
+    a running build. So a differing address is probed (TCP connect to its
+    port) and reported only if nothing answers there.
     """
     say = log or (lambda _m: None)
+    answers = _endpoint_answers
     # Accept a single IP (legacy) or the {name: ip} map from service_ips().
     if isinstance(ip_or_map, str):
         infra_ip, svc = ip_or_map, {}
@@ -686,6 +728,10 @@ def stale_env_containers(ip_or_map, *, log=None) -> list[tuple[str, str, str]]:
                     continue
                 want = _want(var)
                 if want and found != want:
+                    if answers(val, found):
+                        say(f"{c} {var} pins {found} (lookup says {want}) but it answers "
+                            f"-- left alone")
+                        continue
                     out.append((c, var, found))
                     say(
                         f"env drift: {c} {var} pins {found}, "

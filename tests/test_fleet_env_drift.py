@@ -18,6 +18,8 @@ tests pin the second.
 """
 
 import importlib.util
+
+import pytest
 from pathlib import Path
 
 from tests import _site
@@ -35,6 +37,16 @@ def _load():
 
 
 fl = _load()
+_REAL_ANSWERS = fl._endpoint_answers
+
+
+@pytest.fixture(autouse=True)
+def _no_probes(monkeypatch):
+    """A stale address in these tests is one that does NOT answer; no real
+    connection is attempted."""
+    monkeypatch.setattr(fl, "_endpoint_answers", lambda value, ip: False)
+
+
 INFRA = _site.ip("infra")
 STALE = _site.ip("stale-infra")
 OTHER_STALE = _site.ip("another-stale-host")
@@ -217,3 +229,39 @@ def test_the_agent_recreates_only_on_two_agreeing_polls():
     src = (Path(__file__).resolve().parent.parent / "scripts/lib/fleet/agent").read_text()
     assert "service_ips(strict=True)" in src
     assert "confirmed = set(stale) & prev_stale" in src
+
+
+
+# 2026-10-15: the Mongo host gained a second address and its name resolved to
+# either; every flip recreated all 24 runners on a host, killing a build.
+
+def test_a_pinned_address_that_still_answers_is_not_drift(monkeypatch):
+    other = _site.ip("database-host-second-address")
+    _with_env(monkeypatch, {"runner-a": {"FW_MONGODB_URL": f"mongodb://{other}:27017"}})
+    monkeypatch.setattr(fl, "_endpoint_answers", lambda value, ip: ip == other)
+    assert fl.stale_env_containers({"afl-minio": INFRA, "afl-mongodb": MONGO_HOST}) == []
+
+
+def test_the_probe_uses_the_port_the_url_names(monkeypatch):
+    import socket
+
+    seen = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def connect(addr, timeout):
+        seen.append(addr)
+        return Conn()
+
+    monkeypatch.setattr(socket, "create_connection", connect)
+    fl._answer_cache.clear()
+    ip = _site.ip("probe-target")
+    assert _REAL_ANSWERS(f"mongodb://{ip}:27017", ip) is True
+    assert _REAL_ANSWERS(f"http://{ip}:9000", ip) is True
+    assert _REAL_ANSWERS(f"postgresql://u:p@{ip}/db", ip) is True
+    assert seen == [(ip, 27017), (ip, 9000), (ip, 5432)]
