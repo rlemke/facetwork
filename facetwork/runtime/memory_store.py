@@ -229,17 +229,36 @@ class MemoryStore(PersistenceAPI):
         For the in-memory store, this just saves all changes.
         A real implementation would use transactions.
         """
+        # Same duplicate-task guard as the Mongo store, judged before writing.
+        from .persistence import is_stale_event_task
+
+        stale: set[str] = set()
+        for task in changes.created_tasks:
+            sid = task.step_id
+            cur = self._steps.get(sid) if sid else None
+            if cur is None:
+                continue
+            prior = [
+                (str(getattr(t.state, "value", t.state)), int(t.updated or 0))
+                for t in self._tasks.values()
+                if t.step_id == sid
+            ]
+            if is_stale_event_task(cur.state, cur.last_modified, prior):
+                stale.add(sid)
+
         # Save created steps
         for step in changes.created_steps:
             self.save_step(step)
 
         # Save updated steps
         for step in changes.updated_steps:
-            self.save_step(step)
+            if str(step.id) not in stale:
+                self.save_step(step)
 
         # Save created tasks
         for task in changes.created_tasks:
-            self.save_task(task)
+            if task.step_id not in stale:
+                self.save_task(task)
 
         # Save continuation tasks
         for task in changes.continuation_tasks:

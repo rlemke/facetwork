@@ -39,6 +39,48 @@ if TYPE_CHECKING:
     )
 
 
+def is_stale_event_task(
+    step_state: str | None, step_last_modified: int, prior_tasks: Sequence[tuple[str, int]]
+) -> bool:
+    """Whether a commit's new event task for a step duplicates work already done.
+
+    ``step_state`` / ``step_last_modified`` are the step as STORED before this
+    commit (None when it is not stored yet); ``prior_tasks`` are the step's
+    stored tasks as (state, updated).
+
+    ⚠️ Measured 2026-10-15 in capped ``foreach`` fan-outs: 11 of 666 event tasks
+    got a SECOND task, created 15-162 ms after the first COMPLETED, often on
+    another server -- an evaluator committing a copy of the step it read before
+    the first task finished. The handler then ran twice. A new task is stale
+    when:
+
+    * a pending or running task already covers the step; or
+    * a task COMPLETED and the stored step has moved past EventTransmit
+      (continue_step already applied its result); or
+    * a task COMPLETED after the stored step was last written while it sits at
+      EventTransmit -- the gap between the runner marking the task completed
+      and its continue_step, so a result is about to be applied.
+
+    It is NOT stale when the stored step was written AFTER the task completed:
+    that is a deliberate reset (retry / re-run / repair all write through
+    ``save_step``, which stamps ``last_modified``), and the step must run again.
+    Failed, dead-lettered and cancelled tasks never count, so retry by
+    recreation is unchanged.
+    """
+    from .states import StepState
+
+    if step_state is None:
+        return False
+    if any(st in ("pending", "running") for st, _u in prior_tasks):
+        return True
+    done = [u for st, u in prior_tasks if st == "completed"]
+    if not done:
+        return False
+    if step_state != StepState.EVENT_TRANSMIT:
+        return True
+    return max(done) >= (step_last_modified or 0)
+
+
 @dataclass
 class IterationChanges:
     """Accumulated changes from a single iteration.

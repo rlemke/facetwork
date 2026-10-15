@@ -227,6 +227,33 @@ class StepMixin(_MixinBase):
             else:
                 raise
 
+    def _stale_event_task_steps(self, changes: IterationChanges, kwargs: dict) -> set[str]:
+        """Step ids whose new event task in ``changes`` is stale
+        (see :func:`facetwork.runtime.persistence.is_stale_event_task`)."""
+        from ..persistence import is_stale_event_task
+
+        out: set[str] = set()
+        for task in changes.created_tasks:
+            sid = task.step_id
+            if not sid or sid in out:
+                continue
+            cur = self._db.steps.find_one(
+                {"uuid": sid}, {"state": 1, "last_modified": 1}, **kwargs
+            )
+            if cur is None:
+                continue
+            prior = [
+                (d.get("state", ""), int(d.get("updated") or 0))
+                for d in self._db.tasks.find(
+                    {"step_id": sid, "state": {"$in": ["pending", "running", "completed"]}},
+                    {"state": 1, "updated": 1},
+                    **kwargs,
+                )
+            ]
+            if is_stale_event_task(cur.get("state"), int(cur.get("last_modified") or 0), prior):
+                out.add(sid)
+        return out
+
     def _commit_changes(self, changes: IterationChanges, session: Any = None) -> None:
         """Write all iteration changes to MongoDB."""
         kwargs: dict[str, Any] = {}
@@ -234,6 +261,11 @@ class StepMixin(_MixinBase):
             kwargs["session"] = session
 
         skipped_step_ids: set[str] = set()
+        # Event tasks this commit must not create, judged against the store
+        # BEFORE any of this commit's writes (its own step write would
+        # otherwise make a stale copy look fresh). Their step update is
+        # dropped too: it is the same stale copy.
+        stale_step_ids = self._stale_event_task_steps(changes, kwargs)
 
         for step in changes.created_steps:
             doc = self._step_to_doc(step)
@@ -249,6 +281,8 @@ class StepMixin(_MixinBase):
                 )
 
         for step in changes.updated_steps:
+            if str(step.id) in stale_step_ids:
+                continue
             doc = self._step_to_doc(step)
             # Optimistic concurrency: advance the row ONLY if the DB copy is
             # strictly behind our sequence. One atomic conditional replace
@@ -287,6 +321,14 @@ class StepMixin(_MixinBase):
                 self._db.steps.replace_one({"uuid": step.id}, doc, **kwargs)
 
         for task in changes.created_tasks:
+            if task.step_id and task.step_id in stale_step_ids:
+                logger.warning(
+                    "Skipping duplicate event task: name=%s step_id=%s (the step's task "
+                    "already ran or is running; this commit held a stale copy of the step)",
+                    task.name,
+                    task.step_id,
+                )
+                continue
             if task.step_id and task.step_id in skipped_step_ids:
                 logger.debug(
                     "Skipping orphan task: name=%s step_id=%s",
