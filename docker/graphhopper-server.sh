@@ -55,13 +55,33 @@ if not files or "nodes" not in files or "properties" not in files:
           f"(have: {sorted(files) or 'nothing'}). Build it first: "
           f"osm.cache.GraphHopper.<Region>(cache = …) — refusing to serve an empty graph.", file=sys.stderr)
     sys.exit(2)
+# The local copy is reused only if it is the SAME build. Matching sizes are not
+# enough: GraphHopper preallocates its files, so a rebuilt graph's
+# location_index had the size of the old one, was kept, and the server died
+# "location index was opened with incorrect graph" (measured 2026-10-15). The
+# contraction hierarchies it prepares on load live only here and are just as
+# stale. So the build is identified by every file's ETag; a different build
+# empties the directory first, and the identity is written only once complete.
+import json, shutil
+ident = json.dumps(sorted((n, o["Size"], o.get("ETag", "")) for n, o in files.items()))
+marker = os.path.join(dest, ".fw-graph-identity")
+try:
+    same = open(marker).read() == ident
+except OSError:
+    same = False
+if not same:
+    for entry in os.listdir(dest):
+        full = os.path.join(dest, entry)
+        shutil.rmtree(full) if os.path.isdir(full) else os.remove(full)
 synced = kept = 0
 for name, o in files.items():
     path = os.path.join(dest, name)
-    if os.path.exists(path) and os.path.getsize(path) == o["Size"]:
+    if same and os.path.exists(path) and os.path.getsize(path) == o["Size"]:
         kept += 1; continue
     s3.download_file(bucket, o["Key"], path + ".part")
     os.replace(path + ".part", path); synced += 1
+with open(marker, "w") as fh:
+    fh.write(ident)
 print(f"graphhopper-server: graph ready ({len(files)} files, {synced} fetched, {kept} already local, "
       f"{sum(o['Size'] for o in files.values())/1e6:.0f} MB)")
 PY
