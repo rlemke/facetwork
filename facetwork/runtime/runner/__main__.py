@@ -50,6 +50,46 @@ class _FacetNameCollector:
         pass
 
 
+def prune_env_gated(store, tool_registry) -> list[str]:
+    """Stop serving facets whose registration now requires env this runner lacks.
+
+    Returns the names removed. Only ever removes: a facet that becomes
+    servable later is picked up at the next start, which is the safe direction
+    (an unclaimed task waits; a wrongly claimed one fails and burns retries).
+    """
+    from facetwork.runtime.dispatcher import registration_env_missing
+
+    removed: list[str] = []
+    for reg in store.list_handler_registrations():
+        missing = registration_env_missing(reg.metadata)
+        if missing and tool_registry.unregister(reg.facet_name):
+            removed.append(reg.facet_name)
+            logging.getLogger(__name__).warning(
+                "No longer claiming %s: its registration requires %s, not set here",
+                reg.facet_name,
+                ", ".join(missing),
+            )
+    return removed
+
+
+def _start_env_gate_pruner(store, tool_registry, interval_s: float = 300.0) -> None:
+    """Run :func:`prune_env_gated` every ``interval_s`` on a daemon thread."""
+    import threading
+    import time
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_s)
+            try:
+                prune_env_gated(store, tool_registry)
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "requires_env re-check failed; will retry", exc_info=True
+                )
+
+    threading.Thread(target=_loop, name="env-gate-pruner", daemon=True).start()
+
+
 def _warn_registry_drift(loaded_facet_names: list[str]) -> None:
     """Compare in-process declared facets against the registry-loaded set.
 
@@ -353,6 +393,14 @@ def main() -> None:
         # facet was added in source but the registry wasn't re-seeded.
         # Surface it at startup, before workflows hang on it.
         _warn_registry_drift(dispatcher.dispatchable_facets())
+
+        # preload() read each registration's `requires_env` ONCE. A rollout
+        # restarts every runner together, so this one can preload a facet before
+        # the domain runner re-registers it with the declaration, then claim and
+        # fail that facet for its whole life (measured 2026-10-16: uspanel
+        # BuildFindings dead-lettered on runners with no CENSUS_API_KEY, 18 min
+        # after the rollout that added the declaration). Re-check periodically.
+        _start_env_gate_pruner(store, tool_registry)
 
     runner_config = RunnerConfig(
         server_group=args.server_group,

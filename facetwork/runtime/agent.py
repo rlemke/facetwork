@@ -109,6 +109,18 @@ class ToolRegistry:
         """
         self._handlers[event_type] = handler
 
+    def unregister(self, event_type: str) -> bool:
+        """Stop serving an event facet type. Returns True if it was registered.
+
+        Swaps in a new dict rather than mutating: the poll loop iterates
+        ``_handlers`` from another thread, and an in-place delete would raise
+        "dictionary changed size during iteration" there.
+        """
+        if event_type not in self._handlers:
+            return False
+        self._handlers = {k: v for k, v in self._handlers.items() if k != event_type}
+        return True
+
     def set_default_handler(self, handler: Callable[[str, dict], dict]) -> None:
         """Set a fallback handler for unregistered event types.
 

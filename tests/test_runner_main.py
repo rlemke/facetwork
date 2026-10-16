@@ -217,3 +217,40 @@ class TestAmbientBuiltinsSurviveTopicScoping:
             assert builtin in advertised, (
                 f"{builtin} was hidden by --topics; no runner would claim its task"
             )
+
+
+def test_prune_env_gated_drops_a_facet_whose_registration_gained_requires_env(monkeypatch):
+    """A runner that preloaded before the declaration existed stops claiming it.
+
+    2026-10-16: a rollout restarted every runner together; unscoped runners
+    preloaded uspanel's facets before the domain runner re-registered them with
+    `requires_env`, then claimed and failed them for want of CENSUS_API_KEY.
+    """
+    from facetwork.runtime.agent import ToolRegistry
+    from facetwork.runtime.entities import HandlerRegistration
+    from facetwork.runtime.memory_store import MemoryStore
+    from facetwork.runtime.runner.__main__ import prune_env_gated
+
+    store = MemoryStore()
+    registry = ToolRegistry()
+    registry.register("ns.Gated", lambda p: {})
+    registry.register("ns.Plain", lambda p: {})
+    store.save_handler_registration(HandlerRegistration(facet_name="ns.Plain", module_uri="m"))
+    store.save_handler_registration(
+        HandlerRegistration(
+            facet_name="ns.Gated",
+            module_uri="m",
+            metadata={"requires_env": ["TEST_FW_PRUNE_KEY"]},
+        )
+    )
+    monkeypatch.delenv("TEST_FW_PRUNE_KEY", raising=False)
+
+    assert prune_env_gated(store, registry) == ["ns.Gated"]
+    assert not registry.has_handler("ns.Gated")
+    assert registry.has_handler("ns.Plain")
+    assert prune_env_gated(store, registry) == []  # idempotent
+
+    monkeypatch.setenv("TEST_FW_PRUNE_KEY", "x")
+    registry.register("ns.Gated", lambda p: {})
+    assert prune_env_gated(store, registry) == []
+    assert registry.has_handler("ns.Gated")
