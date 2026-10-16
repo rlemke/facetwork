@@ -375,7 +375,19 @@
     "uspanel": {
       "repo": "fwh_uspanel",
       "extras": [],
-      "description": "US state x year multi-source data panel (Census ACS/PEP + BLS); 1,020 rows, 2005-2024. Needs CENSUS_API_KEY; PEP migration components exist only for 2010-2019."
+      "description": "US state x year multi-source data panel (Census ACS/PEP + BLS); 1,020 rows, 2005-2024. Needs CENSUS_API_KEY; PEP migration components exist only for 2010-2019.",
+      "compose": {
+        "env": [
+          [
+            "CENSUS_API_KEY",
+            "${CENSUS_API_KEY:-}"
+          ],
+          [
+            "SEC_USER_AGENT",
+            "${SEC_USER_AGENT:-}"
+          ]
+        ]
+      }
     },
     "road-safety": {
       "repo": "fwh_road_safety",

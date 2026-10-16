@@ -23,7 +23,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from facetwork.domains.catalog import compose_domains
+from facetwork.domains.catalog import compose_domains, domains
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = _REPO_ROOT / "docker-compose.full-stack.yml"
@@ -121,7 +121,10 @@ def _generalist_env() -> list[tuple[str, str]]:
     refused -- one container cannot hold two values for one name.
     """
     out: dict[str, str] = {}
-    for name, spec in sorted(compose_domains().items()):
+    # Every catalog domain, not only those with a runner of their own: a domain
+    # with no `service` (uspanel, energy, ...) runs ONLY in the generalist, so
+    # its `compose.env` has nowhere else to go.
+    for name, spec in sorted({**domains(), **compose_domains()}.items()):
         c = spec.get("compose", {}) or {}
         if c.get("storage") == "osm":  # the osm tier never consolidates
             continue
