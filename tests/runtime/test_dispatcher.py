@@ -22,6 +22,7 @@ from facetwork.runtime import (
     ToolRegistry,
 )
 from facetwork.runtime.dispatcher import (
+    registration_env_missing,
     CompositeDispatcher,
     InMemoryDispatcher,
     RegistryDispatcher,
@@ -245,6 +246,42 @@ class TestRegistryDispatcher:
         """get_timeout_ms returns 0 for unregistered facet."""
         dispatcher = RegistryDispatcher(persistence=store)
         assert dispatcher.get_timeout_ms("ns.Unknown") == 0
+
+    def test_preload_skips_a_registration_whose_required_env_is_absent(
+        self, store, handler_file, monkeypatch
+    ):
+        """A facet needing a credential is not advertised where it is missing.
+
+        2026-10-16: eight generalists claimed a token-gated publish task, the
+        seven without the token released it, and it dead-lettered on the retry
+        budget before the credentialed host saw it.
+        """
+        store.save_handler_registration(
+            HandlerRegistration(
+                facet_name="ns.Publish",
+                module_uri=f"file://{handler_file}",
+                entrypoint="handle",
+                metadata={"requires_env": ["TEST_FW_TOKEN_A|TEST_FW_TOKEN_B"]},
+            )
+        )
+        store.save_handler_registration(
+            HandlerRegistration(facet_name="ns.Plain", module_uri=f"file://{handler_file}")
+        )
+        monkeypatch.delenv("TEST_FW_TOKEN_A", raising=False)
+        monkeypatch.delenv("TEST_FW_TOKEN_B", raising=False)
+        dispatcher = RegistryDispatcher(persistence=store)
+        assert dispatcher.preload(verify=True) == 1
+        assert dispatcher.can_dispatch("ns.Publish") is False
+
+        monkeypatch.setenv("TEST_FW_TOKEN_B", "x")  # either alternative satisfies it
+        assert dispatcher.preload(verify=True) == 2
+        assert dispatcher.can_dispatch("ns.Publish") is True
+
+    def test_registration_env_missing_ignores_empty_values(self, monkeypatch):
+        monkeypatch.setenv("TEST_FW_EMPTY", "")
+        assert registration_env_missing({"requires_env": ["TEST_FW_EMPTY"]}) == ["TEST_FW_EMPTY"]
+        assert registration_env_missing({}) == []
+        assert registration_env_missing(None) == []
 
     def test_preload_verify_drops_unloadable_registrations(self, store, handler_file):
         """preload(verify=True) keeps only registrations whose module is importable here."""

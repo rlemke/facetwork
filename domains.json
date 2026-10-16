@@ -142,7 +142,9 @@
     },
     "census-us": {
       "repo": "fwh_census_us",
-      "extras": [],
+      "extras": [
+        "shapefiles"
+      ],
       "description": "US Census ACS + TIGER demographics",
       "service": "runner-census-us",
       "task_list": "census",

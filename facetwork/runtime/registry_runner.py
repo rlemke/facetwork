@@ -226,8 +226,12 @@ class RegistryRunner(BaseRunner):
 
     def _refresh_registry(self) -> None:
         """Reload handler registrations from persistence."""
+        from .dispatcher import registration_env_missing
+
         registrations = self._persistence.list_handler_registrations()
-        names = [r.facet_name for r in registrations]
+        # A facet whose declared environment (e.g. a credential) is absent here
+        # is not polled for, so this runner never claims it.
+        names = [r.facet_name for r in registrations if not registration_env_missing(r.metadata)]
         if self._config.topics:
             names = [n for n in names if self._matches_topics(n)]
         self._registered_names = names

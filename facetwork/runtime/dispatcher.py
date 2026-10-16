@@ -153,6 +153,28 @@ def _probe_core_stack() -> str:
     return ""
 
 
+def registration_env_missing(metadata: dict | None) -> list[str]:
+    """Environment a registration declares it needs and this process lacks.
+
+    ``metadata["requires_env"]`` lists variable names; an entry may offer
+    alternatives as ``"A|B"`` (either satisfies it). Empty list = runnable here.
+
+    Why this exists: routing is by NAMESPACE, so every runner fronting a
+    namespace claims all of its facets -- including one only a credentialed
+    host can run. Measured 2026-10-16: with census consolidated into eight
+    generalists and ``GITHUB_TOKEN`` on one host, a publish task was claimed
+    and released by token-less hosts five times and dead-lettered before the
+    credentialed host ever saw it. Not advertising the facet is the only fix
+    that does not spend the retry budget.
+    """
+    missing = []
+    for entry in (metadata or {}).get("requires_env") or []:
+        alts = [a.strip() for a in str(entry).split("|") if a.strip()]
+        if alts and not any(os.environ.get(a) for a in alts):
+            missing.append(str(entry))
+    return missing
+
+
 def registration_module_available(module_uri: str) -> bool:
     """Return True if ``module_uri`` can actually be IMPORTED in this process.
 
@@ -326,6 +348,9 @@ class RegistryDispatcher:
             ):
                 continue
             if core_reason and not ambient:
+                skipped.append(reg.facet_name)
+                continue
+            if registration_env_missing(reg.metadata):
                 skipped.append(reg.facet_name)
                 continue
             if verify and not registration_module_available(reg.module_uri):
