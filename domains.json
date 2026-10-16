@@ -338,7 +338,6 @@
       "description": "Per-county information maps (OSM + census/CDC/EPA/USGS/NOAA/FEMA/HUD) + US→state→county index",
       "service": "runner-county-atlas",
       "task_list": "county",
-      "fleet_default": true,
       "scaled": true,
       "compose": {
         "env": [

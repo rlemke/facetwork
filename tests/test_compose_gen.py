@@ -138,3 +138,38 @@ def test_missing_markers_errors(tmp_path, monkeypatch):
     _catalog(monkeypatch, {})
     with pytest.raises(SystemExit):
         compose_gen.sync(write=False)
+
+
+def test_generalist_carries_every_member_domains_env(monkeypatch):
+    _catalog(
+        monkeypatch,
+        {
+            "census-us": {"service": "runner-census-us", "repo": "r", "task_list": "census",
+                          "compose": {"env": [["CENSUS_API_KEY", "${CENSUS_API_KEY:-}"]]}},
+            "county-atlas": {"service": "runner-county-atlas", "repo": "r", "task_list": "county",
+                             "compose": {"env": [["CENSUS_API_KEY", "${CENSUS_API_KEY:-}"],
+                                                 ["FW_TASK_EXECUTION_TIMEOUT_MS", "1800000"]]}},
+            "slow": {"service": "runner-slow", "repo": "r", "task_list": "slow",
+                     "compose": {"env": [["FW_TASK_EXECUTION_TIMEOUT_MS", "900000"]]}},
+            "osm-lz": {"service": "runner-osm-lz", "repo": "r", "task_list": "osm",
+                       "compose": {"storage": "osm", "env": [["FW_PLANET_DIR", "/planet"]]}},
+        },
+    )
+    blk = compose_gen._render_generalist(["census-us"])
+    assert blk.count("      CENSUS_API_KEY: ") == 1
+    assert "      FW_TASK_EXECUTION_TIMEOUT_MS: 1800000\n" in blk  # the longest wins
+    assert "FW_PLANET_DIR" not in blk  # the osm tier is never a member
+
+
+def test_generalist_refuses_conflicting_env(monkeypatch):
+    _catalog(
+        monkeypatch,
+        {
+            "a": {"service": "runner-a", "repo": "r", "task_list": "a",
+                  "compose": {"env": [["MODE", "x"]]}},
+            "b": {"service": "runner-b", "repo": "r", "task_list": "b",
+                  "compose": {"env": [["MODE", "y"]]}},
+        },
+    )
+    with pytest.raises(SystemExit):
+        compose_gen._render_generalist(["a", "b"])

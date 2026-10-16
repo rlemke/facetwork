@@ -108,6 +108,37 @@ def render_block(name: str, spec: dict) -> str:
     return "".join(L)
 
 
+def _generalist_env() -> list[tuple[str, str]]:
+    """The env the generalist needs to run ANY domain it may front.
+
+    Membership is per-host (``FW_DOMAIN_NAMES``) but this block is shared, so it
+    carries the union of every non-osm domain's ``compose.env``. Without it a
+    consolidated domain silently loses its keys: measured 2026-10-16, the
+    generalist had no CENSUS_API_KEY / GITHUB_TOKEN / ANTHROPIC_API_KEY while
+    fronting census-us, livability and anthropic. A key the same value in two
+    domains is emitted once; FW_TASK_EXECUTION_TIMEOUT_MS takes the longest, as
+    the shortest would kill the slower domain's tasks. Any other disagreement is
+    refused -- one container cannot hold two values for one name.
+    """
+    out: dict[str, str] = {}
+    for name, spec in sorted(compose_domains().items()):
+        c = spec.get("compose", {}) or {}
+        if c.get("storage") == "osm":  # the osm tier never consolidates
+            continue
+        for k, v in c.get("env", []):
+            v = str(v)
+            if k not in out or out[k] == v:
+                out[k] = v
+            elif k == "FW_TASK_EXECUTION_TIMEOUT_MS":
+                out[k] = str(max(int(out[k]), int(v)))
+            else:
+                raise SystemExit(
+                    f"gen-compose: {name} sets {k}={v!r} but another domain sets "
+                    f"{out[k]!r}; the generalist cannot hold both"
+                )
+    return sorted(out.items())
+
+
 def _render_generalist(names: list[str]) -> str:
     """The one runner that fronts every consolidated domain.
 
@@ -166,6 +197,7 @@ def _render_generalist(names: list[str]) -> str:
         "      # More workers than a single-domain runner: this one fronts several\n"
         "      # queues, so one slow handler should not block the rest.\n"
         '      FW_REGISTRY_RUNNER_ARGS: "--max-concurrent ${FW_GENERALIST_WORKERS:-4}"\n'
+        + "".join(f"      {k}: {v}\n" for k, v in _generalist_env())
         + idx_env
         + "    volumes:\n"
         f"      - {_DATA_DIR}:/Volumes/afl_data\n"

@@ -938,6 +938,14 @@ services:
       # More workers than a single-domain runner: this one fronts several
       # queues, so one slow handler should not block the rest.
       FW_REGISTRY_RUNNER_ARGS: "--max-concurrent ${FW_GENERALIST_WORKERS:-4}"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CENSUS_API_KEY: ${CENSUS_API_KEY:-}
+      FW_ATLAS_BUCKET: ${FW_ATLAS_BUCKET:-osm-extracts}
+      FW_GRIDBUILDER_DATA_DIR: /Volumes/afl_data/earth-osm
+      FW_STOCKS_PROVIDER: ${FW_STOCKS_PROVIDER:-yfinance}
+      FW_TASK_EXECUTION_TIMEOUT_MS: 1800000
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      JENKINS_URL: http://jenkins:8080
       FW_OSM_INDEX_ROOT: /opt/fw_osm_indexes
     volumes:
       - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
