@@ -112,3 +112,12 @@ def test_capacity_listing_is_deduplicated():
     assert "for (host, res), n in sorted(seen.items())" in block, (
         "one row per DISTINCT (host, capacity), not one per runner process"
     )
+
+
+def test_starved_memory_floor_is_checked_against_live_free():
+    """Capacity-only missed a floor no host had FREE (2026-10-16, 111 min)."""
+    s = _text()
+    assert '"free_resources": 1' in s, "must project the heartbeat's live reading"
+    assert "from _live_capacity import" in s
+    assert "--starved-minutes" in s
+    assert "STARVED" in s

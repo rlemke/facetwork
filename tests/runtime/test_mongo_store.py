@@ -1106,6 +1106,21 @@ class TestServerOperations:
         assert mongo_store.heartbeat_server("hb-1", 2000) is True
         assert mongo_store.get_server("hb-1").ping_time == 2000
 
+    def test_heartbeat_server_records_live_free(self, mongo_store):
+        """``free`` lands as raw ``free_resources`` stamped with the ping time —
+        what ``fw maint unsatisfiable`` reads to see a starved memory floor."""
+        mongo_store.save_server(ServerDefinition(
+            uuid="hb-free", server_group="workers", service_name="facetwork",
+            server_name="hb-free", state=ServerState.RUNNING, ping_time=1000,
+        ))
+        assert mongo_store.heartbeat_server("hb-free", 2000, free={"memory_gb": 3.4}) is True
+        doc = mongo_store._db.servers.find_one({"uuid": "hb-free"})
+        assert doc["free_resources"] == {"memory_gb": 3.4, "at": 2000}
+        # Omitting it leaves the last reading alone (older callers).
+        assert mongo_store.heartbeat_server("hb-free", 3000) is True
+        doc = mongo_store._db.servers.find_one({"uuid": "hb-free"})
+        assert doc["free_resources"]["at"] == 2000 and doc["ping_time"] == 3000
+
     def test_heartbeat_server_shutdown_record_reports_dead(self, mongo_store):
         """A reaper-marked shutdown record is NOT pinged — caller must
         re-register (the zombie-runner self-heal signal)."""

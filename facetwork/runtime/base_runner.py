@@ -153,6 +153,23 @@ def claim_resources() -> dict:
     return res
 
 
+def live_free() -> dict | None:
+    """Live availability to publish on the heartbeat (``free_resources``).
+
+    Same number a claim offers (``claim_resources``), but published so a
+    reader OUTSIDE the runner can see it: a memory floor that fits some host's
+    capacity yet no host has free is otherwise invisible — measured 2026-10-16,
+    a 13 GB zoom build waited 111 min with zero tasks running while
+    ``fw maint unsatisfiable`` said OK, because it compared against capacity.
+    Never raises; ``None`` when memory cannot be read.
+    """
+    try:
+        gb = _available_memory_gb()
+    except Exception:  # noqa: BLE001 — a heartbeat must not die on this
+        return None
+    return None if gb is None else {"memory_gb": gb}
+
+
 def _measure() -> dict:
     """MEASURED capacity of this host, for resource-aware claim routing.
 
@@ -660,7 +677,9 @@ class BaseRunner:
         interval_s = self._config.heartbeat_interval_ms / 1000.0
         while not self._stopping.wait(interval_s):
             try:
-                alive = self._persistence.heartbeat_server(self._server_id, _current_time_ms())
+                alive = self._persistence.heartbeat_server(
+                    self._server_id, _current_time_ms(), free=live_free()
+                )
                 if not alive and not self._stopping.is_set():
                     logger.warning(
                         "Server record for %s (%s) missing or marked shutdown — "

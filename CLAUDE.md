@@ -749,6 +749,15 @@ runner advertised, sat pending forever, and this check said "OK" because it was
 looking at the wrong field (**2** = could not tell, e.g. no live servers — so an offline fleet
 does not cry wolf). A dimension name no runner advertises declines everywhere by
 design; that is reported rather than silently ignored.
+⚠️ **Capacity is not availability.** Runners claim against
+`min(capacity, free-now)`, so a floor that fits some host's capacity can still
+wait forever if idle runners hold the memory (measured 2026-10-16: a 13 GB zoom
+build pending 111 min, zero tasks running, this check said OK). Runners now
+publish live free memory on every heartbeat (`servers.free_resources`), and a
+memory-floored task waiting longer than `--starved-minutes` (60) with no
+capable host having it FREE is reported **STARVED** (exit 1). Judged only when
+every capable host reports a fresh reading — an old-image host may have the
+memory free, so it yields no verdict rather than a false alarm.
 
 ⚠️ Advertised capacity is **static per process** and does not account for what a
 runner is already doing, so it is a floor against catastrophic placement, not a

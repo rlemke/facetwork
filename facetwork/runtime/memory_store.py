@@ -62,6 +62,7 @@ class MemoryStore(PersistenceAPI):
         self._tasks: dict[str, TaskDefinition] = {}
         self._logs: list[LogDefinition] = []
         self._servers: dict[str, ServerDefinition] = {}
+        self._free_resources: dict[str, dict] = {}
         self._handler_registrations: dict[str, HandlerRegistration] = {}
         self._step_logs: list[StepLogEntry] = []
 
@@ -717,7 +718,9 @@ class MemoryStore(PersistenceAPI):
         if server_id in self._servers:
             self._servers[server_id].ping_time = ping_time
 
-    def heartbeat_server(self, server_id: str, ping_time: int) -> bool:
+    def heartbeat_server(
+        self, server_id: str, ping_time: int, free: dict | None = None
+    ) -> bool:
         """Update ping time iff the record is live; report whether it was.
 
         Mirrors ``MongoStore.heartbeat_server``: False means the record is
@@ -729,6 +732,8 @@ class MemoryStore(PersistenceAPI):
         if server is None or getattr(server, "state", None) == ServerState.SHUTDOWN:
             return False
         server.ping_time = ping_time
+        if free is not None:
+            self._free_resources[server_id] = {**free, "at": ping_time}
         return True
 
     def update_server_handled(self, server_id: str, handled: "list[HandledCount]") -> None:

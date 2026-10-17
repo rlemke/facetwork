@@ -61,7 +61,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..ast_features import known_features as _known_ast_features
-from .base_runner import claim_resources, measured_resources
+from .base_runner import claim_resources, live_free, measured_resources
 from .cancellation import HandlerCancelled
 from .entities import (
     RunnerState,
@@ -506,7 +506,9 @@ class AgentPoller:
         interval_s = self._config.heartbeat_interval_ms / 1000.0
         while not self._stopping.wait(interval_s):
             try:
-                alive = self._persistence.heartbeat_server(self._server_id, _current_time_ms())
+                alive = self._persistence.heartbeat_server(
+                    self._server_id, _current_time_ms(), free=live_free()
+                )
                 if not alive and not self._stopping.is_set():
                     logger.warning(
                         "Server record for %s (%s) missing or marked shutdown — "

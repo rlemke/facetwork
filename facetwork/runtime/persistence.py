@@ -977,7 +977,9 @@ class PersistenceAPI(Protocol):
             ping_time: The new ping time in milliseconds
         """
 
-    def heartbeat_server(self, server_id: str, ping_time: int) -> bool:
+    def heartbeat_server(
+        self, server_id: str, ping_time: int, free: dict | None = None
+    ) -> bool:
         """Update a server's ping time iff its record is live.
 
         Unlike ``update_server_ping`` this reports whether a live (non-
@@ -990,6 +992,11 @@ class PersistenceAPI(Protocol):
         Args:
             server_id: The server's unique identifier
             ping_time: The new ping time in milliseconds
+            free: Optional LIVE availability (e.g. ``{"memory_gb": 3.4}``) —
+                what a claim would offer right now, as opposed to the static
+                capacity in ``resources``. Lets ``fw maint unsatisfiable`` see a
+                memory floor that fits capacity but that no host can currently
+                meet. Backends that cannot store it ignore it.
 
         Returns:
             True if a live record was updated; False if the record is

@@ -1676,7 +1676,7 @@ class TestHeartbeatException:
         mock_store = MagicMock()
         call_count = 0
 
-        def counting_ping(server_id, ping_time):
+        def counting_ping(server_id, ping_time, free=None):
             nonlocal call_count
             call_count += 1
             if call_count == 1:

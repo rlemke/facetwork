@@ -146,7 +146,9 @@ class ServerMixin(_MixinBase):
         """Update server ping time."""
         self._db.servers.update_one({"uuid": server_id}, {"$set": {"ping_time": ping_time}})
 
-    def heartbeat_server(self, server_id: str, ping_time: int) -> bool:
+    def heartbeat_server(
+        self, server_id: str, ping_time: int, free: dict | None = None
+    ) -> bool:
         """Update ping time iff the record is live; report whether it was.
 
         A single filtered ``update_one`` so the check-and-ping is atomic: it
@@ -156,10 +158,16 @@ class ServerMixin(_MixinBase):
         Non-terminal states other than running (e.g. ``quarantine``) still
         match, so a quarantined runner keeps pinging without resurrecting
         itself as ``running``.
+
+        ``free`` (optional) is what the host has available NOW — see
+        ``PersistenceAPI.heartbeat_server``. Stored raw as ``free_resources``.
         """
+        fields: dict = {"ping_time": ping_time}
+        if free is not None:
+            fields["free_resources"] = {**free, "at": ping_time}
         result = self._db.servers.update_one(
             {"uuid": server_id, "state": {"$nin": list(_TERMINAL_SERVER_STATES)}},
-            {"$set": {"ping_time": ping_time}},
+            {"$set": fields},
         )
         return result.matched_count > 0
 

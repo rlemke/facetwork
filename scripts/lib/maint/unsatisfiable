@@ -26,6 +26,15 @@ silent way: never claimed, never retried, never dead-lettered.
                      every live host's advertised capacity
   environment_hash   a script environment no live runner provides
 
+and a third, softer verdict for memory floors:
+
+  starved            the floor fits some host's CAPACITY, but no capable host
+                     has that much memory FREE (runners claim against
+                     min(capacity, free-now)), and the task has waited longer
+                     than --starved-minutes. Measured 2026-10-16: a 13 GB zoom
+                     build waited 111 min with zero tasks running while this
+                     check said OK -- idle runners held the memory.
+
 ⚠️ The second was missing and it is the one that actually bit. A new
 `environment` declared outside examples/canonical/ was never baked (the
 Dockerfile copied only that directory), and the built-in fw.file.FileOps
@@ -65,6 +74,10 @@ def main() -> int:
     ap.add_argument("--database", default=os.environ.get("FW_MONGODB_DATABASE") or "facetwork")
     ap.add_argument("--stale-server-minutes", type=float, default=5.0,
                     help="ignore servers whose heartbeat is older than this")
+    ap.add_argument("--starved-minutes", type=float, default=60.0,
+                    help="report a memory-floored task as STARVED once it has "
+                         "waited this long with no capable host having the "
+                         "memory free (default 60)")
     a = ap.parse_args()
 
     try:
@@ -89,7 +102,8 @@ def main() -> int:
              "kind": 1, "created": 1}))
         servers = list(db.servers.find({"state": "running"},
                                        {"server_name": 1, "resources": 1, "ping_time": 1,
-                                        "provided_environments": 1, "handlers": 1}))
+                                        "provided_environments": 1, "handlers": 1,
+                                        "free_resources": 1}))
     except Exception as exc:  # noqa: BLE001
         print(f"could not query {a.mongo}: {type(exc).__name__}", file=sys.stderr)
         return 2
@@ -121,13 +135,29 @@ def main() -> int:
         provided.update(s.get("provided_environments") or [])
         served.update(str(h) for h in (s.get("handlers") or []))
 
+    from _live_capacity import host_free_memory, starved  # noqa: E402
+
+    # Live free memory per host, from the heartbeat. Only fresh readings count.
+    free_by_host = host_free_memory(live, now, a.stale_server_minutes * 60000)
+    reporting = sum(1 for s in live if s.get("free_resources"))
+
     bad = []
+    hungry = []
     for t in pending:
         need = t.get("requires") or {}
         env = (t.get("environment_hash") or "").strip()
         why = []
-        if need and not any(fits(need, s.get("resources") or {}) for s in live):
+        capable = {str(s.get("server_name") or "?") for s in live
+                   if need and fits(need, s.get("resources") or {})}
+        if need and not capable:
             why.append(f"requires {need}")
+        elif isinstance(need.get("memory_gb"), (int, float)):
+            age_m = (now - float(t.get("created") or now)) / 60000
+            if age_m >= a.starved_minutes and starved(
+                    float(need["memory_gb"]), free_by_host, capable):
+                best = max(free_by_host[h] for h in capable)
+                hungry.append((t, f"needs {need['memory_gb']} GB free; best capable "
+                                  f"host has {best:.1f} GB free now"))
         if env and env not in provided:
             why.append(f"environment {env[:16]} provided by NO live runner")
         # A script task is named by its facet and is in no runner's handler
@@ -149,7 +179,28 @@ def main() -> int:
         and not (t.get("name") or "").startswith(("fw:", "_fw"))
         and not (t.get("environment_hash") or "").strip()
     )
+    if hungry:
+        print(f"{len(hungry)} memory-floored task(s) STARVED — capacity fits, "
+              f"but no capable host has the memory FREE:\n")
+        for t, why in hungry[:20]:
+            age_h = (now - float(t.get("created") or now)) / 3_600_000
+            print(f"  {t.get('name','?')[:44]:44s} waiting {age_h:5.1f}h  {why}")
+        print("\n  free memory now (best runner per host):")
+        for host, gb in sorted(free_by_host.items()):
+            print(f"    {host:20s} {gb:6.1f} GB")
+        print("\n  Runners claim against min(capacity, free-now), so this waits until")
+        print("  memory frees up -- which idle runners holding their baseline may")
+        print("  never do. Restart idle runners on one capable host, or lower the floor.")
+        if bad:
+            print()
+    elif reporting < len(live):
+        # Say what was NOT checked, so a quiet run is not read as a clean one.
+        print(f"(live free memory reported by {reporting}/{len(live)} runner(s); "
+              f"starvation judged only where every capable host reports)")
+
     if not bad:
+        if hungry:
+            return 1
         # "with routing constraints" was accurate only while the query filtered
         # to tasks declaring one. It now covers EVERY pending task, and saying
         # otherwise would understate what was checked.
