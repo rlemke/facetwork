@@ -223,3 +223,50 @@ def test_live_facade_autodetect(monkeypatch):
             assert f.read() == b"auto wrote me"
     finally:
         get_storage_backend(f"s3://{_BUCKET}/x").rmtree(f"s3://{_BUCKET}/_pytest/{prefix}")
+
+
+# --- localize cache identity (no network) ------------------------------------
+
+
+class _FakeS3:
+    """Just enough client for localize: head_object + download_file."""
+
+    def __init__(self) -> None:
+        self.body = b""
+        self.modified = 0.0
+        self.downloads = 0
+
+    def head_object(self, Bucket, Key):  # noqa: N803 — boto3's signature
+        from datetime import UTC, datetime
+
+        return {
+            "ContentLength": len(self.body),
+            "LastModified": datetime.fromtimestamp(self.modified, UTC),
+        }
+
+    def download_file(self, bucket, key, local_path):
+        self.downloads += 1
+        with open(local_path, "wb") as fh:
+            fh.write(self.body)
+
+
+def test_localize_refetches_a_same_size_overwrite(tmp_path, monkeypatch):
+    """Size alone is not identity: an overwrite with same-length content (a
+    colour code swapped for another) was served stale from the cache."""
+    import facetwork.runtime.storage as st
+
+    fake = _FakeS3()
+    backend = S3StorageBackend.__new__(S3StorageBackend)
+    backend._client = fake
+    monkeypatch.setattr(st, "get_storage_backend", lambda path=None: backend)
+
+    fake.body, fake.modified = b"color:#8e44ad", 1_700_000_000.0
+    first = localize("s3://b/page.html", target_dir=str(tmp_path))
+    assert open(first, "rb").read() == b"color:#8e44ad"
+    localize("s3://b/page.html", target_dir=str(tmp_path))
+    assert fake.downloads == 1  # unchanged object → cache hit
+
+    fake.body, fake.modified = b"color:#ff4fd8", 1_700_000_600.0
+    again = localize("s3://b/page.html", target_dir=str(tmp_path))
+    assert fake.downloads == 2
+    assert open(again, "rb").read() == b"color:#ff4fd8"

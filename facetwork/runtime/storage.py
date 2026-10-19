@@ -751,6 +751,20 @@ def _should_localize_mount(path: str) -> bool:
     return any(path.startswith(p.strip()) for p in prefixes.split(",") if p.strip())
 
 
+def _cache_matches(local_path: str, size: int, mtime: float) -> bool:
+    """A cached copy is current only if it has the remote's size AND mtime."""
+    try:
+        st = os.stat(local_path)
+    except OSError:
+        return False
+    return st.st_size == size and abs(st.st_mtime - mtime) < 1.0
+
+
+def _stamp_cache(local_path: str, mtime: float) -> None:
+    """Record the remote's modification time on the downloaded copy."""
+    os.utime(local_path, (mtime, mtime))
+
+
 def localize(path: str, target_dir: str | None = None) -> str:
     """Ensure a file is available on the local filesystem.
 
@@ -758,8 +772,10 @@ def localize(path: str, target_dir: str | None = None) -> str:
     prefix in ``FW_LOCALIZE_MOUNTS``, in which case the file is copied to
     *target_dir*.  For ``hdfs://`` URIs, downloads the file to *target_dir*
     (preserving the HDFS directory structure) and returns the local path.
-    Skips copy/download when a local copy with the same byte-size already
-    exists.
+    Skips the download when the local copy has the remote object's size AND
+    modification time (stamped onto the copy at download). Size alone is not
+    an identity: an object overwritten with same-length content (a colour
+    edit, a fixed digit) was served stale from every host's cache.
 
     Args:
         path: Local path or ``hdfs://`` URI.
@@ -778,17 +794,16 @@ def localize(path: str, target_dir: str | None = None) -> str:
         key = parsed.path.lstrip("/")
         local_path = os.path.join(target_dir, bucket, key)
         backend = get_storage_backend(path)
-        if os.path.isfile(local_path):
-            try:
-                if os.path.getsize(local_path) == backend.getsize(path):
-                    logger.debug("localize: s3 cache hit %s -> %s", path, local_path)
-                    return local_path
-            except Exception:
-                pass  # re-download on any error
+        assert isinstance(backend, S3StorageBackend)
+        head = backend._client.head_object(Bucket=bucket, Key=key)
+        remote = (head["ContentLength"], head["LastModified"].timestamp())
+        if _cache_matches(local_path, *remote):
+            logger.debug("localize: s3 cache hit %s -> %s", path, local_path)
+            return local_path
         logger.info("localize: downloading %s -> %s", path, local_path)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        assert isinstance(backend, S3StorageBackend)
         backend._client.download_file(bucket, key, local_path)
+        _stamp_cache(local_path, remote[1])
         return local_path
 
     if not path.startswith("hdfs://"):
@@ -823,16 +838,10 @@ def localize(path: str, target_dir: str | None = None) -> str:
 
     backend = get_storage_backend(path)
 
-    # Check if already cached locally with matching size
-    if os.path.isfile(local_path):
-        try:
-            local_size = os.path.getsize(local_path)
-            hdfs_size = backend.getsize(path)
-            if local_size == hdfs_size:
-                logger.debug("localize: cache hit %s -> %s", path, local_path)
-                return local_path
-        except Exception:
-            pass  # re-download on any error
+    remote_mtime = backend.getmtime(path)
+    if _cache_matches(local_path, backend.getsize(path), remote_mtime):
+        logger.debug("localize: cache hit %s -> %s", path, local_path)
+        return local_path
 
     # Stream download from HDFS via WebHDFS OPEN
     logger.info("localize: downloading %s -> %s", path, local_path)
@@ -854,6 +863,7 @@ def localize(path: str, target_dir: str | None = None) -> str:
                 f.write(chunk)
 
     _hdfs_retry(_do_download)
+    _stamp_cache(local_path, remote_mtime)
     dl_size = os.path.getsize(local_path)
     logger.info("localize: downloaded %s (%d bytes)", local_path, dl_size)
     return local_path
