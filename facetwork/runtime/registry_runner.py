@@ -486,56 +486,44 @@ class RegistryRunner(BaseRunner):
 
         dispatched = 0
 
-        # Claim handler tasks — skip facets whose circuit breaker is OPEN so a
-        # persistently-failing handler stops being re-claimed (and re-failed)
-        # until its half-open probe window.
+        # Handler tasks (skipping facets whose circuit breaker is OPEN, so a
+        # persistently-failing handler stops being re-claimed until its half-open
+        # probe window), env-routed script tasks (script-environments.md §3 — the
+        # environment IS the capability) and the shared continuation backlog, all
+        # claimed with ONE query per free slot (BaseRunner._claim_next).
+        claims: list[tuple[list[str], str | list[str]]] = []
         if self._registered_names:
             task_names = [n for n in self._registered_names if self._circuit_breakers.is_allowed(n)]
-            while task_names and capacity > 0:
-                task = self._persistence.claim_task(
-                    task_names=task_names,
-                    task_list=self._poll_task_lists(),
-                    server_id=self._server_id,
-                    known_features=_known_ast_features(),
-                    resources=self._claim_resources(),
-                )
-                if task is None:
-                    break
-                self._submit_event(task)
-                capacity -= 1
-                dispatched += 1
-
-        # Claim env-routed script tasks this runner's environments can serve
-        # (script-environments.md §3 — the environment IS the capability).
-        if provided_envs:
-            while capacity > 0:
-                task = self._persistence.claim_script_task(provided_envs, server_id=self._server_id)
-                if task is None:
-                    break
-                self._submit_event(task)
-                capacity -= 1
-                dispatched += 1
-
-        # Claim continuation tasks (internal step-processing events).
+            claims.append((task_names, self._poll_task_lists()))
         # Skipped for handler-only runners (--continuation off): the ffl-runner
         # tier owns the shared backlog. See
         # docs/architecture/ffl-runner-orchestration-tier.md.
+        continuation_name = ""
         if self._config.polls_shared_continuations():
             from .continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
 
-            while capacity > 0:
-                task = self._persistence.claim_task(
-                    task_names=[CONTINUATION_TASK_NAME],
-                    task_list=CONTINUATION_TASK_LIST,
-                    server_id=self._server_id,
-                    known_features=_known_ast_features(),
-                    resources=self._claim_resources(),
-                )
-                if task is None:
-                    break
+            continuation_name = CONTINUATION_TASK_NAME
+            claims.append(([CONTINUATION_TASK_NAME], CONTINUATION_TASK_LIST))
+
+        while capacity > 0:
+            task = self._claim_next(
+                claims,
+                resources=self._claim_resources(),
+                known_features=_known_ast_features(),
+                script_environments=provided_envs,
+            )
+            if task is None:
+                break
+            if (
+                continuation_name
+                and task.name == continuation_name
+                and getattr(task, "kind", "") != "script"
+            ):
                 self._submit_continuation(task)
-                capacity -= 1
-                dispatched += 1
+            else:
+                self._submit_event(task)
+            capacity -= 1
+            dispatched += 1
 
         return dispatched
 

@@ -252,6 +252,12 @@ class _StatusHandler(BaseHTTPRequestHandler):
         """Suppress default stderr logging."""
 
 
+def _name_matches(name: str, names: list[str]) -> bool:
+    """Whether ``claim_task`` name matching would select ``name`` for ``names``:
+    an exact match, or ``<n>:`` prefix (``fw:execute`` claims ``fw:execute:Wf``)."""
+    return any(name == n or name.startswith(f"{n}:") for n in names)
+
+
 class RunnerService(BaseRunner):
     """Distributed runner service for processing event steps and tasks.
 
@@ -435,7 +441,7 @@ class RunnerService(BaseRunner):
     def _poll_loop(self) -> None:
         """Main loop: poll for work until stopped."""
         interval_s = self._config.poll_interval_ms / 1000.0
-        reconcile_counter = 0
+        last_reconcile = _current_time_ms()
         was_quarantined = False
         while not self._stopping.is_set():
             dispatched = 0
@@ -459,26 +465,44 @@ class RunnerService(BaseRunner):
                     self._maybe_finalize_runners()
                     self._maybe_reap_orphaned_tasks()
                     self._maybe_materialize_environments()
-                    reconcile_counter += 1
-                    if reconcile_counter >= 10:
+                    # Time-based, not every Nth cycle: idle backoff stretches
+                    # cycles, and reconciliation is about elapsed time.
+                    if _current_time_ms() - last_reconcile >= self._RECONCILE_INTERVAL_MS:
                         self._reconcile_with_db()
-                        reconcile_counter = 0
+                        last_reconcile = _current_time_ms()
             except Exception:
                 logger.exception("Poll cycle error")
             self._poll_pause(interval_s, dispatched)
 
+    # How often the poll loop re-reads its own server record for a quarantine
+    # toggle, and reconciles in-memory futures with the DB.
+    _QUARANTINE_CHECK_MS: int = 10_000
+    _RECONCILE_INTERVAL_MS: int = 10_000
+    _quarantine_checked_ms: int = 0
+    _quarantined: bool = False
+
     def _is_quarantined(self) -> bool:
         """Return True if the server has been marked quarantined in the DB.
 
-        Re-read each poll so a human-triggered toggle takes effect on the
-        next cycle without restarting the runner.
+        Re-read at most every ``_QUARANTINE_CHECK_MS`` so a human-triggered
+        toggle takes effect within seconds without restarting the runner. It
+        used to be read on EVERY poll — one query per runner per second, most of
+        the non-claim read load on the database.
         """
+        now = _current_time_ms()
+        if (
+            self._quarantine_checked_ms
+            and now - self._quarantine_checked_ms < self._QUARANTINE_CHECK_MS
+        ):
+            return self._quarantined
+        self._quarantine_checked_ms = now
         try:
             server = self._persistence.get_server(self._server_id)
         except Exception:
             logger.exception("Failed to read server state for quarantine check")
-            return False
-        return server is not None and server.state == ServerState.QUARANTINE
+            return self._quarantined
+        self._quarantined = server is not None and server.state == ServerState.QUARANTINE
+        return self._quarantined
 
     def _poll_cycle(self) -> int:
         """Single poll cycle: find and dispatch work.
@@ -536,87 +560,51 @@ class RunnerService(BaseRunner):
                 dispatched += 1
             return dispatched
 
-        # Claim event tasks from the task queue (filtered by circuit breaker)
+        # Every kind of work this cycle serves, claimed with ONE query per free
+        # slot (BaseRunner._claim_next) instead of one claim per kind: handler
+        # events (filtered by circuit breaker), resume tasks inserted by external
+        # agents, built-ins like fw:execute, the shared _fw_continue backlog, and
+        # env-routed script tasks. The claimed task's name says which it is.
         event_names = [n for n in self._get_event_names() if self._circuit_breakers.is_allowed(n)]
-        if event_names:
-            while capacity > 0:
-                task = self._persistence.claim_task(
-                    task_names=event_names,
-                    task_list=poll_lists,
-                    server_id=self._server_id,
-                    resources=self._claim_resources(),
-                    known_features=self._known_ast_features(),
-                )
-                if task is None:
-                    break
-                self._submit_event_task(task)
-                capacity -= 1
-                dispatched += 1
-
-        # Claim env-routed script tasks this runner's environments can serve
-        provided_envs = self._provided_environments()
-        if provided_envs:
-            while capacity > 0:
-                task = self._persistence.claim_script_task(provided_envs, server_id=self._server_id)
-                if task is None:
-                    break
-                self._submit_event_task(task)
-                capacity -= 1
-                dispatched += 1
-
-        # Claim resume tasks inserted by external agents
-        while capacity > 0:
-            task = self._persistence.claim_task(
-                task_names=[RESUME_TASK_NAME],
-                task_list=poll_lists,
-                server_id=self._server_id,
-                resources=self._claim_resources(),
-                known_features=self._known_ast_features(),
-            )
-            if task is None:
-                break
-            self._submit_resume_task(task)
-            capacity -= 1
-            dispatched += 1
-
-        # Claim built-in tasks (like fw:execute) via atomic find_one_and_update
         builtin_names = self._get_builtin_task_names()
-        if builtin_names:
-            while capacity > 0:
-                task = self._persistence.claim_task(
-                    task_names=builtin_names,
-                    task_list=poll_lists,
-                    server_id=self._server_id,
-                    resources=self._claim_resources(),
-                    known_features=self._known_ast_features(),
-                )
-                if task is None:
-                    break
-                self._submit_task(task)
-                capacity -= 1
-                dispatched += 1
-
+        claims: list[tuple[list[str], str | list[str]]] = [
+            (event_names, poll_lists),
+            ([RESUME_TASK_NAME], poll_lists),
+            (builtin_names, poll_lists),
+        ]
         # Drain the shared _fw_continue backlog. RegistryRunner does this too;
         # without it a RunnerService-only fleet never processes continuations, so
         # cross-server cascades stall until the 5-min sweep and pending
         # continuation rows accumulate unboundedly. Skipped for handler-only
         # runners (continuation_mode off) — the ffl-runner tier owns the backlog.
+        continuation_name = ""
         if self._config.polls_shared_continuations():
             from ..continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
 
-            while capacity > 0:
-                task = self._persistence.claim_task(
-                    task_names=[CONTINUATION_TASK_NAME],
-                    task_list=CONTINUATION_TASK_LIST,
-                    server_id=self._server_id,
-                    resources=self._claim_resources(),
-                    known_features=self._known_ast_features(),
-                )
-                if task is None:
-                    break
+            continuation_name = CONTINUATION_TASK_NAME
+            claims.append(([CONTINUATION_TASK_NAME], CONTINUATION_TASK_LIST))
+
+        while capacity > 0:
+            task = self._claim_next(
+                claims,
+                resources=self._claim_resources(),
+                known_features=self._known_ast_features(),
+                script_environments=self._provided_environments(),
+            )
+            if task is None:
+                break
+            if getattr(task, "kind", "") == "script":
+                self._submit_event_task(task)
+            elif continuation_name and task.name == continuation_name:
                 self._submit_continuation_task(task)
-                capacity -= 1
-                dispatched += 1
+            elif _name_matches(task.name, [RESUME_TASK_NAME]):
+                self._submit_resume_task(task)
+            elif _name_matches(task.name, builtin_names):
+                self._submit_task(task)
+            else:
+                self._submit_event_task(task)
+            capacity -= 1
+            dispatched += 1
 
         return dispatched
 

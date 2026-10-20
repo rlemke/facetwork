@@ -250,6 +250,7 @@ fw single up        # runs the full pipeline using .env values
 | **Runner tuning** | | |
 | `FW_MAX_CONCURRENT` | `2` | Max concurrent work items per runner |
 | `FW_POLL_INTERVAL_MS` | `1000` | Runner poll interval in milliseconds |
+| `FW_POLL_IDLE_MAX_MS` | `5000` | Cap on idle backoff: consecutive empty polls double the wait up to this |
 | **LLM / Claude API** | | |
 | `ANTHROPIC_API_KEY` | *(empty)* | Anthropic API key for Claude-powered prompt blocks. When unset, LLM handlers fall back to deterministic stubs. Required by: `ClaudeAgentRunner`, `LLMHandler`, and example handlers like `noaa-weather` GenerateNarrative. |
 | **Data directories** | | |

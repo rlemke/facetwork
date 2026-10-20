@@ -964,8 +964,31 @@ created follow-on tasks); an idle cycle waits the jittered interval
 (±15%, anti-thundering-herd) on an event that task-completion done-callbacks
 set, so a finishing handler wakes its runner's poller instantly instead of on
 the next tick. The payoff is in deep cascades: a chain hop costs handler time,
-not up-to-an-interval of poll latency, while idle runners keep exactly the
-fixed-interval Mongo load.
+not up-to-an-interval of poll latency.
+
+**An idle runner backs off, and asks once per cycle.** Measured 2026-10-20: 34
+runners with zero pending tasks issued ~190 `findAndModify`/s and ~55 reads/s,
+because every one-second cycle made a separate claim per kind of work (handler
+events, `fw:resume`, built-ins such as `fw:execute`, the shared `_fw_continue`
+backlog, script tasks), each a pending query *plus* a lease-reclaim query, and
+re-read the runner's own server record for a quarantine toggle. Now:
+
+- **One claim per free slot** — `claim_any()` folds every kind into one `$or`
+  query (each branch self-contained, so the planner serves each from an index;
+  `explain` on the live store: `OR`/`IXSCAN`, 0 documents examined) and the
+  claimed task's name routes it. Ordering between kinds is not guaranteed,
+  exactly as it never was between runners.
+- **Lease reclaim every 30 s** (`_RECLAIM_SCAN_MS`), not on every empty claim.
+  Leases are ≥ 5 min, so failover moves by seconds.
+- **Quarantine re-read every 10 s** (`_QUARANTINE_CHECK_MS`); reconciliation is
+  time-based (10 s) rather than every tenth cycle.
+- **Idle backoff** — each consecutive empty cycle doubles the wait, from
+  `FW_POLL_INTERVAL_MS` up to `FW_POLL_IDLE_MAX_MS` (default 5 s); any claim or
+  local completion resets it. ⚠️ The cost is pickup latency: work submitted to
+  a quiet runner waits up to the cap. Work following that runner's own tasks is
+  unaffected (completion wakes it).
+
+An idle cycle is now one query, issued at most every 5 s.
 
 **Claiming is atomic, not coordinated.** `claim_task()` is a single Mongo
 `find_one_and_update({state: pending, …}, {$set: {state: running, …}})`
@@ -1257,6 +1280,7 @@ The sweep never calls full `resume()` — it processes each stuck step individua
 | `FW_DASHBOARD_REAP_INTERVAL_S` | 60 | Dashboard reaper cycle interval |
 | `FW_MAX_CONCURRENT` | 2 | Max concurrent tasks per runner |
 | `FW_POLL_INTERVAL_MS` | 1,000 | Runner poll cycle interval |
+| `FW_POLL_IDLE_MAX_MS` | 5,000 | Cap on idle backoff (consecutive empty cycles double the wait up to this) |
 
 ---
 

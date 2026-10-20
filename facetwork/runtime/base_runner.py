@@ -38,6 +38,7 @@ construction; the base only reads them.)
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
 import socket
@@ -361,6 +362,21 @@ class BaseRunner:
     # doesn't hit Mongo in lockstep (thundering herd). 0 disables it.
     _POLL_JITTER: float = 0.15
 
+    # Idle backoff: each consecutive cycle that claims nothing doubles the wait,
+    # from the poll interval up to this cap; any claim, or a local wake-up
+    # (_work_ready), resets it. Measured 2026-10-20: 34 runners polling every
+    # second issued ~190 claim queries/s against ZERO pending tasks. The cost is
+    # pickup latency for work submitted to a quiet runner (<= the cap); work that
+    # follows one of this runner's own tasks is unaffected (completion wakes it).
+    _POLL_IDLE_MAX_S: float = int(os.environ.get("FW_POLL_IDLE_MAX_MS", "5000")) / 1000.0
+    _idle_cycles: int = 0
+
+    # Lease-expiry reclaim is a second query on every empty claim. Leases are
+    # >= 5 min, so scanning for expired ones every 30 s instead of every poll
+    # changes failover time by seconds and removes half the idle claim load.
+    _RECLAIM_SCAN_MS: int = 30_000
+    _last_reclaim_scan_ms: int = 0
+
     def _known_ast_features(self) -> list[str]:
         """AST features this runner can execute faithfully.
 
@@ -595,11 +611,51 @@ class BaseRunner:
         refill without waiting). An idle cycle waits the jittered interval
         but is woken early by ``_work_ready`` — set on task completion and
         on ``stop()`` — so cascade hops cost handler time, not poll latency.
+        Consecutive idle cycles back off (``_POLL_IDLE_MAX_S``).
         """
         if dispatched > 0 or self._stopping.is_set():
+            self._idle_cycles = 0
             return
-        self._work_ready.wait(self._poll_wait_seconds(interval_s))
+        woken = self._work_ready.wait(self._poll_wait_seconds(self._idle_wait_seconds(interval_s)))
         self._work_ready.clear()
+        self._idle_cycles = 0 if woken else min(self._idle_cycles + 1, 16)
+
+    def _idle_wait_seconds(self, interval_s: float) -> float:
+        """The pre-jitter wait after ``_idle_cycles`` empty cycles (see _POLL_IDLE_MAX_S).
+
+        Never below the configured interval, so a runner configured to poll
+        slower than the cap keeps its own interval.
+        """
+        cap = max(interval_s, self._POLL_IDLE_MAX_S)
+        return min(cap, interval_s * (2**self._idle_cycles))
+
+    def _claim_next(
+        self,
+        claims: list[tuple[list[str], str | list[str]]],
+        *,
+        resources: dict,
+        known_features: list[str],
+        script_environments: list[str] | None = None,
+    ) -> Any:
+        """Claim one task across every kind of work this cycle polls for.
+
+        One ``claim_any`` query instead of one ``claim_task`` per kind, with the
+        lease-reclaim half paced by ``_RECLAIM_SCAN_MS``. The scan is marked done
+        only when a reclaim-enabled claim came back empty, i.e. it really ran.
+        """
+        now = _current_time_ms()
+        reclaim = now - self._last_reclaim_scan_ms >= self._RECLAIM_SCAN_MS
+        task = self._persistence.claim_any(
+            claims,
+            server_id=self._server_id,
+            resources=resources,
+            known_features=known_features,
+            script_environments=script_environments,
+            reclaim_expired=reclaim,
+        )
+        if task is None and reclaim:
+            self._last_reclaim_scan_ms = now
+        return task
 
     def _on_future_done(self, _future: object = None) -> None:
         """Future done-callback: wake the poll loop — a slot freed and the

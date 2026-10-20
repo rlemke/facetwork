@@ -955,6 +955,45 @@ class PersistenceAPI(Protocol):
         """
         return []
 
+    def claim_any(
+        self,
+        claims: "Sequence[tuple[list[str], str | list[str]]]",
+        server_id: str = "",
+        provided_environments: list[str] | None = None,
+        known_features: list[str] | None = None,
+        resources: dict | None = None,
+        script_environments: "Sequence[str] | None" = None,
+        reclaim_expired: bool = True,
+    ) -> Optional["TaskDefinition"]:
+        """Claim ONE task matching any of several ``(task_names, task_list)`` specs.
+
+        A poll loop calls this once per free slot instead of one ``claim_task``
+        per kind of work, so an idle cycle costs one query rather than five or
+        more. ``script_environments`` adds the ``claim_script_task`` branch.
+        ``reclaim_expired=False`` lets the caller pace lease-expiry reclaim,
+        which a backend may perform as a separate query.
+
+        This default tries each spec in order (then the script branch) and is
+        correct for any backend; MongoStore overrides it with a single query.
+        Which matching task wins is unspecified, as with ``claim_task``.
+        """
+        for task_names, task_list in claims:
+            if not task_names:
+                continue
+            task = self.claim_task(
+                task_names=task_names,
+                task_list=task_list,
+                server_id=server_id,
+                provided_environments=provided_environments,
+                known_features=known_features,
+                resources=resources,
+            )
+            if task is not None:
+                return task
+        if script_environments:
+            return self.claim_script_task(script_environments, server_id=server_id)
+        return None
+
     def claim_script_task(
         self,
         provided_environments: "Sequence[str]",
@@ -977,9 +1016,7 @@ class PersistenceAPI(Protocol):
             ping_time: The new ping time in milliseconds
         """
 
-    def heartbeat_server(
-        self, server_id: str, ping_time: int, free: dict | None = None
-    ) -> bool:
+    def heartbeat_server(self, server_id: str, ping_time: int, free: dict | None = None) -> bool:
         """Update a server's ping time iff its record is live.
 
         Unlike ``update_server_ping`` this reports whether a live (non-

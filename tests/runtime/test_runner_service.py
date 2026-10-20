@@ -1990,9 +1990,8 @@ workflow TaskWF(x: Long) => (result: Long) andThen {
         mock_store.save_task.return_value = None
         mock_store.get_pending_tasks.return_value = [task]
         mock_store.get_steps_by_state.return_value = []
-        # claim_task called: 1) resume (None), 2) builtin (task), 3) builtin
-        # (None), 4) continuation drain (None).
-        mock_store.claim_task.side_effect = [None, task, None, None]
+        # One claim_any per free slot: the fw:execute task, then nothing.
+        mock_store.claim_any.side_effect = [task, None]
         real_store = MemoryStore()
         real_evaluator = Evaluator(persistence=real_store, telemetry=Telemetry(enabled=False))
 
@@ -2056,9 +2055,8 @@ workflow TaskWF(x: Long) => (result: Long) andThen {
         )
         mock_store.get_pending_tasks.return_value = [task]
         mock_store.get_steps_by_state.return_value = []
-        # claim order: resume (None), builtin (task), builtin (None),
-        # continuation drain (None)
-        mock_store.claim_task.side_effect = [None, task, None, None]
+        # One claim_any per free slot: the fw:execute task, then nothing.
+        mock_store.claim_any.side_effect = [task, None]
 
         real_evaluator = Evaluator(persistence=MemoryStore(), telemetry=Telemetry(enabled=False))
         svc = RunnerService(mock_store, real_evaluator, config, ToolRegistry())

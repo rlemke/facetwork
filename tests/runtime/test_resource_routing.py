@@ -240,14 +240,17 @@ def _files_calling(func_name):
     ],
 )
 def test_every_claim_site_passes_the_capability_kwarg(kwarg, why):
-    files = _files_calling("claim_task")
-    callers = [f for f in files if "store" not in f.name and f.name != "dao.py"]
-    assert callers, "expected to find claim_task callers"
+    # The poll loops claim through BaseRunner._claim_next -> claim_any (one query
+    # for every kind of work), so all three entry points are checked.
     missing = []
-    for path in callers:
-        for c in _calls(path, "claim_task"):
-            if kwarg not in {k.arg for k in c.keywords}:
-                missing.append(f"{path.relative_to(_RUNTIME)}:{c.lineno}")
-    assert not missing, (
-        f"claim_task called without {kwarg}= at: " + ", ".join(missing) + f" — {why}"
-    )
+    found = 0
+    for func in ("claim_task", "claim_any", "_claim_next"):
+        files = _files_calling(func)
+        callers = [f for f in files if "store" not in f.name and f.name != "dao.py"]
+        for path in callers:
+            for c in _calls(path, func):
+                found += 1
+                if kwarg not in {k.arg for k in c.keywords}:
+                    missing.append(f"{func} at {path.relative_to(_RUNTIME)}:{c.lineno}")
+    assert found, "expected to find claim callers"
+    assert not missing, f"called without {kwarg}= : " + ", ".join(missing) + f" — {why}"

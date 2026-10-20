@@ -149,6 +149,7 @@ class TaskMixin(_MixinBase):
         provided_environments: list[str] | None = None,
         known_features: list[str] | None = None,
         resources: dict | None = None,
+        reclaim_expired: bool = True,
     ) -> TaskDefinition | None:
         """Atomically claim a pending task matching one of the given names.
 
@@ -158,15 +159,45 @@ class TaskMixin(_MixinBase):
 
         Also claims tasks whose lease has expired (i.e. still ``running``
         but ``lease_expires < now``), allowing automatic failover without
-        relying solely on the orphan reaper.
+        relying solely on the orphan reaper. ``reclaim_expired=False`` skips
+        that second query (see ``claim_any`` for why a poll loop paces it).
+        """
+        return self.claim_any(
+            [(task_names, task_list)],
+            server_id=server_id,
+            provided_environments=provided_environments,
+            known_features=known_features,
+            resources=resources,
+            reclaim_expired=reclaim_expired,
+        )
+
+    def claim_any(
+        self,
+        claims: Sequence[tuple[list[str], str | list[str]]],
+        server_id: str = "",
+        provided_environments: list[str] | None = None,
+        known_features: list[str] | None = None,
+        resources: dict | None = None,
+        script_environments: Sequence[str] | None = None,
+        reclaim_expired: bool = True,
+    ) -> TaskDefinition | None:
+        """Claim ONE task matching any of several (names, task lists) specs.
+
+        A poll cycle used to issue one ``claim_task`` per kind of work (handler
+        events, resumes, built-ins, continuations, script tasks), each costing a
+        pending query PLUS a lease-reclaim query even when nothing was pending —
+        measured 2026-10-20: ~190 findAndModify/s from 34 idle runners with zero
+        pending tasks. This folds them into one ``$or`` per query (each branch
+        self-contained, so the planner can serve every clause from an index).
+
+        ``script_environments`` adds the ``claim_script_task`` branch. Lease
+        reclaim keeps ``claim_task``'s semantics for the name branches (script
+        tasks were never lease-reclaimed) and is skipped when
+        ``reclaim_expired`` is False: a lease is >= 5 min, so a caller polling
+        every second can check it far less often without changing failover.
         """
         now = _current_time_ms()
         lease_ms = self._lease_ms()
-        # A runner may poll several lists at once (the namespaces of its
-        # handlers) — match any of them.
-        tl_filter: Any = (
-            {"$in": list(task_list)} if isinstance(task_list, (list, tuple, set)) else task_list
-        )
         update: dict[str, Any] = {
             "state": "running",
             "updated": now,
@@ -175,6 +206,98 @@ class TaskMixin(_MixinBase):
         if server_id:
             update["server_id"] = server_id
 
+        # Backoff filter: skip tasks still in their retry cooldown window.
+        retry_eligible = {
+            "$or": [
+                {"next_retry_after": {"$exists": False}},
+                {"next_retry_after": 0},
+                {"next_retry_after": {"$lte": now}},
+            ]
+        }
+        env_ok, feat_ok, res_ok = self._claim_capability_filters(
+            provided_environments, known_features, resources
+        )
+
+        specs = [(list(n), tl) for n, tl in claims if n]
+        # NOTE: each $and below combines several top-level ``$or`` filters —
+        # spreading them into one dict would silently drop all but the last
+        # (duplicate key), e.g. making the runner claim *any* pending task
+        # regardless of name.
+        pending_branches: list[dict] = [
+            {
+                "state": "pending",
+                "task_list_name": self._task_list_filter(tl),
+                "$and": [self._name_filter(names), retry_eligible, env_ok, feat_ok, res_ok],
+            }
+            for names, tl in specs
+        ]
+        if script_environments:
+            pending_branches.append(
+                {
+                    "state": "pending",
+                    "kind": "script",
+                    "environment_hash": {"$in": list(script_environments)},
+                    "$and": [retry_eligible],
+                }
+            )
+        if not pending_branches:
+            return None
+
+        doc = self._db.tasks.find_one_and_update(
+            pending_branches[0] if len(pending_branches) == 1 else {"$or": pending_branches},
+            {"$set": update},
+            return_document=ReturnDocument.AFTER,
+        )
+        if doc:
+            return self._doc_to_task(doc)
+        if not reclaim_expired or not specs:
+            return None
+
+        # Then try to reclaim a running task whose lease has expired. This is a
+        # RETRY (the previous holder died without renewing its lease), so bump
+        # retry_count — otherwise a handler that keeps dying ping-pongs on lease
+        # expiry forever and never reaches dead-letter. Only reclaim while the
+        # task still has budget (max_retries <= 0 means unlimited); an exhausted
+        # task is left running-with-expired-lease for the orphan reaper /
+        # stuck-watchdog, which reset it to pending -> _dead_letter_overdue.
+        # The lease duration itself (>= 5 min) paces this failover.
+        within_budget = {
+            "$or": [
+                {"max_retries": {"$lte": 0}},
+                {
+                    "$expr": {
+                        "$lt": [
+                            {"$ifNull": ["$retry_count", 0]},
+                            {"$ifNull": ["$max_retries", 5]},
+                        ]
+                    }
+                },
+            ]
+        }
+        reclaim_branches: list[dict] = [
+            {
+                "state": "running",
+                "task_list_name": self._task_list_filter(tl),
+                "lease_expires": {"$lt": now, "$gt": 0},
+                "$and": [self._name_filter(names), env_ok, within_budget],
+            }
+            for names, tl in specs
+        ]
+        doc = self._db.tasks.find_one_and_update(
+            reclaim_branches[0] if len(reclaim_branches) == 1 else {"$or": reclaim_branches},
+            {"$set": update, "$inc": {"retry_count": 1}},
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._doc_to_task(doc) if doc else None
+
+    @staticmethod
+    def _task_list_filter(task_list: str | list[str]) -> Any:
+        """A runner may poll several lists at once (the namespaces of its
+        handlers) — match any of them."""
+        return {"$in": list(task_list)} if isinstance(task_list, (list, tuple, set)) else task_list
+
+    @staticmethod
+    def _name_filter(task_names: list[str]) -> dict:
         # Build a query that matches exact names or names that start with
         # one of the given prefixes (e.g. "fw:execute" matches "fw:execute:MyWorkflow").
         # The prefix is a LITERAL, so re.escape it: qualified names contain "."
@@ -185,7 +308,15 @@ class TaskMixin(_MixinBase):
         for tn in task_names:
             name_conditions.append({"name": {"$regex": f"^{re.escape(tn)}:"}})
         name_filter = {"$or": name_conditions} if len(name_conditions) > 1 else name_conditions[0]
+        return name_filter
 
+    @staticmethod
+    def _claim_capability_filters(
+        provided_environments: list[str] | None,
+        known_features: list[str] | None,
+        resources: dict | None,
+    ) -> tuple[dict, dict, dict]:
+        """The environment / feature / resource routing filters, in that order."""
         # Environment routing (script-environments.md §3): tasks tagged with a
         # non-default environment_hash are claimable only by runners providing
         # that manifest; untagged tasks by everyone. Keep in behavioral
@@ -265,68 +396,7 @@ class TaskMixin(_MixinBase):
             ]
             res_conditions.append({"$and": per_dim})
         res_ok: dict[str, Any] = {"$or": res_conditions}
-
-        # Backoff filter: skip tasks still in their retry cooldown window.
-        retry_eligible = {
-            "$or": [
-                {"next_retry_after": {"$exists": False}},
-                {"next_retry_after": 0},
-                {"next_retry_after": {"$lte": now}},
-            ]
-        }
-
-        # NOTE: ``name_filter`` and ``retry_eligible`` both use ``$or`` at the
-        # top level, so they MUST be combined with ``$and`` — spreading both
-        # into one dict would silently drop the name filter (duplicate key),
-        # making the runner claim *any* pending task regardless of name.
-        # First try to claim a pending task.
-        doc = self._db.tasks.find_one_and_update(
-            {
-                "state": "pending",
-                "task_list_name": tl_filter,
-                "$and": [name_filter, retry_eligible, env_ok, feat_ok, res_ok],
-            },
-            {"$set": update},
-            return_document=ReturnDocument.AFTER,
-        )
-        if doc:
-            return self._doc_to_task(doc)
-
-        # Then try to reclaim a running task whose lease has expired. This is a
-        # RETRY (the previous holder died without renewing its lease), so bump
-        # retry_count — otherwise a handler that keeps dying ping-pongs on lease
-        # expiry forever and never reaches dead-letter. Only reclaim while the
-        # task still has budget (max_retries <= 0 means unlimited); an exhausted
-        # task is left running-with-expired-lease for the orphan reaper /
-        # stuck-watchdog, which reset it to pending -> _dead_letter_overdue.
-        # The lease duration itself (>= 5 min) paces this failover.
-        doc = self._db.tasks.find_one_and_update(
-            {
-                "state": "running",
-                "task_list_name": tl_filter,
-                "lease_expires": {"$lt": now, "$gt": 0},
-                "$and": [
-                    name_filter,
-                    env_ok,
-                    {
-                        "$or": [
-                            {"max_retries": {"$lte": 0}},
-                            {
-                                "$expr": {
-                                    "$lt": [
-                                        {"$ifNull": ["$retry_count", 0]},
-                                        {"$ifNull": ["$max_retries", 5]},
-                                    ]
-                                }
-                            },
-                        ]
-                    },
-                ],
-            },
-            {"$set": update, "$inc": {"retry_count": 1}},
-            return_document=ReturnDocument.AFTER,
-        )
-        return self._doc_to_task(doc) if doc else None
+        return env_ok, feat_ok, res_ok
 
     def update_task_state(self, task_id: str, state: str) -> None:
         """Update task state."""
