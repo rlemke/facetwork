@@ -62,14 +62,28 @@ case "$ROLE" in
 esac
 [ -f "$CONTEXT/Dockerfile" ] || { echo "agent-image: no Dockerfile in $CONTEXT" >&2; exit 2; }
 
-# Tag from the SOURCE repo's commit, so a tag names exactly one build input.
-# A dirty tree would publish code no commit holds, under a tag that claims one.
+# The image has TWO build inputs: the agent's own repo (the build context) and
+# the fw-agent SDK, which its Dockerfile clones from facetwork. Pin the SDK to
+# the commit published on the remote's main and pass it as a build arg: an
+# unpinned `git clone --branch main` is a cached layer, so a rebuild silently
+# kept whatever SDK the FIRST build cloned (the protocol v1.2 rollout would have
+# shipped v1.1 under a new tag). FW_AGENT_SHA overrides.
+FW_AGENT_SHA="${FW_AGENT_SHA:-$(git -C "$FW_ROOT" ls-remote origin refs/heads/main 2>/dev/null | cut -c1-40)}"
+if [ -z "$FW_AGENT_SHA" ]; then
+    echo "agent-image: cannot resolve facetwork main on origin (set FW_AGENT_SHA)" >&2
+    exit 2
+fi
+
+# Tag from BOTH inputs' commits, so a tag names exactly one build. A tag from the
+# context alone collides when only the SDK moved: `fleet set` then sees the SAME
+# tag and no host recreates. A dirty tree would publish code no commit holds,
+# under a tag that claims one.
 if [ -z "$TAG" ]; then
     if [ -n "$(git -C "$CONTEXT" status --porcelain -- . 2>/dev/null)" ]; then
         echo "agent-image: $CONTEXT has uncommitted changes — commit them, or pass --tag" >&2
         exit 2
     fi
-    TAG="$(git -C "$CONTEXT" rev-parse --short HEAD)"
+    TAG="$(git -C "$CONTEXT" rev-parse --short HEAD)-fw$(printf '%s' "$FW_AGENT_SHA" | cut -c1-7)"
 fi
 if [ -z "$REGISTRY" ]; then
     echo "$(basename "$0"): no image registry: set FW_FLEET_REGISTRY=<host>:<port>, or give" >&2
@@ -122,6 +136,7 @@ done
 echo "role      $ROLE"
 echo "context   $CONTEXT"
 echo "image     $IMAGE   (push via $PUSH_REGISTRY)"
+echo "fw-agent  $FW_AGENT_SHA"
 echo "platform  $PLATFORM"
 echo "fleet     needs: ${NEED:-unknown} ←${NEED_LINE#*|}"
 if [ "$DRY" = 1 ]; then
@@ -132,7 +147,8 @@ fi
 
 echo "=== 1/3 buildx build + push ==="
 docker buildx build --builder "$BUILDER" --platform "$PLATFORM" \
-    --provenance=false -t "$PUSH_IMAGE" --push "$CONTEXT"
+    --provenance=false --build-arg "FW_AGENT_SHA=$FW_AGENT_SHA" \
+    -t "$PUSH_IMAGE" --push "$CONTEXT"
 
 echo "=== 2/3 verify the PUSHED manifest (read back from $REGISTRY) ==="
 GOT="$("$PY" -c "
