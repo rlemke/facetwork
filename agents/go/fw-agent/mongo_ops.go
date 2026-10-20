@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
+	"sort"
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
@@ -35,36 +37,198 @@ func NewMongoOps(db *mongo.Database) *MongoOps {
 	return &MongoOps{db: db}
 }
 
-// ClaimTask atomically claims a pending task for processing.
-// Returns nil if no task is available.
+// ClaimTask claims a pending task by name on one task list.
+//
+// Deprecated: kept for source compatibility. It records no server id and
+// offers no resources (so any task carrying a `requires` floor is declined)
+// and never reclaims expired leases. Use ClaimTaskFor.
 func (m *MongoOps) ClaimTask(ctx context.Context, taskNames []string, taskList string) (*TaskDocument, error) {
+	return m.ClaimTaskFor(ctx, taskNames, []string{taskList}, "", nil, false)
+}
+
+// ClaimTaskFor claims one task (protocol v1.2 claim_task, then optionally
+// reclaim_expired_task), recording serverID and a lease.
+//
+// Besides name and task list the filter skips tasks in their retry cooldown,
+// tasks that need a script environment or FFL feature (an agent runs no
+// evaluator, so it declines both), and tasks whose `requires` floor exceeds
+// resources. A dimension the task names that is not in resources declines the
+// claim. reclaimExpired also tries to take over a running task whose lease
+// expired; callers pace it (LeaseReclaimScanMS). Returns nil when nothing matches.
+func (m *MongoOps) ClaimTaskFor(ctx context.Context, taskNames, taskLists []string, serverID string,
+	resources map[string]interface{}, reclaimExpired bool) (*TaskDocument, error) {
+	if len(taskNames) == 0 || len(taskLists) == 0 {
+		return nil, nil
+	}
 	collection := m.db.Collection(CollectionTasks)
-
-	filter := bson.M{
-		"state":          TaskStatePending,
-		"name":           bson.M{"$in": taskNames},
-		"task_list_name": taskList,
+	now := NowMillis()
+	set := bson.M{
+		"state":         TaskStateRunning,
+		"updated":       now,
+		"server_id":     serverID,
+		"lease_expires": now + LeaseMS,
 	}
-
-	update := bson.M{
-		"$set": bson.M{
-			"state":   TaskStateRunning,
-			"updated": NowMillis(),
-		},
-	}
-
 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 
+	pending := bson.M{
+		"state":          TaskStatePending,
+		"task_list_name": taskListFilter(taskLists),
+		"$and": bson.A{
+			nameFilter(taskNames),
+			bson.M{"$or": bson.A{
+				bson.M{"next_retry_after": bson.M{"$exists": false}},
+				bson.M{"next_retry_after": 0},
+				bson.M{"next_retry_after": bson.M{"$lte": now}},
+			}},
+			noEnvironment(),
+			bson.M{"$or": bson.A{
+				bson.M{"required_features": bson.M{"$exists": false}},
+				bson.M{"required_features": bson.A{}},
+			}},
+			resourceFilter(resources),
+		},
+	}
+	task, err := findOneAndUpdate(ctx, collection, pending, bson.M{"$set": set}, opts)
+	if err != nil || task != nil || !reclaimExpired {
+		return task, err
+	}
+
+	// A running task whose holder stopped renewing its lease. It is a RETRY, so
+	// retry_count is bumped, and only while budget remains: an exhausted one is
+	// left for the runtime's reaper, which dead-letters it.
+	expired := bson.M{
+		"state":          TaskStateRunning,
+		"task_list_name": taskListFilter(taskLists),
+		"lease_expires":  bson.M{"$lt": now, "$gt": 0},
+		"$and": bson.A{
+			nameFilter(taskNames),
+			noEnvironment(),
+			bson.M{"$or": bson.A{
+				bson.M{"max_retries": bson.M{"$lte": 0}},
+				bson.M{"$expr": bson.M{"$lt": bson.A{
+					bson.M{"$ifNull": bson.A{"$retry_count", 0}},
+					bson.M{"$ifNull": bson.A{"$max_retries", DefaultMaxRetries}},
+				}}},
+			}},
+		},
+	}
+	return findOneAndUpdate(ctx, collection, expired,
+		bson.M{"$set": set, "$inc": bson.M{"retry_count": 1}}, opts)
+}
+
+func findOneAndUpdate(ctx context.Context, c *mongo.Collection, filter, update interface{},
+	opts *options.FindOneAndUpdateOptions) (*TaskDocument, error) {
 	var task TaskDocument
-	err := collection.FindOneAndUpdate(ctx, filter, update, opts).Decode(&task)
+	err := c.FindOneAndUpdate(ctx, filter, update, opts).Decode(&task)
 	if err == mongo.ErrNoDocuments {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-
 	return &task, nil
+}
+
+func taskListFilter(taskLists []string) interface{} {
+	if len(taskLists) == 1 {
+		return taskLists[0]
+	}
+	return bson.M{"$in": taskLists}
+}
+
+// nameFilter matches exact names or `name:` prefixes (the prefix is a literal,
+// so it is quoted: "." is a regex wildcard).
+func nameFilter(taskNames []string) bson.M {
+	or := bson.A{bson.M{"name": bson.M{"$in": taskNames}}}
+	for _, n := range taskNames {
+		or = append(or, bson.M{"name": bson.M{"$regex": "^" + regexp.QuoteMeta(n) + ":"}})
+	}
+	return bson.M{"$or": or}
+}
+
+func noEnvironment() bson.M {
+	return bson.M{"$or": bson.A{
+		bson.M{"environment_hash": bson.M{"$exists": false}},
+		bson.M{"environment_hash": ""},
+	}}
+}
+
+func resourceFilter(resources map[string]interface{}) bson.M {
+	or := bson.A{
+		bson.M{"requires": bson.M{"$exists": false}},
+		bson.M{"requires": bson.M{}},
+	}
+	dims := make([]string, 0, len(resources))
+	for k, v := range resources {
+		switch v.(type) {
+		case int, int32, int64, float32, float64:
+			dims = append(dims, k)
+		}
+	}
+	sort.Strings(dims)
+	if len(dims) > 0 {
+		perDim := bson.A{bson.M{"requires_dims": bson.M{"$not": bson.M{"$elemMatch": bson.M{"$nin": dims}}}}}
+		for _, dim := range dims {
+			perDim = append(perDim, bson.M{"$or": bson.A{
+				bson.M{"requires." + dim: bson.M{"$exists": false}},
+				bson.M{"requires." + dim: bson.M{"$lte": resources[dim]}},
+			}})
+		}
+		or = append(or, bson.M{"$and": perDim})
+	}
+	return bson.M{"$or": or}
+}
+
+// RenewLease renews a running task's lease (protocol renew_task_lease).
+// Ownership-gated: returns false when the task is no longer this server's.
+// progressPct < 0 and an empty progressMessage leave progress unchanged.
+func (m *MongoOps) RenewLease(ctx context.Context, taskID, serverID string, progressPct int, progressMessage string) (bool, error) {
+	now := NowMillis()
+	set := bson.M{"task_heartbeat": now, "lease_expires": now + LeaseMS}
+	if progressPct >= 0 {
+		if progressPct > 100 {
+			progressPct = 100
+		}
+		set["progress_pct"] = progressPct
+	}
+	if progressMessage != "" {
+		set["progress_message"] = progressMessage
+	}
+	res, err := m.db.Collection(CollectionTasks).UpdateOne(ctx,
+		bson.M{"uuid": taskID, "state": TaskStateRunning, "server_id": serverID},
+		bson.M{"$set": set})
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount > 0, nil
+}
+
+// CancellationReason says why an in-flight execution should stop, or "" when
+// it should carry on (protocol check_cancellation): the task is gone, canceled,
+// already terminal (e.g. the runtime's timeout watchdog), or reclaimed.
+func (m *MongoOps) CancellationReason(ctx context.Context, taskID, serverID string) (string, error) {
+	var doc struct {
+		State    string `bson:"state"`
+		ServerID string `bson:"server_id"`
+	}
+	err := m.db.Collection(CollectionTasks).FindOne(ctx, bson.M{"uuid": taskID},
+		options.FindOne().SetProjection(bson.M{"state": 1, "server_id": 1, "_id": 0})).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return "task record no longer exists", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	switch doc.State {
+	case TaskStateCanceled:
+		return "task was canceled (terminate-workflow)", nil
+	case TaskStateCompleted, TaskStateFailed, TaskStateDeadLetter, TaskStateIgnored:
+		return "task already terminal (" + doc.State + ")", nil
+	}
+	if serverID != "" && doc.ServerID != serverID {
+		return "task was reclaimed by another runner", nil
+	}
+	return "", nil
 }
 
 // ReadStepParams reads the params attribute from a step.
@@ -176,7 +340,9 @@ func (m *MongoOps) UpdateStepReturns(ctx context.Context, stepID string, partial
 	return err
 }
 
-// MarkTaskCompleted marks a task as completed.
+// MarkTaskCompleted marks a task as completed regardless of who holds it.
+//
+// Deprecated: not ownership-gated. Use CompleteTask.
 func (m *MongoOps) MarkTaskCompleted(ctx context.Context, task *TaskDocument) error {
 	collection := m.db.Collection(CollectionTasks)
 
@@ -192,6 +358,9 @@ func (m *MongoOps) MarkTaskCompleted(ctx context.Context, task *TaskDocument) er
 }
 
 // MarkTaskFailed marks a task as failed with an error message.
+//
+// Deprecated: a `failed` event task is recreated by the runtime's stuck-step
+// sweep at retry_count 0, so the failure retries forever. Use FailTask.
 func (m *MongoOps) MarkTaskFailed(ctx context.Context, task *TaskDocument, errorMsg string) error {
 	collection := m.db.Collection(CollectionTasks)
 
@@ -207,7 +376,78 @@ func (m *MongoOps) MarkTaskFailed(ctx context.Context, task *TaskDocument, error
 	return err
 }
 
-// InsertResumeTask creates an afl:resume task for the Python RunnerService.
+// CompleteTask marks a task completed (protocol complete_task), only while
+// serverID still holds it. false means it was reclaimed or terminated: another
+// execution owns the outcome, so do NOT insert a resume task.
+func (m *MongoOps) CompleteTask(ctx context.Context, task *TaskDocument, serverID string) (bool, error) {
+	res, err := m.db.Collection(CollectionTasks).UpdateOne(ctx,
+		bson.M{"uuid": task.UUID, "state": TaskStateRunning, "server_id": serverID},
+		bson.M{"$set": bson.M{"state": TaskStateCompleted, "updated": NowMillis()}})
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount > 0, nil
+}
+
+// FailTransitionResult is the outcome of FailTransition.
+type FailTransitionResult struct {
+	State          string
+	RetryCount     int
+	NextRetryAfter int64
+}
+
+// DeadLettered reports whether the transition dead-letters the task.
+func (t FailTransitionResult) DeadLettered() bool { return t.State == TaskStateDeadLetter }
+
+// FailTransition is the protocol's failure transition
+// (conformance/retry_cases.json). A permanent error dead-letters without
+// spending budget; otherwise the count goes up and the task is either
+// dead-lettered (budget spent) or returned to pending after a backoff.
+func FailTransition(retryCount, maxRetries int, permanent bool, now int64) FailTransitionResult {
+	if permanent {
+		return FailTransitionResult{State: TaskStateDeadLetter, RetryCount: retryCount}
+	}
+	next := retryCount + 1
+	if maxRetries > 0 && next >= maxRetries {
+		return FailTransitionResult{State: TaskStateDeadLetter, RetryCount: next}
+	}
+	return FailTransitionResult{State: TaskStatePending, RetryCount: next, NextRetryAfter: now + RetryBackoffMS(next)}
+}
+
+// FailTask records a handler failure (protocol fail_task), only while serverID
+// still holds the task. Returns the transition applied, or nil if the task was
+// no longer this server's.
+//
+// It never writes `failed`: the runtime's stuck-step sweep sees no active and
+// no dead-lettered task for the step and creates a fresh one at retry_count 0,
+// so a failure would retry forever. A dead-lettered task makes the sweep fail
+// the step instead.
+func (m *MongoOps) FailTask(ctx context.Context, task *TaskDocument, serverID, errorMsg string, permanent bool) (*FailTransitionResult, error) {
+	now := NowMillis()
+	t := FailTransition(task.RetryCount, task.EffectiveMaxRetries(), permanent, now)
+	errDoc := bson.M{"message": errorMsg}
+	set := bson.M{"state": t.State, "updated": now, "retry_count": t.RetryCount, "error": errDoc}
+	if t.DeadLettered() {
+		if permanent {
+			errDoc["permanent"] = true
+		}
+	} else {
+		set["server_id"] = ""
+		set["next_retry_after"] = t.NextRetryAfter
+	}
+	res, err := m.db.Collection(CollectionTasks).UpdateOne(ctx,
+		bson.M{"uuid": task.UUID, "state": TaskStateRunning, "server_id": serverID},
+		bson.M{"$set": set})
+	if err != nil {
+		return nil, err
+	}
+	if res.MatchedCount == 0 {
+		return nil, nil
+	}
+	return &t, nil
+}
+
+// InsertResumeTask creates an fw:resume task for the Python RunnerService.
 // If facetName is non-empty, the task name includes it for visibility (e.g. "fw:resume:ns.Facet").
 func (m *MongoOps) InsertResumeTask(ctx context.Context, stepID, workflowID, taskList, facetName string) error {
 	collection := m.db.Collection(CollectionTasks)

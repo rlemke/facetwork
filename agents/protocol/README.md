@@ -65,9 +65,9 @@ See `constants.json` for complete field schemas and example MongoDB operations:
 |----------|----------|--------|
 | Python | `facetwork/runtime/agent_poller.py` (built-in) | Full evaluator integration |
 | Java | `agents/java/fw-agent/` | v1.2 |
-| Scala | `agents/scala/fw-agent/` | v1.1 — bare claim (no lease, cooldown, capability filters or retry); update pending |
-| Go | `agents/go/fw-agent/` | v1.1 — update pending |
-| TypeScript | `agents/typescript/fw-agent/` | v1.1 — update pending |
+| Scala | `agents/scala/fw-agent/` | v1.2 |
+| Go | `agents/go/fw-agent/` | v1.2 |
+| TypeScript | `agents/typescript/fw-agent/` | v1.2 |
 
 Additional languages can implement the protocol using `constants.json` and any MongoDB driver.
 

@@ -18,6 +18,9 @@ import { AgentPollerConfig } from "./config";
 import { MongoOps } from "./mongo-ops";
 import { ServerRegistration } from "./server-registration";
 import { TaskDocument } from "./models";
+import { LeaseReclaimScanMs, TaskStateDeadLetter } from "./protocol";
+import { claimResources } from "./resources";
+import { PermanentError } from "./errors";
 
 /**
  * Handler callback type for processing events.
@@ -45,6 +48,9 @@ export class AgentPoller {
   private pollInterval: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private activeCount = 0;
+  // Tasks this server is running, for lease renewal; value = still owned.
+  private readonly activeTasks: Map<string, { owned: boolean }> = new Map();
+  private lastReclaimScanMs = 0;
 
   constructor(config: AgentPollerConfig) {
     this.config = config;
@@ -86,12 +92,8 @@ export class AgentPoller {
     await this.registration.register(this.serverId, this.config, handlers);
 
     // Start heartbeat
-    this.heartbeatInterval = setInterval(async () => {
-      try {
-        await this.registration?.heartbeat(this.serverId);
-      } catch (err) {
-        console.error("Heartbeat error:", err);
-      }
+    this.heartbeatInterval = setInterval(() => {
+      this.heartbeat().catch((err) => console.error("Heartbeat error:", err));
     }, this.config.heartbeatIntervalMs);
 
     // Start poll loop
@@ -161,7 +163,7 @@ export class AgentPoller {
       return;
     }
 
-    const task = await this.ops!.claimTask(handlers, this.config.taskList);
+    const task = await this.claimNext(handlers);
     if (task) {
       await this.processTask(task);
     }
@@ -179,7 +181,7 @@ export class AgentPoller {
     }
 
     // Try to claim a task
-    const task = await this.ops!.claimTask(handlers, this.config.taskList);
+    const task = await this.claimNext(handlers);
     if (!task) {
       return;
     }
@@ -191,6 +193,40 @@ export class AgentPoller {
       .finally(() => {
         this.activeCount--;
       });
+  }
+
+  /**
+   * One claim (protocol v1.2): records this server and a lease, offers the
+   * memory free now, and every `LeaseReclaimScanMs` also looks for a running
+   * task whose lease expired.
+   */
+  private async claimNext(handlers: string[]): Promise<TaskDocument | null> {
+    const now = Date.now();
+    const reclaim = now - this.lastReclaimScanMs >= LeaseReclaimScanMs;
+    const task = await this.ops!.claimTask(
+      handlers, [this.config.taskList], this.serverId, claimResources(), reclaim
+    );
+    if (!task && reclaim) {
+      this.lastReclaimScanMs = now;
+    }
+    return task;
+  }
+
+  /** Server heartbeat (re-registering a pruned record) + lease renewal. */
+  private async heartbeat(): Promise<void> {
+    if (this.registration && !(await this.registration.heartbeat(this.serverId)) && this.running) {
+      console.warn(`Server record ${this.serverId} missing or marked shutdown -- registering again`);
+      await this.registration.register(this.serverId, this.config, this.registeredHandlers());
+    }
+    for (const [taskId, state] of this.activeTasks) {
+      try {
+        if (!(await this.ops!.renewLease(taskId, this.serverId))) {
+          state.owned = false;
+        }
+      } catch {
+        // best-effort; retried next heartbeat
+      }
+    }
   }
 
   private async emitStepLog(
@@ -222,10 +258,12 @@ export class AgentPoller {
       await this.emitStepLog(task.step_id, task.workflow_id, task.name,
         "error", `Handler error: No handler registered for: ${task.name}`);
       console.log(`No handler for task: ${task.name}`);
-      await this.ops!.markTaskFailed(task, "no handler registered");
+      await this.ops!.failTask(task, this.serverId, "no handler registered", false);
       return;
     }
 
+    const state = { owned: true };
+    this.activeTasks.set(task.uuid, state);
     try {
       // 3. Dispatching handler
       await this.emitStepLog(task.step_id, task.workflow_id, task.name,
@@ -254,6 +292,30 @@ export class AgentPoller {
         } catch { /* best-effort */ }
       };
 
+      // Inject _task_heartbeat(progressPct?, progressMessage?): renews the lease
+      // now (the heartbeat timer also renews it every interval).
+      params["_task_heartbeat"] = async (progressPct?: number, progressMessage?: string) => {
+        try {
+          if (!(await this.ops!.renewLease(task.uuid, this.serverId, progressPct, progressMessage))) {
+            state.owned = false;
+          }
+        } catch { /* best-effort */ }
+      };
+
+      // Inject _is_cancelled(): true once the task was canceled, finished by
+      // someone else, or reclaimed. A long handler should check it at batch
+      // boundaries and return early.
+      params["_is_cancelled"] = async (): Promise<boolean> => {
+        if (!state.owned) {
+          return true;
+        }
+        try {
+          return (await this.ops!.cancellationReason(task.uuid, this.serverId)) !== null;
+        } catch {
+          return false;
+        }
+      };
+
       // Inject _handler_metadata if provider is available
       if (this.metadataProvider) {
         const meta = this.metadataProvider(task.name);
@@ -267,12 +329,27 @@ export class AgentPoller {
 
       const durationMs = Date.now() - dispatchStart;
 
+      // Another execution may own this task now (reclaimed after a lost lease,
+      // canceled, or finished by the timeout watchdog): write nothing.
+      const stop = await this.ops!.cancellationReason(task.uuid, this.serverId);
+      if (stop !== null) {
+        await this.emitStepLog(task.step_id, task.workflow_id, task.name,
+          "warning", `Handler result discarded: ${stop}`);
+        console.warn(`Discarding result of ${task.name} ${task.uuid}: ${stop}`);
+        return;
+      }
+
       // Write returns to step
       if (result && Object.keys(result).length > 0) {
         await this.ops!.writeStepReturns(task.step_id, result);
       }
 
-      // Insert resume task for Python RunnerService
+      // Complete (ownership-gated), then signal the Python RunnerService.
+      if (!(await this.ops!.completeTask(task, this.serverId))) {
+        await this.emitStepLog(task.step_id, task.workflow_id, task.name,
+          "warning", "Handler result discarded: task was reclaimed before completion");
+        return;
+      }
       await this.ops!.insertResumeTask(
         task.step_id,
         task.workflow_id,
@@ -280,19 +357,27 @@ export class AgentPoller {
         task.name
       );
 
-      // Mark task completed
-      await this.ops!.markTaskCompleted(task);
-
       // 4. Handler completed
       await this.emitStepLog(task.step_id, task.workflow_id, task.name,
         "success", `Handler completed: ${task.name} (${durationMs}ms)`);
     } catch (err) {
-      // 5. Handler error
+      // 5. Handler error: retry with backoff, or dead-letter (never 'failed').
       const errorMsg = err instanceof Error ? err.message : String(err);
+      const permanent = err instanceof PermanentError;
+      const t = await this.ops!.failTask(task, this.serverId, errorMsg, permanent);
+      let what: string;
+      if (t === null) {
+        what = "not recorded: task no longer held by this server";
+      } else if (t.state === TaskStateDeadLetter) {
+        what = permanent ? "dead-lettered (permanent)" : `dead-lettered after ${t.retryCount} attempts`;
+      } else {
+        what = `retry ${t.retryCount}/${task.max_retries ?? 5} in ${Math.round((t.nextRetryAfter - Date.now()) / 1000)}s`;
+      }
       await this.emitStepLog(task.step_id, task.workflow_id, task.name,
-        "error", `Handler error: ${errorMsg}`);
-      console.error(`Handler error for ${task.name}:`, err);
-      await this.ops!.markTaskFailed(task, errorMsg);
+        "error", `Handler error (${what}): ${errorMsg}`);
+      console.error(`Handler error for ${task.name} (${what}):`, err);
+    } finally {
+      this.activeTasks.delete(task.uuid);
     }
   }
 

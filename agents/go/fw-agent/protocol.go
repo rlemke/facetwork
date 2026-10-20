@@ -54,10 +54,11 @@ const (
 
 // Server states
 const (
-	ServerStateStartup  = "startup"
-	ServerStateRunning  = "running"
-	ServerStateShutdown = "shutdown"
-	ServerStateError    = "error"
+	ServerStateStartup    = "startup"
+	ServerStateRunning    = "running"
+	ServerStateShutdown   = "shutdown"
+	ServerStateError      = "error"
+	ServerStateQuarantine = "quarantine"
 )
 
 // Step log levels
@@ -79,3 +80,33 @@ const (
 	ResumeTaskName  = "fw:resume"
 	ExecuteTaskName = "fw:execute"
 )
+
+// ProtocolVersion is the protocol version this library implements
+// (constants.json "version").
+const ProtocolVersion = "1.2"
+
+// Timing (constants.json "timing").
+const (
+	// LeaseMS is the task lease: max(5 min, 15 min execution timeout + 1 min).
+	LeaseMS int64 = 960000
+	// LeaseReclaimScanMS is how often to look for expired leases to take over.
+	LeaseReclaimScanMS int64 = 30000
+	// DefaultMaxRetries is the max_retries assumed when a task has none.
+	DefaultMaxRetries = 5
+)
+
+// RetryBackoffMS is the delay before a failed task may be claimed again:
+// min(5000 * 2^retryCount, 300000), retryCount counted AFTER the failure.
+func RetryBackoffMS(retryCount int) int64 {
+	if retryCount < 0 {
+		retryCount = 0
+	}
+	if retryCount >= 6 {
+		return 300000
+	}
+	d := int64(5000) << uint(retryCount)
+	if d > 300000 {
+		return 300000
+	}
+	return d
+}

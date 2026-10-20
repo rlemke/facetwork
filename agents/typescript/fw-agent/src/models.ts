@@ -30,6 +30,15 @@ export interface TaskDocument {
   task_list_name: string;
   data_type?: string;
   data?: Record<string, unknown>;
+  // Protocol v1.2 claim fields
+  server_id?: string;
+  lease_expires?: number;
+  task_heartbeat?: number;
+  retry_count?: number;
+  max_retries?: number;
+  next_retry_after?: number;
+  progress_pct?: number;
+  progress_message?: string;
 }
 
 export interface StepAttribute {
@@ -73,6 +82,12 @@ export interface ServerDocument {
   handlers: string[];
   handled: HandledStat[] | null;
   state: string;
+  // Protocol v1.2
+  task_list?: string;
+  resources?: Record<string, number>;
+  free_resources?: Record<string, number>;
+  provided_environments?: string[];
+  ast_features?: string[];
 }
 
 /**

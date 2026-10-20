@@ -50,6 +50,11 @@ func (s *ServerRegistration) Register(ctx context.Context, serverID string, cfg 
 		Handlers:    handlers,
 		Handled:     nil,
 		State:       ServerStateRunning,
+
+		TaskList:             cfg.TaskList,
+		Resources:            Capacity(),
+		ProvidedEnvironments: []string{},
+		ASTFeatures:          []string{},
 	}
 
 	opts := options.Update().SetUpsert(true)
@@ -77,18 +82,34 @@ func (s *ServerRegistration) Deregister(ctx context.Context, serverID string) er
 	return err
 }
 
-// Heartbeat updates the server's ping time.
+// Heartbeat pings the server record; see Ping.
+//
+// Deprecated: discards whether the record was live. Use Ping and re-register
+// when it reports false.
 func (s *ServerRegistration) Heartbeat(ctx context.Context, serverID string) error {
-	collection := s.db.Collection(CollectionServers)
-
-	update := bson.M{
-		"$set": bson.M{
-			"ping_time": NowMillis(),
-		},
-	}
-
-	_, err := collection.UpdateOne(ctx, bson.M{"uuid": serverID}, update)
+	_, err := s.Ping(ctx, serverID)
 	return err
+}
+
+// Ping updates the record's ping time (protocol heartbeat_server) and
+// publishes the memory available now as free_resources. It matches only a
+// non-terminal record, so a quarantined server keeps pinging without becoming
+// running again. false means the record is gone or marked shutdown (a reaper
+// false positive): the caller must Register again.
+func (s *ServerRegistration) Ping(ctx context.Context, serverID string) (bool, error) {
+	now := NowMillis()
+	set := bson.M{"ping_time": now}
+	if free := LiveFree(); free != nil {
+		free["at"] = now
+		set["free_resources"] = free
+	}
+	res, err := s.db.Collection(CollectionServers).UpdateOne(ctx,
+		bson.M{"uuid": serverID, "state": bson.M{"$nin": bson.A{ServerStateShutdown}}},
+		bson.M{"$set": set})
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount > 0, nil
 }
 
 func getLocalIPs() []string {

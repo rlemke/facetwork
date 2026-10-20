@@ -22,7 +22,10 @@ case class ServerDocument(
     handled: Seq[HandledCount],
     state: String,
     manager: String,
-    error: Option[Document]
+    error: Option[Document],
+    // Protocol v1.2
+    taskList: String = "",
+    resources: Map[String, Double] = Map.empty
 )
 
 object ServerDocument:
@@ -90,5 +93,10 @@ object ServerDocument:
         },
         "state" -> server.state,
         "manager" -> server.manager,
-        "error" -> server.error.map(_.toBsonDocument).getOrElse(BsonNull())
+        "error" -> server.error.map(_.toBsonDocument).getOrElse(BsonNull()),
+        "task_list" -> server.taskList,
+        "resources" -> Document(server.resources.toSeq.map((k, v) => k -> org.mongodb.scala.bson.BsonDouble(v))),
+        // An agent runs no evaluator and provides no script environment.
+        "provided_environments" -> Seq.empty[String],
+        "ast_features" -> Seq.empty[String]
       )

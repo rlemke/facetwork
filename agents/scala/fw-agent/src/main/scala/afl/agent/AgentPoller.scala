@@ -9,6 +9,7 @@ import java.util.concurrent.{ExecutorService, Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicBoolean
 import fw.agent.model.StepAttributes
 import scala.collection.concurrent.TrieMap
+import scala.util.Try
 
 /** Main polling agent for processing AFL event tasks.
   *
@@ -35,6 +36,10 @@ class AgentPoller(val config: AgentPollerConfig):
   private var serverReg: ServerRegistration = _
   private var executor: ExecutorService = _
   private var heartbeatThread: Thread = _
+
+  // Tasks this server is running, for lease renewal; value = still owned.
+  private val activeTasks = TrieMap.empty[String, AtomicBoolean]
+  @volatile private var lastReclaimScanMs = 0L
 
   /** Register a handler for an event facet name.
     *
@@ -107,13 +112,25 @@ class AgentPoller(val config: AgentPollerConfig):
     var dispatched = 0
     var continue = true
     while continue && dispatched < config.maxConcurrent do
-      mongoOps.claimTask(registeredNames, config.taskList) match
+      claimNext() match
         case Some(task) =>
           processEvent(task)
           dispatched += 1
         case None =>
           continue = false
     dispatched
+
+  /** One claim (protocol v1.2): records this server and a lease, offers the
+    * memory free now, and every Protocol.LeaseReclaimScanMs also looks for a
+    * running task whose lease expired.
+    */
+  private def claimNext(): Option[model.TaskDocument] =
+    val now = System.currentTimeMillis()
+    val reclaim = now - lastReclaimScanMs >= Protocol.LeaseReclaimScanMs
+    val task = mongoOps.claimTask(registeredNames, Seq(config.taskList), serverId_,
+      Resources.claimResources(), reclaim)
+    if task.isEmpty && reclaim then lastReclaimScanMs = now
+    task
 
   /** Emit a step log entry (best-effort). */
   private def emitStepLog(
@@ -143,9 +160,11 @@ class AgentPoller(val config: AgentPollerConfig):
         emitStepLog(task.stepId, task.workflowId, handlerName,
           Protocol.StepLogLevel.Error, s"Handler error: $errorMsg")
         logger.warn(s"No handler for task: $handlerName (step=${task.stepId})")
-        mongoOps.markTaskFailed(task, errorMsg)
+        mongoOps.failTask(task, serverId_, errorMsg, permanent = false)
 
       case Some(fn) =>
+        val owned = AtomicBoolean(true)
+        activeTasks.put(task.uuid, owned)
         try
           // 3. Dispatching handler
           emitStepLog(task.stepId, task.workflowId, handlerName,
@@ -175,7 +194,21 @@ class AgentPoller(val config: AgentPollerConfig):
               }
               mongoOps.updateStepReturns(task.stepId, returns)
             catch case _: Exception => ()
-          val paramsWithUpdate = paramsWithMeta + ("_update_step" -> updateStepCallback)
+          // _task_heartbeat(progressPct, message): renews the lease now (the
+          // heartbeat thread also renews it every interval).
+          val heartbeatCallback: (Option[Int], Option[String]) => Unit = (pct, msg) =>
+            try if !mongoOps.renewLease(task.uuid, serverId_, pct, msg) then owned.set(false)
+            catch case _: Exception => ()
+          // _is_cancelled(): true once the task was canceled, finished by someone
+          // else, or reclaimed. A long handler should check it at batch
+          // boundaries and return early.
+          val cancelledCallback: () => Boolean = () =>
+            !owned.get() ||
+              Try(mongoOps.cancellationReason(task.uuid, serverId_).isDefined).getOrElse(false)
+          val paramsWithUpdate = paramsWithMeta +
+            ("_update_step" -> updateStepCallback) +
+            ("_task_heartbeat" -> heartbeatCallback) +
+            ("_is_cancelled" -> cancelledCallback)
 
           // Invoke handler
           val result = fn(paramsWithUpdate)
@@ -187,29 +220,44 @@ class AgentPoller(val config: AgentPollerConfig):
             name -> (value -> inferTypeHint(value))
           }
 
-          // Write returns to step
-          mongoOps.writeStepReturns(task.stepId, returns)
-
-          // Mark task completed
-          mongoOps.markTaskCompleted(task)
-
-          // Insert afl:resume task
-          mongoOps.insertResumeTask(task.stepId, task.workflowId, config.taskList, task.name)
-
-          // 4. Handler completed
-          emitStepLog(task.stepId, task.workflowId, handlerName,
-            Protocol.StepLogLevel.Success, s"Handler completed: $handlerName (${durationMs}ms)")
-          logger.info(s"Completed event: $handlerName (step=${task.stepId})")
+          // Another execution may own this task now (reclaimed after a lost
+          // lease, canceled, or finished by the timeout watchdog): write nothing.
+          mongoOps.cancellationReason(task.uuid, serverId_) match
+            case Some(reason) =>
+              emitStepLog(task.stepId, task.workflowId, handlerName,
+                Protocol.StepLogLevel.Warning, s"Handler result discarded: $reason")
+              logger.warn(s"Discarding result of $handlerName ${task.uuid}: $reason")
+            case None =>
+              mongoOps.writeStepReturns(task.stepId, returns)
+              // Complete (ownership-gated), then signal the Python RunnerService.
+              if !mongoOps.completeTask(task, serverId_) then
+                emitStepLog(task.stepId, task.workflowId, handlerName,
+                  Protocol.StepLogLevel.Warning,
+                  "Handler result discarded: task was reclaimed before completion")
+              else
+                mongoOps.insertResumeTask(task.stepId, task.workflowId, task.taskListName, task.name)
+                // 4. Handler completed
+                emitStepLog(task.stepId, task.workflowId, handlerName,
+                  Protocol.StepLogLevel.Success, s"Handler completed: $handlerName (${durationMs}ms)")
+                logger.info(s"Completed event: $handlerName (step=${task.stepId})")
         catch
           case e: Exception =>
-            // 5. Handler error
+            // 5. Handler error: retry with backoff, or dead-letter (never 'failed').
+            val permanent = e.isInstanceOf[PermanentError]
+            val what = mongoOps.failTask(task, serverId_, e.getMessage, permanent) match
+              case Some(t) if t.deadLettered && permanent => "dead-lettered (permanent)"
+              case Some(t) if t.deadLettered => s"dead-lettered after ${t.retryCount} attempts"
+              case Some(t) =>
+                s"retry ${t.retryCount}/${task.maxRetries} in " +
+                  s"${(t.nextRetryAfter - System.currentTimeMillis()) / 1000}s"
+              case None => "not recorded: task no longer held by this server"
             emitStepLog(task.stepId, task.workflowId, handlerName,
-              Protocol.StepLogLevel.Error, s"Handler error: ${e.getMessage}")
+              Protocol.StepLogLevel.Error, s"Handler error ($what): ${e.getMessage}")
             logger.error(
-              s"Handler failed for $handlerName (step=${task.stepId}): ${e.getMessage}",
+              s"Handler failed for $handlerName (step=${task.stepId}, $what): ${e.getMessage}",
               e
             )
-            mongoOps.markTaskFailed(task, e.getMessage)
+        finally activeTasks.remove(task.uuid)
 
   /** Look up handler by exact name, then try short name for qualified names. */
   private def lookupHandler(
@@ -241,12 +289,26 @@ class AgentPoller(val config: AgentPollerConfig):
       while running.get() do
         try
           Thread.sleep(config.heartbeatIntervalMs)
-          if running.get() then serverReg.heartbeat(serverId_)
-        catch case _: InterruptedException => ()
+          if running.get() then heartbeatOnce()
+        catch
+          case _: InterruptedException => ()
+          case e: Exception => logger.warn(s"Heartbeat error: ${e.getMessage}")
     })
     heartbeatThread.setDaemon(true)
     heartbeatThread.setName(s"afl-heartbeat-${config.serviceName}")
     heartbeatThread.start()
+
+  /** Ping the server record (re-registering a pruned one) and renew the lease
+    * of every task still running here.
+    */
+  private def heartbeatOnce(): Unit =
+    if !serverReg.heartbeat(serverId_) && running.get() then
+      logger.warn(s"Server record $serverId_ missing or marked shutdown -- registering again")
+      serverReg.register(serverId_, config, registeredNames)
+    activeTasks.foreach { case (taskId, owned) =>
+      try if !mongoOps.renewLease(taskId, serverId_) then owned.set(false)
+      catch case e: Exception => logger.debug(s"Lease renewal failed for $taskId: ${e.getMessage}")
+    }
 
   private def shutdown(): Unit =
     logger.info("Shutting down...")

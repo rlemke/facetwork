@@ -20,6 +20,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,11 +45,11 @@ type AgentPoller struct {
 	ops          *MongoOps
 	registration *ServerRegistration
 
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	sem      chan struct{} // semaphore for concurrency control
-	running  bool
-	runMu    sync.Mutex
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
+	sem     chan struct{} // semaphore for concurrency control
+	running bool
+	runMu   sync.Mutex
 
 	// topicFilter, if set, overrides RegisteredHandlers() for poll cycles.
 	// Used by RegistryRunner to restrict to DB-registered topics.
@@ -57,6 +58,12 @@ type AgentPoller struct {
 	// metadataProvider, if set, returns handler metadata for a given facet name.
 	// Used by RegistryRunner to inject _handler_metadata into handler params.
 	metadataProvider func(facetName string) map[string]interface{}
+
+	// active maps the uuid of each task running here to an int32 "still owned"
+	// flag (1/0), for lease renewal and _is_cancelled.
+	active sync.Map
+	// lastReclaimScan is when an expired-lease scan last came back empty (ms).
+	lastReclaimScan int64
 }
 
 // NewAgentPoller creates a new AgentPoller with the given configuration.
@@ -173,8 +180,8 @@ func (p *AgentPoller) PollOnce(ctx context.Context) error {
 		p.registration = NewServerRegistration(p.db)
 	}
 
-	handlers := p.RegisteredHandlers()
-	task, err := p.ops.ClaimTask(ctx, handlers, p.cfg.TaskList)
+	handlers := p.EffectiveHandlers()
+	task, err := p.claimNext(ctx, handlers)
 	if err != nil {
 		return err
 	}
@@ -219,31 +226,42 @@ func (p *AgentPoller) pollCycle(ctx context.Context) {
 		return
 	}
 
-	// Try to claim a task
-	task, err := p.ops.ClaimTask(ctx, handlers, p.cfg.TaskList)
-	if err != nil {
-		log.Printf("Error claiming task: %v", err)
-		return
-	}
-	if task == nil {
-		return // No task available
-	}
-
-	// Acquire semaphore slot
+	// Take a slot BEFORE claiming: a task claimed with no slot to run it would
+	// sit `running` under this server until its lease expired.
 	select {
 	case p.sem <- struct{}{}:
-		// Got slot, process in goroutine
-		p.wg.Add(1)
-		go func() {
-			defer p.wg.Done()
-			defer func() { <-p.sem }()
-			p.processTask(ctx, task)
-		}()
 	default:
-		// All slots busy, skip this cycle
-		// Task will be picked up next cycle or by another instance
-		log.Printf("Max concurrency reached, skipping task %s", task.UUID)
+		return
 	}
+
+	task, err := p.claimNext(ctx, handlers)
+	if err != nil || task == nil {
+		<-p.sem
+		if err != nil {
+			log.Printf("Error claiming task: %v", err)
+		}
+		return
+	}
+
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		defer func() { <-p.sem }()
+		p.processTask(ctx, task)
+	}()
+}
+
+// claimNext makes one claim (protocol v1.2): records this server and a lease,
+// offers the memory free now, and every LeaseReclaimScanMS also looks for a
+// running task whose lease expired.
+func (p *AgentPoller) claimNext(ctx context.Context, handlers []string) (*TaskDocument, error) {
+	now := NowMillis()
+	reclaim := now-atomic.LoadInt64(&p.lastReclaimScan) >= LeaseReclaimScanMS
+	task, err := p.ops.ClaimTaskFor(ctx, handlers, []string{p.cfg.TaskList}, p.serverID, ClaimResources(), reclaim)
+	if err == nil && task == nil && reclaim {
+		atomic.StoreInt64(&p.lastReclaimScan, now)
+	}
+	return task, err
 }
 
 // emitStepLog writes a step log entry (best-effort).
@@ -260,16 +278,18 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 	// Find handler - try qualified name first, then short name
 	handler := p.findHandler(task.Name)
 	if handler == nil {
-		// 2. No handler found
+		// 2. No handler found: retry path (another server may have it).
 		errMsg := fmt.Sprintf("No handler registered for: %s", task.Name)
 		p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
 			StepLogLevelError, "Handler error: "+errMsg)
 		log.Printf("No handler for task: %s", task.Name)
-		if err := p.ops.MarkTaskFailed(ctx, task, "no handler registered"); err != nil {
-			log.Printf("Failed to mark task as failed: %v", err)
-		}
+		p.fail(ctx, task, fmt.Errorf("no handler registered"))
 		return
 	}
+
+	owned := int32(1)
+	p.active.Store(task.UUID, &owned)
+	defer p.active.Delete(task.UUID)
 
 	// 3. Dispatching handler
 	p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
@@ -281,9 +301,7 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 	params, err := p.ops.ReadStepParams(ctx, task.StepID)
 	if err != nil {
 		log.Printf("Failed to read step params: %v", err)
-		if err := p.ops.MarkTaskFailed(ctx, task, err.Error()); err != nil {
-			log.Printf("Failed to mark task as failed: %v", err)
-		}
+		p.fail(ctx, task, err)
 		return
 	}
 
@@ -310,16 +328,39 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 		}
 	}
 
+	// Inject _task_heartbeat(progressPct, message): renews the lease now (the
+	// heartbeat loop also renews it every interval). progressPct < 0 = none.
+	params["_task_heartbeat"] = func(progressPct int, message string) {
+		ok, err := p.ops.RenewLease(ctx, task.UUID, p.serverID, progressPct, message)
+		if err == nil && !ok {
+			atomic.StoreInt32(&owned, 0)
+		}
+	}
+
+	// Inject _is_cancelled(): true once the task was canceled, finished by
+	// someone else, or reclaimed. A long handler should check it at batch
+	// boundaries and return early.
+	params["_is_cancelled"] = func() bool {
+		if atomic.LoadInt32(&owned) == 0 {
+			return true
+		}
+		reason, err := p.ops.CancellationReason(ctx, task.UUID, p.serverID)
+		return err == nil && reason != ""
+	}
+
 	// Invoke handler
 	result, err := handler(params)
 	if err != nil {
-		// 5. Handler error
+		p.fail(ctx, task, err)
+		return
+	}
+
+	// Another execution may own this task now (reclaimed after a lost lease,
+	// canceled, or finished by the timeout watchdog): write nothing.
+	if reason, err := p.ops.CancellationReason(ctx, task.UUID, p.serverID); err == nil && reason != "" {
 		p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
-			StepLogLevelError, fmt.Sprintf("Handler error: %v", err))
-		log.Printf("Handler error for %s: %v", task.Name, err)
-		if err := p.ops.MarkTaskFailed(ctx, task, err.Error()); err != nil {
-			log.Printf("Failed to mark task as failed: %v", err)
-		}
+			StepLogLevelWarning, "Handler result discarded: "+reason)
+		log.Printf("Discarding result of %s %s: %s", task.Name, task.UUID, reason)
 		return
 	}
 
@@ -327,31 +368,57 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 	if result != nil {
 		if err := p.ops.WriteStepReturns(ctx, task.StepID, result); err != nil {
 			log.Printf("Failed to write step returns: %v", err)
-			if err := p.ops.MarkTaskFailed(ctx, task, err.Error()); err != nil {
-				log.Printf("Failed to mark task as failed: %v", err)
-			}
+			p.fail(ctx, task, err)
 			return
 		}
 	}
 
-	// Insert resume task for Python RunnerService
-	if err := p.ops.InsertResumeTask(ctx, task.StepID, task.WorkflowID, task.TaskListName, task.Name); err != nil {
-		log.Printf("Failed to insert resume task: %v", err)
-		if err := p.ops.MarkTaskFailed(ctx, task, err.Error()); err != nil {
-			log.Printf("Failed to mark task as failed: %v", err)
-		}
+	// Complete (ownership-gated), then signal the Python RunnerService.
+	done, err := p.ops.CompleteTask(ctx, task, p.serverID)
+	if err != nil {
+		log.Printf("Failed to mark task completed: %v", err)
 		return
 	}
-
-	// Mark task completed
-	if err := p.ops.MarkTaskCompleted(ctx, task); err != nil {
-		log.Printf("Failed to mark task completed: %v", err)
+	if !done {
+		p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
+			StepLogLevelWarning, "Handler result discarded: task was reclaimed before completion")
+		return
+	}
+	if err := p.ops.InsertResumeTask(ctx, task.StepID, task.WorkflowID, task.TaskListName, task.Name); err != nil {
+		// The task is completed but the workflow was not signalled; the
+		// runtime's stuck-step sweep recovers the step.
+		log.Printf("Failed to insert resume task: %v", err)
+		return
 	}
 
 	// 4. Handler completed
 	durationMs := time.Since(dispatchStart).Milliseconds()
 	p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
 		StepLogLevelSuccess, fmt.Sprintf("Handler completed: %s (%dms)", task.Name, durationMs))
+}
+
+// fail records a handler error: retry with backoff, or dead-letter (a
+// PermanentError at once). Never `failed`.
+func (p *AgentPoller) fail(ctx context.Context, task *TaskDocument, cause error) {
+	permanent := IsPermanent(cause)
+	t, err := p.ops.FailTask(ctx, task, p.serverID, cause.Error(), permanent)
+	var what string
+	switch {
+	case err != nil:
+		what = "not recorded: " + err.Error()
+	case t == nil:
+		what = "not recorded: task no longer held by this server"
+	case t.DeadLettered() && permanent:
+		what = "dead-lettered (permanent)"
+	case t.DeadLettered():
+		what = fmt.Sprintf("dead-lettered after %d attempts", t.RetryCount)
+	default:
+		what = fmt.Sprintf("retry %d/%d in %ds", t.RetryCount, task.EffectiveMaxRetries(),
+			(t.NextRetryAfter-NowMillis())/1000)
+	}
+	p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
+		StepLogLevelError, fmt.Sprintf("Handler error (%s): %v", what, cause))
+	log.Printf("Handler error for %s (%s): %v", task.Name, what, cause)
 }
 
 func (p *AgentPoller) findHandler(taskName string) Handler {
@@ -387,9 +454,28 @@ func (p *AgentPoller) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := p.registration.Heartbeat(ctx, p.serverID); err != nil {
-				log.Printf("Heartbeat error: %v", err)
-			}
+			p.heartbeat(ctx)
 		}
 	}
+}
+
+// heartbeat pings the server record (re-registering it when a reaper pruned it
+// or marked it shutdown) and renews the lease of every task running here.
+func (p *AgentPoller) heartbeat(ctx context.Context) {
+	live, err := p.registration.Ping(ctx, p.serverID)
+	if err != nil {
+		log.Printf("Heartbeat error: %v", err)
+	} else if !live {
+		log.Printf("Server record %s missing or marked shutdown -- registering again", p.serverID)
+		if err := p.registration.Register(ctx, p.serverID, p.cfg, p.RegisteredHandlers()); err != nil {
+			log.Printf("Re-register failed: %v", err)
+		}
+	}
+	p.active.Range(func(key, value interface{}) bool {
+		ok, err := p.ops.RenewLease(ctx, key.(string), p.serverID, -1, "")
+		if err == nil && !ok {
+			atomic.StoreInt32(value.(*int32), 0)
+		}
+		return true
+	})
 }

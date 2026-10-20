@@ -36,6 +36,7 @@ object Protocol:
     val Running = "running"
     val Shutdown = "shutdown"
     val Error = "error"
+    val Quarantine = "quarantine"
 
   object StepLogLevel:
     val Info = "info"
@@ -49,3 +50,22 @@ object Protocol:
 
   val ResumeTaskName = "fw:resume"
   val ExecuteTaskName = "fw:execute"
+
+  /** Protocol version this library implements (constants.json "version"). */
+  val ProtocolVersion = "1.2"
+
+  /** Task lease: max(5 min, 15 min execution timeout + 1 min). */
+  val LeaseMs: Long = 960_000L
+
+  /** How often to look for expired leases to take over. */
+  val LeaseReclaimScanMs: Long = 30_000L
+
+  /** max_retries assumed when a task document has none. */
+  val DefaultMaxRetries = 5
+
+  /** Delay before a failed task may be claimed again: min(5000 * 2^n, 300000),
+    * n = retry count AFTER the failure.
+    */
+  def retryBackoffMs(retryCount: Int): Long =
+    if retryCount >= 6 then 300_000L
+    else math.min(5_000L * (1L << math.max(0, retryCount)), 300_000L)

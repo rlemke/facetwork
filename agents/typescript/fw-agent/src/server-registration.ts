@@ -17,6 +17,7 @@ import * as os from "os";
 import { CollectionServers, ServerStateRunning, ServerStateShutdown } from "./protocol";
 import { AgentPollerConfig } from "./config";
 import { ServerDocument, nowMillis } from "./models";
+import { capacity, liveFree } from "./resources";
 
 /**
  * Handles server lifecycle in MongoDB.
@@ -47,6 +48,11 @@ export class ServerRegistration {
       handlers: handlers,
       handled: null,
       state: ServerStateRunning,
+      task_list: config.taskList,
+      resources: capacity(),
+      // An agent runs no evaluator and provides no script environment.
+      provided_environments: [],
+      ast_features: [],
     };
 
     await collection.updateOne(
@@ -74,19 +80,26 @@ export class ServerRegistration {
   }
 
   /**
-   * Updates the server's ping time.
+   * Pings the server record (protocol `heartbeat_server`) and publishes the
+   * memory available now as `free_resources`. Matches only a non-terminal
+   * record, so a quarantined server keeps pinging without becoming `running`.
+   *
+   * @returns false when the record is gone or marked shutdown (a reaper false
+   *   positive); the caller must register again
    */
-  async heartbeat(serverId: string): Promise<void> {
+  async heartbeat(serverId: string): Promise<boolean> {
     const collection = this.db.collection<ServerDocument>(CollectionServers);
-
-    await collection.updateOne(
-      { uuid: serverId },
-      {
-        $set: {
-          ping_time: nowMillis(),
-        },
-      }
+    const now = nowMillis();
+    const set: Partial<ServerDocument> = { ping_time: now };
+    const free = liveFree();
+    if (free !== null) {
+      set.free_resources = { ...free, at: now };
+    }
+    const r = await collection.updateOne(
+      { uuid: serverId, state: { $nin: [ServerStateShutdown] } },
+      { $set: set }
     );
+    return r.matchedCount > 0;
   }
 }
 

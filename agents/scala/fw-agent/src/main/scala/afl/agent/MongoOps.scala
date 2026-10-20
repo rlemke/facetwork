@@ -8,6 +8,7 @@ import org.mongodb.scala.model.{Filters, FindOneAndUpdateOptions, ReturnDocument
 import org.slf4j.LoggerFactory
 
 import java.util.UUID
+import org.bson.{Document => JDoc}
 import scala.concurrent.Await
 import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
@@ -22,32 +23,149 @@ class MongoOps(db: MongoDatabase, timeout: Duration = 10.seconds):
   private val tasks = db.getCollection(Protocol.Collections.Tasks)
   private val steps = db.getCollection(Protocol.Collections.Steps)
 
-  /** Atomically claim a pending task (pending -> running).
+  /** Claim one task (protocol v1.2 `claim_task`, then optionally
+    * `reclaim_expired_task`). Records `serverId` and a lease.
     *
-    * @param taskNames  Event facet names to match
-    * @param taskList   Task list name for routing
-    * @return           The claimed task, or None if no tasks available
+    * Besides name and task list the filter skips tasks in their retry cooldown,
+    * tasks that need a script environment or FFL feature (an agent runs no
+    * evaluator, so it declines both), and tasks whose `requires` floor exceeds
+    * `resources`. A dimension the task names that is not in `resources`
+    * declines the claim.
+    *
+    * @param reclaimExpired also take over a running task whose lease expired;
+    *                       callers pace this (Protocol.LeaseReclaimScanMs)
     */
   def claimTask(
       taskNames: Seq[String],
-      taskList: String
+      taskLists: Seq[String],
+      serverId: String,
+      resources: Map[String, Double],
+      reclaimExpired: Boolean
   ): Option[TaskDocument] =
-    val filter = Filters.and(
-      Filters.eq("state", Protocol.TaskState.Pending),
-      Filters.in("name", taskNames*),
-      Filters.eq("task_list_name", taskList)
-    )
-    val update = Updates.combine(
-      Updates.set("state", Protocol.TaskState.Running),
-      Updates.set("updated", System.currentTimeMillis())
-    )
-    val options = FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER)
+    if taskNames.isEmpty then return None
+    val now = System.currentTimeMillis()
+    val set = JDoc("state", Protocol.TaskState.Running)
+      .append("updated", now)
+      .append("server_id", serverId)
+      .append("lease_expires", now + Protocol.LeaseMs)
+    val after = FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER)
 
-    val result = Await.result(
-      tasks.findOneAndUpdate(filter, update, options).toFuture(),
+    val pending = JDoc("state", Protocol.TaskState.Pending)
+      .append("task_list_name", taskListFilter(taskLists))
+      .append("$and", jl(
+        nameFilter(taskNames),
+        JDoc("$or", jl(
+          JDoc("next_retry_after", JDoc("$exists", false)),
+          JDoc("next_retry_after", 0),
+          JDoc("next_retry_after", JDoc("$lte", now)))),
+        noEnvironment,
+        JDoc("$or", jl(
+          JDoc("required_features", JDoc("$exists", false)),
+          JDoc("required_features", java.util.List.of()))),
+        resourceFilter(resources)))
+    val claimed = Await.result(
+      tasks.findOneAndUpdate(pending, JDoc("$set", set), after).toFutureOption(), timeout)
+    if claimed.isDefined || !reclaimExpired then
+      return claimed.map(doc => TaskDocument.fromBson(Document(doc.toBsonDocument)))
+
+    // A running task whose holder stopped renewing its lease. It is a RETRY, so
+    // retry_count is bumped, and only while budget remains: an exhausted one is
+    // left for the runtime's reaper, which dead-letters it.
+    val expired = JDoc("state", Protocol.TaskState.Running)
+      .append("task_list_name", taskListFilter(taskLists))
+      .append("lease_expires", JDoc("$lt", now).append("$gt", 0))
+      .append("$and", jl(
+        nameFilter(taskNames),
+        noEnvironment,
+        JDoc("$or", jl(
+          JDoc("max_retries", JDoc("$lte", 0)),
+          JDoc("$expr", JDoc("$lt", jl(
+            JDoc("$ifNull", jl("$retry_count", 0)),
+            JDoc("$ifNull", jl("$max_retries", Protocol.DefaultMaxRetries)))))))))
+    Await.result(
+      tasks.findOneAndUpdate(expired,
+        JDoc("$set", set).append("$inc", JDoc("retry_count", 1)), after).toFutureOption(),
+      timeout
+    ).map(doc => TaskDocument.fromBson(Document(doc.toBsonDocument)))
+
+  private def jl(xs: Any*): java.util.List[Any] = java.util.List.of(xs.map(_.asInstanceOf[AnyRef])*).asInstanceOf[java.util.List[Any]]
+
+  private def taskListFilter(taskLists: Seq[String]): Any =
+    if taskLists.size == 1 then taskLists.head else JDoc("$in", taskLists.asJava)
+
+  /** Exact names, or `name:` prefixes (the prefix is a literal, so quoted). */
+  private def nameFilter(taskNames: Seq[String]): JDoc =
+    val or = JDoc("name", JDoc("$in", taskNames.asJava)) +:
+      taskNames.map(n => JDoc("name", JDoc("$regex", "^" + java.util.regex.Pattern.quote(n) + ":")))
+    JDoc("$or", or.asJava)
+
+  private def noEnvironment: JDoc =
+    JDoc("$or", jl(
+      JDoc("environment_hash", JDoc("$exists", false)),
+      JDoc("environment_hash", "")))
+
+  private def resourceFilter(resources: Map[String, Double]): JDoc =
+    val base = Seq(JDoc("requires", JDoc("$exists", false)), JDoc("requires", JDoc()))
+    val perDim =
+      if resources.isEmpty then Seq.empty
+      else
+        val dims = JDoc("requires_dims", JDoc("$not",
+          JDoc("$elemMatch", JDoc("$nin", resources.keys.toSeq.asJava))))
+        val caps = resources.toSeq.map { case (dim, cap) =>
+          JDoc("$or", jl(
+            JDoc(s"requires.$dim", JDoc("$exists", false)),
+            JDoc(s"requires.$dim", JDoc("$lte", cap))))
+        }
+        Seq(JDoc("$and", (dims +: caps).asJava))
+    JDoc("$or", (base ++ perDim).asJava)
+
+  /** Renew a running task's lease (protocol `renew_task_lease`).
+    * Ownership-gated: false when the task is no longer this server's.
+    */
+  def renewLease(
+      taskId: String,
+      serverId: String,
+      progressPct: Option[Int] = None,
+      progressMessage: Option[String] = None
+  ): Boolean =
+    val now = System.currentTimeMillis()
+    val set = JDoc("task_heartbeat", now).append("lease_expires", now + Protocol.LeaseMs)
+    progressPct.foreach(p => set.append("progress_pct", math.max(0, math.min(100, p))))
+    progressMessage.foreach(m => set.append("progress_message", m))
+    Await.result(
+      tasks.updateOne(owned(taskId, serverId), JDoc("$set", set)).toFuture(), timeout
+    ).getMatchedCount > 0
+
+  /** Why an in-flight execution should stop, or None (protocol
+    * `check_cancellation`): the task is gone, canceled, already terminal (e.g.
+    * the runtime's timeout watchdog), or reclaimed by another server.
+    */
+  def cancellationReason(taskId: String, serverId: String): Option[String] =
+    val found = Await.result(
+      tasks.find(Filters.eq("uuid", taskId))
+        .projection(JDoc("state", 1).append("server_id", 1).append("_id", 0))
+        .headOption(),
       timeout
     )
-    Option(result).map(doc => TaskDocument.fromBson(Document(doc.toBsonDocument)))
+    found match
+      case None => Some("task record no longer exists")
+      case Some(d) =>
+        val doc: org.bson.Document = d
+        val state = String.valueOf(doc.get("state"))
+        val holder = Option(doc.get("server_id")).map(_.toString).getOrElse("")
+        if state == Protocol.TaskState.Canceled then Some("task was canceled (terminate-workflow)")
+        else if Seq(Protocol.TaskState.Completed, Protocol.TaskState.Failed,
+            Protocol.TaskState.DeadLetter, Protocol.TaskState.Ignored).contains(state)
+        then Some(s"task already terminal ($state)")
+        else if serverId != null && serverId != holder then Some("task was reclaimed by another runner")
+        else None
+
+  private def owned(taskId: String, serverId: String) =
+    Filters.and(
+      Filters.eq("uuid", taskId),
+      Filters.eq("state", Protocol.TaskState.Running),
+      Filters.eq("server_id", serverId)
+    )
 
   /** Read step params from the steps collection.
     *
@@ -155,32 +273,47 @@ class MongoOps(db: MongoDatabase, timeout: Duration = 10.seconds):
         timeout
       )
 
-  /** Mark an event task as completed. */
-  def markTaskCompleted(task: TaskDocument): Unit =
-    val completed = task.copy(
-      state = Protocol.TaskState.Completed,
-      updated = System.currentTimeMillis()
-    )
-    val filter = Filters.eq("uuid", task.uuid)
+  /** Mark a task completed (protocol `complete_task`), only while this server
+    * still holds it. False when the task was reclaimed or terminated: another
+    * execution owns the outcome, so do NOT insert a resume.
+    */
+  def completeTask(task: TaskDocument, serverId: String): Boolean =
     Await.result(
-      tasks.replaceOne(filter, completed.toBson).toFuture(),
+      tasks.updateOne(owned(task.uuid, serverId),
+        JDoc("$set", JDoc("state", Protocol.TaskState.Completed)
+          .append("updated", System.currentTimeMillis()))).toFuture(),
       timeout
-    )
+    ).getMatchedCount > 0
 
-  /** Mark an event task as failed with an error message. */
-  def markTaskFailed(task: TaskDocument, errorMessage: String): Unit =
-    val failed = task.copy(
-      state = Protocol.TaskState.Failed,
-      updated = System.currentTimeMillis(),
-      error = Some(Document("message" -> errorMessage))
-    )
-    val filter = Filters.eq("uuid", task.uuid)
-    Await.result(
-      tasks.replaceOne(filter, failed.toBson).toFuture(),
-      timeout
-    )
+  /** Record a handler failure (protocol `fail_task`), only while this server
+    * still holds the task. Returns the transition applied, or None if the task
+    * was no longer this server's.
+    *
+    * Never writes `failed`: the runtime's stuck-step sweep sees no active and no
+    * dead-lettered task for the step and creates a fresh one at retry_count 0,
+    * so a failure would retry forever. A dead-lettered task makes the sweep fail
+    * the step instead.
+    */
+  def failTask(
+      task: TaskDocument,
+      serverId: String,
+      errorMessage: String,
+      permanent: Boolean
+  ): Option[MongoOps.FailTransition] =
+    val now = System.currentTimeMillis()
+    val t = MongoOps.failTransition(task.retryCount, task.maxRetries, permanent, now)
+    val error = JDoc("message", Option(errorMessage).getOrElse(""))
+    val set = JDoc("state", t.state).append("updated", now).append("retry_count", t.retryCount)
+    if t.deadLettered then
+      if permanent then error.append("permanent", true)
+    else set.append("server_id", "").append("next_retry_after", t.nextRetryAfter)
+    set.append("error", error)
+    val matched = Await.result(
+      tasks.updateOne(owned(task.uuid, serverId), JDoc("$set", set)).toFuture(), timeout
+    ).getMatchedCount
+    if matched > 0 then Some(t) else None
 
-  /** Insert an afl:resume task so the Python RunnerService resumes the workflow.
+  /** Insert an fw:resume task so the Python RunnerService resumes the workflow.
     *
     * @param stepId      The step whose returns have been written
     * @param workflowId  The workflow to resume
@@ -269,3 +402,21 @@ class MongoOps(db: MongoDatabase, timeout: Duration = 10.seconds):
         }
         bsonDoc
       case other => BsonString(other.toString)
+
+object MongoOps:
+
+  /** The outcome of [[failTransition]]. */
+  case class FailTransition(state: String, retryCount: Int, nextRetryAfter: Long):
+    def deadLettered: Boolean = state == Protocol.TaskState.DeadLetter
+
+  /** The protocol's failure transition (conformance/retry_cases.json). A
+    * permanent error dead-letters without spending budget; otherwise the count
+    * goes up and the task is either dead-lettered (budget spent) or returned to
+    * pending after an exponential backoff.
+    */
+  def failTransition(retryCount: Int, maxRetries: Int, permanent: Boolean, now: Long): FailTransition =
+    if permanent then FailTransition(Protocol.TaskState.DeadLetter, retryCount, 0L)
+    else
+      val next = retryCount + 1
+      if maxRetries > 0 && next >= maxRetries then FailTransition(Protocol.TaskState.DeadLetter, next, 0L)
+      else FailTransition(Protocol.TaskState.Pending, next, now + Protocol.retryBackoffMs(next))

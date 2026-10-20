@@ -49,6 +49,7 @@ export const ServerStateStartup = "startup";
 export const ServerStateRunning = "running";
 export const ServerStateShutdown = "shutdown";
 export const ServerStateError = "error";
+export const ServerStateQuarantine = "quarantine";
 
 // Step log levels
 export const StepLogLevelInfo = "info";
@@ -63,3 +64,25 @@ export const StepLogSourceHandler = "handler";
 // Protocol task names
 export const ResumeTaskName = "fw:resume";
 export const ExecuteTaskName = "fw:execute";
+
+// Protocol version this library implements (constants.json "version")
+export const ProtocolVersion = "1.2";
+
+// Timing (constants.json "timing")
+/** Task lease: max(5 min, 15 min execution timeout + 1 min). */
+export const LeaseMs = 960_000;
+/** How often to look for expired leases to take over. */
+export const LeaseReclaimScanMs = 30_000;
+/** max_retries assumed when a task document has none. */
+export const DefaultMaxRetries = 5;
+
+/**
+ * Delay before a failed task may be claimed again:
+ * min(5000 * 2^retryCount, 300000), retryCount counted AFTER the failure.
+ */
+export function retryBackoffMs(retryCount: number): number {
+  if (retryCount >= 6) {
+    return 300_000;
+  }
+  return Math.min(5_000 * 2 ** Math.max(0, retryCount), 300_000);
+}

@@ -41,7 +41,9 @@ class ServerRegistration(db: MongoDatabase, timeout: Duration = 10.seconds):
       handled = Seq.empty,
       state = Protocol.ServerState.Running,
       manager = "",
-      error = None
+      error = None,
+      taskList = config.taskList,
+      resources = Resources.capacity
     )
     val filter = Filters.eq("uuid", serverId)
     val options = ReplaceOptions().upsert(true)
@@ -51,13 +53,28 @@ class ServerRegistration(db: MongoDatabase, timeout: Duration = 10.seconds):
     )
     logger.info(s"Server registered: $serverId (${config.serviceName})")
 
-  /** Update the heartbeat timestamp. */
-  def heartbeat(serverId: String): Unit =
-    val filter = Filters.eq("uuid", serverId)
-    val update = Document(
-      "$set" -> Document("ping_time" -> System.currentTimeMillis())
+  /** Ping the server record (protocol `heartbeat_server`) and publish the
+    * memory available now as `free_resources`. Matches only a non-terminal
+    * record, so a quarantined server keeps pinging without becoming running.
+    *
+    * @return false when the record is gone or marked shutdown (a reaper false
+    *         positive); the caller must register again
+    */
+  def heartbeat(serverId: String): Boolean =
+    val now = System.currentTimeMillis()
+    val set = org.bson.Document("ping_time", now)
+    Resources.liveFree().foreach { free =>
+      val d = org.bson.Document("at", now)
+      free.foreach((k, v) => d.append(k, v))
+      set.append("free_resources", d)
+    }
+    val filter = Filters.and(
+      Filters.eq("uuid", serverId),
+      Filters.nin("state", Protocol.ServerState.Shutdown)
     )
-    Await.result(servers.updateOne(filter, update).toFuture(), timeout)
+    Await.result(
+      servers.updateOne(filter, org.bson.Document("$set", set)).toFuture(), timeout
+    ).getMatchedCount > 0
 
   /** Mark the server as shut down. */
   def deregister(serverId: String): Unit =

@@ -31,6 +31,20 @@ type TaskDocument struct {
 	TaskListName string                 `bson:"task_list_name"`
 	DataType     string                 `bson:"data_type,omitempty"`
 	Data         map[string]interface{} `bson:"data,omitempty"`
+
+	// v1.2 claim fields. MaxRetries is a pointer so an absent field can be
+	// told apart from 0 (= unlimited); see EffectiveMaxRetries.
+	ServerID   string `bson:"server_id,omitempty"`
+	RetryCount int    `bson:"retry_count,omitempty"`
+	MaxRetries *int   `bson:"max_retries,omitempty"`
+}
+
+// EffectiveMaxRetries is max_retries, or DefaultMaxRetries when the task has none.
+func (t *TaskDocument) EffectiveMaxRetries() int {
+	if t.MaxRetries == nil {
+		return DefaultMaxRetries
+	}
+	return *t.MaxRetries
 }
 
 // StepAttribute represents a parameter or return value attribute.
@@ -76,6 +90,13 @@ type ServerDocument struct {
 		NotHandled int    `bson:"not_handled"`
 	} `bson:"handled"`
 	State string `bson:"state"`
+
+	// v1.2: the task list this server was started for, its MEASURED capacity,
+	// and the (empty) script environments / FFL features an agent provides.
+	TaskList             string                 `bson:"task_list,omitempty"`
+	Resources            map[string]interface{} `bson:"resources,omitempty"`
+	ProvidedEnvironments []string               `bson:"provided_environments"`
+	ASTFeatures          []string               `bson:"ast_features"`
 }
 
 // NowMillis returns the current time in milliseconds since Unix epoch.

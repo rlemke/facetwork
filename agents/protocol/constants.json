@@ -287,7 +287,8 @@
       },
       "options": {
         "returnDocument": "after"
-      }
+      },
+      "server_id_note": "server_id is required and non-empty: a stable uuid generated once per agent process, the same value written to its server record. Ownership checks (renew/complete/fail) compare against it."
     },
     "reclaim_expired_task": {
       "description": "Take over a running task whose holder stopped renewing its lease. It is a RETRY, so retry_count is incremented, and only while budget remains (an exhausted one is left to the runtime's reaper, which dead-letters it).",
@@ -452,28 +453,25 @@
           "state": "pending",
           "server_id": "",
           "updated": "<now_ms>",
+          "retry_count": "<retry_count + 1>",
           "next_retry_after": "<now_ms + backoff>",
           "error": {
             "message": "<msg>"
           }
-        },
-        "$inc": {
-          "retry_count": 1
         }
       },
       "update_dead_letter": {
         "$set": {
           "state": "dead_letter",
           "updated": "<now_ms>",
+          "retry_count": "<retry_count + 1, or unchanged when permanent>",
           "error": {
             "message": "<msg>",
-            "permanent": "<bool>"
+            "permanent": "<true when permanent>"
           }
-        },
-        "$inc": {
-          "retry_count": "<1, or 0 when permanent>"
         }
-      }
+      },
+      "note": "retry_count is $set to the value computed from the CLAIMED task's count, not $inc'd: the transition is decided from what this server read."
     },
     "create_resume_task": {
       "description": "After complete_task matched. task_list_name: the event task's own list (Python runners poll their namespaces plus 'default').",

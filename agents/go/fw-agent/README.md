@@ -43,6 +43,34 @@ func main() {
 }
 ```
 
+## Retries, leases and cancellation (protocol v1.2)
+
+The poller follows the full claim contract in
+[`../../protocol/constants.json`](../../protocol/constants.json): it records this
+server on the task, holds a lease and renews it every heartbeat, offers the
+memory free on this host (so a task with a `requires(memory_gb=…)` floor waits
+for a host that has it), and skips retries still cooling down. Completion is
+gated on still holding the task, and the `fw:resume` task is inserted only
+when it succeeds.
+
+A handler can use these from `params`:
+
+| Key | Type | Use |
+|---|---|---|
+| `_task_heartbeat` | `func(progressPct int, message string)` | renews the lease and records progress (`progressPct < 0` = none); call it from long loops |
+| `_is_cancelled` | `func() bool` | true once the run was terminated, the task finished elsewhere, or it was reclaimed — return early |
+| `_step_log` | `func(message, level string)` | a line on the dashboard step |
+
+Return `fwagent.NewPermanentError(msg)` (or wrap one in a `*PermanentError`)
+when retrying cannot help: the task is dead-lettered at once and the step
+fails. Any other error retries with exponential backoff (5 s doubling, capped
+at 5 min) until `max_retries` (default 5), then dead-letters. The library never
+writes `failed`, which the runtime would recreate at retry 0 forever.
+
+`ClaimTask`, `MarkTaskCompleted`, `MarkTaskFailed` and `Heartbeat` remain for
+source compatibility but are deprecated; the poller uses `ClaimTaskFor`,
+`CompleteTask`, `FailTask` and `Ping`.
+
 ## Configuration
 
 Configuration is resolved in the following order: explicit path, `FW_CONFIG`
@@ -72,6 +100,19 @@ The `afl.config.json` file format:
 go build ./...
 go test ./...
 ```
+
+`conformance_test.go` runs the protocol's shared cases
+(`agents/protocol/conformance/`). The retry cases need nothing; the claim and
+lifecycle cases need a MongoDB and are skipped without one:
+
+```bash
+docker run -d --rm --name fw-agent-conformance-go -p 127.0.0.1:28001:27017 mongo:7
+FW_AGENT_TEST_MONGO_URL=mongodb://127.0.0.1:28001 go test ./...
+docker stop fw-agent-conformance-go
+```
+
+Use Go 1.21 or newer (CI uses 1.21): older toolchains do not read the
+`//go:build` lines in the driver's dependencies.
 
 ## Protocol Reference
 

@@ -50,6 +50,7 @@ export {
   TaskStateFailed,
   TaskStateIgnored,
   TaskStateCanceled,
+  TaskStateDeadLetter,
   StepStateEventTransmit,
   StepStateCreated,
   StepStateStatementError,
@@ -58,6 +59,7 @@ export {
   ServerStateRunning,
   ServerStateShutdown,
   ServerStateError,
+  ServerStateQuarantine,
   StepLogLevelInfo,
   StepLogLevelWarning,
   StepLogLevelError,
@@ -66,6 +68,11 @@ export {
   StepLogSourceHandler,
   ResumeTaskName,
   ExecuteTaskName,
+  ProtocolVersion,
+  LeaseMs,
+  LeaseReclaimScanMs,
+  DefaultMaxRetries,
+  retryBackoffMs,
 } from "./protocol";
 
 // Configuration
@@ -90,7 +97,13 @@ export {
 } from "./models";
 
 // MongoDB operations
-export { MongoOps } from "./mongo-ops";
+export { MongoOps, FailTransition, failTransition } from "./mongo-ops";
+
+// Measured capacity (resource-aware claim routing)
+export { capacity, availableMemoryGb, claimResources, liveFree } from "./resources";
+
+// Errors
+export { PermanentError } from "./errors";
 
 // Server registration
 export { ServerRegistration } from "./server-registration";

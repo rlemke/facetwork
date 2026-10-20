@@ -19,7 +19,11 @@ case class TaskDocument(
     error: Option[Document],
     taskListName: String,
     dataType: String,
-    data: Option[Document]
+    data: Option[Document],
+    // Protocol v1.2 claim fields
+    serverId: String = "",
+    retryCount: Int = 0,
+    maxRetries: Int = 5
 )
 
 object TaskDocument:
@@ -34,13 +38,23 @@ object TaskDocument:
       flowId = underlying.getString("flow_id"),
       stepId = underlying.getString("step_id"),
       state = underlying.getString("state"),
-      created = underlying.getLong("created"),
-      updated = underlying.getLong("updated"),
+      created = asLong(underlying.get("created")),
+      updated = asLong(underlying.get("updated")),
       error = optionalSubDoc(doc, "error"),
       taskListName = underlying.getString("task_list_name"),
       dataType = underlying.getString("data_type"),
-      data = optionalSubDoc(doc, "data")
+      data = optionalSubDoc(doc, "data"),
+      serverId = Option(underlying.getString("server_id")).getOrElse(""),
+      retryCount = asLong(underlying.get("retry_count")).toInt,
+      maxRetries = underlying.get("max_retries") match
+        case n: Number => n.intValue()
+        case _         => 5
     )
+
+  /** BSON numbers may be int32 or int64; getLong throws on an Int32. 0 if absent. */
+  private def asLong(v: Any): Long = v match
+    case n: Number => n.longValue()
+    case _         => 0L
 
   private def optionalSubDoc(doc: Document, key: String): Option[Document] =
     doc.get[BsonValue](key) match
@@ -63,5 +77,8 @@ object TaskDocument:
         "error" -> task.error.map(_.toBsonDocument).getOrElse(BsonNull()),
         "task_list_name" -> task.taskListName,
         "data_type" -> task.dataType,
-        "data" -> task.data.map(_.toBsonDocument).getOrElse(BsonNull())
+        "data" -> task.data.map(_.toBsonDocument).getOrElse(BsonNull()),
+        "server_id" -> task.serverId,
+        "retry_count" -> task.retryCount,
+        "max_retries" -> task.maxRetries
       )

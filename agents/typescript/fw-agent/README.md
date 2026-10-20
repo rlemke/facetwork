@@ -42,6 +42,27 @@ process.on("SIGINT", async () => {
 });
 ```
 
+## Retries, leases and cancellation (protocol v1.2)
+
+The poller follows the full claim contract in
+[`../../protocol/constants.json`](../../protocol/constants.json): it records this
+server on the task, holds a lease and renews it every heartbeat, offers the
+memory free on this host (so a task with a `requires(memory_gb=…)` floor waits
+for a host that has it), and skips retries still cooling down.
+
+A handler can use three more things from `params`:
+
+| Key | Type | Use |
+|---|---|---|
+| `_task_heartbeat` | `(progressPct?: number, message?: string) => Promise<void>` | renews the lease and records progress; call it from long loops |
+| `_is_cancelled` | `() => Promise<boolean>` | true once the run was terminated, the task finished elsewhere, or it was reclaimed — return early |
+| `_step_log` | `(message: string, level?: string) => Promise<void>` | a line on the dashboard step |
+
+Throw `PermanentError` (exported) when retrying cannot help (bad input): the
+task is dead-lettered at once and the step fails. Any other error retries with
+exponential backoff (5 s doubling, capped at 5 min) until `max_retries`
+(default 5), then dead-letters.
+
 ## Configuration
 
 Configuration is resolved in the following order: explicit path, `FW_CONFIG`
@@ -72,6 +93,16 @@ npm install
 npm run build
 npm test
 npm run lint
+```
+
+`src/conformance.test.ts` runs the protocol's shared cases
+(`agents/protocol/conformance/`). The retry cases need nothing; the claim and
+lifecycle cases need a MongoDB and are skipped without one:
+
+```bash
+docker run -d --rm --name fw-agent-conformance-ts -p 127.0.0.1:28002:27017 mongo:7
+FW_AGENT_TEST_MONGO_URL=mongodb://127.0.0.1:28002 npm test
+docker stop fw-agent-conformance-ts
 ```
 
 ## Protocol Reference
