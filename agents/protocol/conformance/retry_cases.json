@@ -1,0 +1,11 @@
+{
+  "description": "fail_task's transition. Input: the task's retry_count/max_retries before the failure and whether the error was permanent. Expect the state written, the retry_count written, and the backoff (next_retry_after - now) for a retry. Python: BaseRunner._transition_for_retry(set_next_retry_after=True).",
+  "cases": [
+    {"id": "first-failure", "retry_count": 0, "max_retries": 5, "permanent": false, "state": "pending", "retry_count_after": 1, "backoff_ms": 10000},
+    {"id": "third-failure", "retry_count": 2, "max_retries": 5, "permanent": false, "state": "pending", "retry_count_after": 3, "backoff_ms": 40000},
+    {"id": "backoff-capped", "retry_count": 8, "max_retries": 0, "permanent": false, "state": "pending", "retry_count_after": 9, "backoff_ms": 300000},
+    {"id": "budget-spent", "retry_count": 4, "max_retries": 5, "permanent": false, "state": "dead_letter", "retry_count_after": 5},
+    {"id": "unlimited", "retry_count": 40, "max_retries": 0, "permanent": false, "state": "pending", "retry_count_after": 41, "backoff_ms": 300000},
+    {"id": "permanent", "retry_count": 0, "max_retries": 5, "permanent": true, "state": "dead_letter", "retry_count_after": 0}
+  ]
+}

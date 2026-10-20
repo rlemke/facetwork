@@ -57,6 +57,10 @@ public class AgentPoller implements AutoCloseable {
     private ExecutorService executor;
     private Semaphore semaphore;
 
+    // Tasks this server is running, for lease renewal; value = still owned.
+    private final Map<String, AtomicBoolean> activeTasks = new ConcurrentHashMap<>();
+    private volatile long lastReclaimScanMs = 0;
+
     public AgentPoller(AgentPollerConfig config) {
         this.config = config;
         this.serverId = UUID.randomUUID().toString();
@@ -211,7 +215,7 @@ public class AgentPoller implements AutoCloseable {
             return;
         }
 
-        Optional<TaskDocument> taskOpt = ops.claimTask(handlerNames, config.taskList());
+        Optional<TaskDocument> taskOpt = claimNext(handlerNames);
         taskOpt.ifPresent(this::processTask);
     }
 
@@ -228,7 +232,7 @@ public class AgentPoller implements AutoCloseable {
             }
 
             // Try to claim a task
-            Optional<TaskDocument> taskOpt = ops.claimTask(handlerNames, config.taskList());
+            Optional<TaskDocument> taskOpt = claimNext(handlerNames);
             if (taskOpt.isEmpty()) {
                 semaphore.release();
                 return;
@@ -246,6 +250,22 @@ public class AgentPoller implements AutoCloseable {
         } catch (Exception e) {
             logger.log(Level.WARNING, "Poll cycle error", e);
         }
+    }
+
+    /**
+     * One claim (protocol v1.2): records this server and a lease, offers the
+     * memory free now, and every {@link Protocol#LEASE_RECLAIM_SCAN_MS} also
+     * looks for a running task whose lease expired.
+     */
+    private Optional<TaskDocument> claimNext(List<String> handlerNames) {
+        long now = System.currentTimeMillis();
+        boolean reclaim = now - lastReclaimScanMs >= Protocol.LEASE_RECLAIM_SCAN_MS;
+        Optional<TaskDocument> task = ops.claimTask(handlerNames, List.of(config.taskList()),
+                serverId, Resources.claimResources(), reclaim);
+        if (task.isEmpty() && reclaim) {
+            lastReclaimScanMs = now;
+        }
+        return task;
     }
 
     private void emitStepLog(String stepId, String workflowId, String facetName,
@@ -271,9 +291,12 @@ public class AgentPoller implements AutoCloseable {
                     Protocol.STEP_LOG_LEVEL_ERROR,
                     "Handler error: No handler registered for: " + task.name());
             logger.warning("No handler for task: " + task.name());
-            ops.markTaskFailed(task, "no handler registered");
+            ops.failTask(task, serverId, "no handler registered", false);
             return;
         }
+
+        AtomicBoolean owned = new AtomicBoolean(true);
+        activeTasks.put(task.uuid(), owned);
 
         try {
             // 3. Dispatching handler
@@ -313,21 +336,62 @@ public class AgentPoller implements AutoCloseable {
             };
             params.put("_update_step", updateStepCb);
 
+            // Inject _task_heartbeat(progressPct, progressMessage): renews the
+            // lease now (the heartbeat thread also renews it every interval).
+            java.util.function.BiConsumer<Integer, String> heartbeatCb = (pct, msg) -> {
+                try {
+                    if (!ops.renewLease(task.uuid(), serverId, pct, msg)) {
+                        owned.set(false);
+                    }
+                } catch (Exception e) { /* best-effort */ }
+            };
+            params.put("_task_heartbeat", heartbeatCb);
+
+            // Inject _is_cancelled(): true once the task was canceled, finished
+            // by someone else, or reclaimed. A long handler should check it at
+            // batch boundaries and return early.
+            java.util.function.Supplier<Boolean> cancelledCb = () -> {
+                if (!owned.get()) {
+                    return true;
+                }
+                try {
+                    return ops.cancellationReason(task.uuid(), serverId).isPresent();
+                } catch (Exception e) {
+                    return false;
+                }
+            };
+            params.put("_is_cancelled", cancelledCb);
+
             // Invoke handler
             Map<String, Object> result = handler.handle(params);
 
             long durationMs = System.currentTimeMillis() - dispatchStart;
+
+            // Another execution may own this task now (reclaimed after a lost
+            // lease, canceled, or finished by the timeout watchdog): write nothing.
+            Optional<String> stop = ops.cancellationReason(task.uuid(), serverId);
+            if (stop.isPresent()) {
+                emitStepLog(task.stepId(), task.workflowId(), task.name(),
+                        Protocol.STEP_LOG_LEVEL_WARNING,
+                        "Handler result discarded: " + stop.get());
+                logger.warning("Discarding result of " + task.name() + " " + task.uuid()
+                        + ": " + stop.get());
+                return;
+            }
 
             // Write returns to step
             if (result != null && !result.isEmpty()) {
                 ops.writeStepReturns(task.stepId(), result);
             }
 
-            // Insert resume task for Python RunnerService
+            // Complete (ownership-gated), then signal the Python RunnerService.
+            if (!ops.completeTask(task, serverId)) {
+                emitStepLog(task.stepId(), task.workflowId(), task.name(),
+                        Protocol.STEP_LOG_LEVEL_WARNING,
+                        "Handler result discarded: task was reclaimed before completion");
+                return;
+            }
             ops.insertResumeTask(task.stepId(), task.workflowId(), task.taskListName(), task.name());
-
-            // Mark task completed
-            ops.markTaskCompleted(task);
 
             // 4. Handler completed
             emitStepLog(task.stepId(), task.workflowId(), task.name(),
@@ -335,11 +399,20 @@ public class AgentPoller implements AutoCloseable {
                     "Handler completed: " + task.name() + " (" + durationMs + "ms)");
 
         } catch (Exception e) {
-            // 5. Handler error
+            // 5. Handler error: retry with backoff, or dead-letter (never 'failed').
+            boolean permanent = e instanceof PermanentError;
+            Optional<MongoOps.FailTransition> t = ops.failTask(task, serverId, e.getMessage(), permanent);
+            String what = t.map(x -> x.deadLettered()
+                            ? (permanent ? "dead-lettered (permanent)"
+                                         : "dead-lettered after " + x.retryCount() + " attempts")
+                            : "retry " + x.retryCount() + "/" + task.maxRetries() + " in "
+                              + (x.nextRetryAfter() - System.currentTimeMillis()) / 1000 + "s")
+                    .orElse("not recorded: task no longer held by this server");
             emitStepLog(task.stepId(), task.workflowId(), task.name(),
-                    Protocol.STEP_LOG_LEVEL_ERROR, "Handler error: " + e.getMessage());
-            logger.log(Level.WARNING, "Handler error for " + task.name(), e);
-            ops.markTaskFailed(task, e.getMessage());
+                    Protocol.STEP_LOG_LEVEL_ERROR, "Handler error (" + what + "): " + e.getMessage());
+            logger.log(Level.WARNING, "Handler error for " + task.name() + " (" + what + ")", e);
+        } finally {
+            activeTasks.remove(task.uuid());
         }
     }
 
@@ -362,11 +435,23 @@ public class AgentPoller implements AutoCloseable {
 
     private void heartbeat() {
         try {
-            if (registration != null) {
-                registration.heartbeat(serverId);
+            if (registration != null && !registration.heartbeat(serverId) && running.get()) {
+                logger.warning("Server record " + serverId + " missing or marked shutdown"
+                        + " -- registering again");
+                registration.register(serverId, config, registeredHandlers());
             }
         } catch (Exception e) {
             logger.log(Level.WARNING, "Heartbeat error", e);
+        }
+        // Renew the lease of every task still running here.
+        for (Map.Entry<String, AtomicBoolean> entry : activeTasks.entrySet()) {
+            try {
+                if (!ops.renewLease(entry.getKey(), serverId, null, null)) {
+                    entry.getValue().set(false);
+                }
+            } catch (Exception e) {
+                logger.log(Level.FINE, "Lease renewal failed for " + entry.getKey(), e);
+            }
         }
     }
 }

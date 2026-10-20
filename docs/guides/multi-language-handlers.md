@@ -43,6 +43,14 @@ whether it's Python, Java, or Go (`agents/protocol/README.md`,
 6. **Insert an `fw:resume` task.** The Python `RunnerService` picks it up,
    validates the transition, and advances the workflow.
 
+Since protocol **v1.2** (2026-10-20) the claim also records the server and a
+lease (renewed while the handler runs), honours retry cooldowns and `requires`
+floors; completion is gated on still holding the task; and a handler error
+retries with backoff or dead-letters — never `failed`, which the runtime would
+silently recreate at retry 0. The operations are in `constants.json`, and
+`agents/protocol/conformance/` holds the cases every library must pass. Java
+implements v1.2; Scala, Go and TypeScript are still on v1.1.
+
 The agent never runs the evaluator or touches workflow state — it just does its
 facet's work and signals resume. Everything else is the Python runtime's job.
 

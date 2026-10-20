@@ -17,6 +17,7 @@ package afl.agent;
 import afl.agent.model.ServerDocument;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import org.bson.Document;
@@ -58,7 +59,9 @@ public class ServerRegistration {
                 handlers,
                 handlers,
                 null,
-                Protocol.SERVER_STATE_RUNNING
+                Protocol.SERVER_STATE_RUNNING,
+                config.taskList(),
+                Resources.capacity()
         );
 
         collection.updateOne(
@@ -84,15 +87,26 @@ public class ServerRegistration {
     }
 
     /**
-     * Updates the server's ping time.
+     * Pings the server record (protocol {@code heartbeat_server}) and publishes
+     * the memory available now as {@code free_resources}. Matches only a
+     * non-terminal record, so a quarantined server keeps pinging without
+     * becoming {@code running} again.
+     *
+     * @return false when the record is gone or marked shutdown (a reaper false
+     *         positive); the caller must register again
      */
-    public void heartbeat(String serverId) {
+    public boolean heartbeat(String serverId) {
         MongoCollection<Document> collection = db.getCollection(Protocol.COLLECTION_SERVERS);
-
-        collection.updateOne(
-                eq("uuid", serverId),
-                Updates.set("ping_time", MongoOps.nowMillis())
-        );
+        long now = MongoOps.nowMillis();
+        Document set = new Document("ping_time", now);
+        java.util.Map<String, Object> free = Resources.liveFree();
+        if (free != null) {
+            set.append("free_resources", new Document(free).append("at", now));
+        }
+        return collection.updateOne(
+                Filters.and(eq("uuid", serverId), Filters.nin("state", Protocol.SERVER_STATE_SHUTDOWN)),
+                new Document("$set", set)
+        ).getMatchedCount() > 0;
     }
 
     /**

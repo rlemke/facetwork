@@ -8,14 +8,19 @@ This is an **FFL Agent** — a service that processes event facets for the Facet
 
 When an FFL workflow reaches an **event facet**, the runtime creates a **task** in MongoDB and pauses the step at `EventTransmit` state. This agent picks up that task and processes it.
 
-### Agent lifecycle (6 steps)
+### Agent lifecycle (protocol v1.2)
 
-1. **Claim** a pending task atomically from the `tasks` collection (`findOneAndUpdate`: pending → running)
-2. **Read** the step's input parameters from the `steps` collection
-3. **Perform** the work (API calls, data processing, computation, etc.)
-4. **Write** return attributes back to the step document
-5. **Mark** the event task as `completed`
-6. **Insert** an `fw:resume` task so the Python RunnerService resumes the workflow
+1. **Claim** a pending task atomically (`findOneAndUpdate`: pending → running), recording this server's id and a lease, and skipping tasks in their retry cooldown, tasks needing a script environment or FFL feature, and tasks whose `requires` floor exceeds the memory free here
+2. **Renew the lease** every heartbeat while the handler runs
+3. **Read** the step's input parameters from the `steps` collection and **perform** the work
+4. **Check cancellation** — stop, writing nothing, if the task was canceled, already finished, or reclaimed by another server
+5. **Write** return attributes back to the step document
+6. **Mark** the event task `completed`, only while this server still holds it
+7. **Insert** an `fw:resume` task, only if step 6 matched
+
+On a handler error: back to `pending` with exponential backoff while retry budget remains, else `dead_letter`. ⚠️ Never write `failed` — the runtime then recreates the task at retry 0 and it retries forever.
+
+The exact operations are in `constants.json` (`mongodb_operations`), and `conformance/claim_cases.json` + `conformance/retry_cases.json` are the cases every implementation must pass. The operations below are a sketch; where they differ, `constants.json` wins.
 
 The Python RunnerService polls for `fw:resume` tasks, validates the step's return attributes, transitions the step past `EventTransmit`, and advances the workflow.
 
@@ -133,9 +138,13 @@ db.tasks.findOneAndUpdate(
     name: { $in: ["ns.MyEvent", "ns.OtherEvent"] },
     task_list_name: "default"
   },
-  { $set: { state: "running", updated: Date.now() } },
+  { $set: { state: "running", updated: Date.now(),
+            server_id: SERVER_ID, lease_expires: Date.now() + 960000 } },
   { returnDocument: "after" }
 )
+// Abbreviated: the full filter also excludes cooled-down retries, tasks with an
+// environment_hash or required_features, and tasks whose `requires` exceeds
+// this host's free memory. See constants.json mongodb_operations.claim_task.
 ```
 
 ### 2. Read step params
@@ -169,19 +178,27 @@ db.steps.updateOne(
 ### 4. Mark task completed
 
 ```javascript
-db.tasks.replaceOne(
-  { uuid: task.uuid },
-  { ...task, state: "completed", updated: Date.now() }
+db.tasks.updateOne(
+  { uuid: task.uuid, state: "running", server_id: SERVER_ID },  // ownership-gated
+  { $set: { state: "completed", updated: Date.now() } }
 )
+// matchedCount 0 = reclaimed or terminated: do NOT insert the resume task.
 ```
 
-### 5. Mark task failed (on error)
+### 5. Record a failure (on error) — retry or dead-letter, never `failed`
 
 ```javascript
-db.tasks.replaceOne(
-  { uuid: task.uuid },
-  { ...task, state: "failed", updated: Date.now(), error: { message: "error details" } }
-)
+retry = (task.retry_count || 0) + 1
+max = task.max_retries ?? 5
+if (permanent || (max > 0 && retry >= max)) {
+  db.tasks.updateOne({ uuid: task.uuid, state: "running", server_id: SERVER_ID },
+    { $set: { state: "dead_letter", updated: now, retry_count: permanent ? task.retry_count : retry,
+              error: { message: msg } } })
+} else {
+  db.tasks.updateOne({ uuid: task.uuid, state: "running", server_id: SERVER_ID },
+    { $set: { state: "pending", server_id: "", updated: now, retry_count: retry,
+              next_retry_after: now + Math.min(5000 * 2 ** retry, 300000), error: { message: msg } } })
+}
 ```
 
 ### 6. Insert fw:resume task
@@ -308,7 +325,7 @@ poller.start()
 
 ### Other languages
 
-Implement the 6-step protocol above using any MongoDB driver. Copy `constants.json` into your project for the exact field names and state values.
+Implement the protocol above using any MongoDB driver. Copy `constants.json` into your project for the exact field names and state values.
 
 ---
 
@@ -321,7 +338,7 @@ Agents should register themselves in the `servers` collection so the dashboard a
 ## How Claude should help with this project
 
 - Implement handlers for specific event facet names
-- Follow the 6-step protocol exactly — the field names and state strings must match
+- Follow the protocol exactly, and run the `conformance/` cases against your implementation — the field names and state strings must match
 - Always use atomic `findOneAndUpdate` for task claiming
 - Always filter by `state: "state.EventTransmit"` when writing step returns
 - Always insert an `fw:resume` task after completing an event task

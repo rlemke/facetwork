@@ -34,8 +34,20 @@ public record TaskDocument(
         String errorMessage,
         String taskListName,
         String dataType,
-        Map<String, Object> data
+        Map<String, Object> data,
+        String serverId,
+        int retryCount,
+        int maxRetries
 ) {
+
+    /** Constructor without the v1.2 claim fields (server id, retry budget). */
+    public TaskDocument(String uuid, String name, String runnerId, String workflowId,
+                        String flowId, String stepId, String state, long created, long updated,
+                        String errorMessage, String taskListName, String dataType,
+                        Map<String, Object> data) {
+        this(uuid, name, runnerId, workflowId, flowId, stepId, state, created, updated,
+                errorMessage, taskListName, dataType, data, null, 0, 5);
+    }
 
     /**
      * Creates a TaskDocument from a MongoDB document.
@@ -63,7 +75,10 @@ public record TaskDocument(
                 errorMessage,
                 doc.getString("task_list_name"),
                 doc.getString("data_type"),
-                data
+                data,
+                doc.getString("server_id"),
+                (int) asLong(doc.get("retry_count")),
+                doc.get("max_retries") instanceof Number n ? n.intValue() : 5
         );
     }
 
@@ -102,6 +117,11 @@ public record TaskDocument(
         if (errorMessage != null) {
             doc.append("error", new Document("message", errorMessage));
         }
+        if (serverId != null) {
+            doc.append("server_id", serverId);
+        }
+        doc.append("retry_count", retryCount);
+        doc.append("max_retries", maxRetries);
 
         return doc;
     }

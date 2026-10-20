@@ -32,8 +32,18 @@ public record ServerDocument(
         List<String> topics,
         List<String> handlers,
         List<HandledStat> handled,
-        String state
+        String state,
+        String taskList,
+        java.util.Map<String, Object> resources
 ) {
+
+    /** Constructor without the v1.2 fields (task list, measured resources). */
+    public ServerDocument(String uuid, String serverGroup, String serviceName, String serverName,
+                          List<String> serverIps, long startTime, long pingTime, List<String> topics,
+                          List<String> handlers, List<HandledStat> handled, String state) {
+        this(uuid, serverGroup, serviceName, serverName, serverIps, startTime, pingTime, topics,
+                handlers, handled, state, null, null);
+    }
 
     /**
      * Converts to a MongoDB document.
@@ -49,7 +59,16 @@ public record ServerDocument(
                 .append("ping_time", pingTime)
                 .append("topics", topics)
                 .append("handlers", handlers)
-                .append("state", state);
+                .append("state", state)
+                // An agent runs no evaluator and provides no script environment.
+                .append("provided_environments", List.of())
+                .append("ast_features", List.of());
+        if (taskList != null) {
+            doc.append("task_list", taskList);
+        }
+        if (resources != null) {
+            doc.append("resources", new Document(resources));
+        }
 
         if (handled != null) {
             doc.append("handled", handled.stream()

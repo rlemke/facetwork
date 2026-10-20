@@ -404,7 +404,7 @@ class TestProtocolConstants:
         with open(constants_path) as f:
             data = json.load(f)
 
-        assert data["version"] == "1.1"
+        assert data["version"] == "1.2"
         assert "collections" in data
         assert "task_states" in data
         assert "step_states" in data

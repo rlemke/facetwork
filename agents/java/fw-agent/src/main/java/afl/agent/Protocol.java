@@ -56,6 +56,7 @@ public final class Protocol {
     public static final String SERVER_STATE_RUNNING = "running";
     public static final String SERVER_STATE_SHUTDOWN = "shutdown";
     public static final String SERVER_STATE_ERROR = "error";
+    public static final String SERVER_STATE_QUARANTINE = "quarantine";
 
     // Step log levels
     public static final String STEP_LOG_LEVEL_INFO = "info";
@@ -70,4 +71,26 @@ public final class Protocol {
     // Protocol task names
     public static final String RESUME_TASK_NAME = "fw:resume";
     public static final String EXECUTE_TASK_NAME = "fw:execute";
+
+    // Protocol version this library implements (constants.json "version")
+    public static final String PROTOCOL_VERSION = "1.2";
+
+    // Timing (constants.json "timing")
+    /** Task lease: max(5 min, 15 min execution timeout + 1 min). */
+    public static final long LEASE_MS = 960_000L;
+    /** How often to look for expired leases to take over. */
+    public static final long LEASE_RECLAIM_SCAN_MS = 30_000L;
+    /** max_retries assumed when a task document has none. */
+    public static final int DEFAULT_MAX_RETRIES = 5;
+
+    /**
+     * Delay before a failed task may be claimed again:
+     * min(5000 * 2^retryCount, 300000), retryCount counted AFTER the failure.
+     */
+    public static long retryBackoffMs(int retryCount) {
+        if (retryCount >= 6) {
+            return 300_000L;
+        }
+        return Math.min(5_000L * (1L << Math.max(0, retryCount)), 300_000L);
+    }
 }

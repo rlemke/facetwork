@@ -54,6 +54,27 @@ To stop the poller gracefully:
 Runtime.getRuntime().addShutdownHook(new Thread(poller::stop));
 ```
 
+## Retries, leases and cancellation (protocol v1.2)
+
+The poller follows the full claim contract in
+[`../../protocol/constants.json`](../../protocol/constants.json): it records this
+server on the task, holds a lease and renews it every heartbeat, offers the
+memory free on this host (so a task with a `requires(memory_gb=…)` floor waits
+for a host that has it), and skips retries still cooling down.
+
+A handler can use three more things from `params`:
+
+| Key | Type | Use |
+|---|---|---|
+| `_task_heartbeat` | `BiConsumer<Integer, String>` | `(progressPct, message)` — renews the lease and records progress; call it from long loops |
+| `_is_cancelled` | `Supplier<Boolean>` | true once the run was terminated, the task finished elsewhere, or it was reclaimed — return early |
+| `_step_log` | `BiConsumer<String, String>` | `(message, level)` — a line on the dashboard step |
+
+Throw `afl.agent.PermanentError` when retrying cannot help (bad input): the task
+is dead-lettered at once and the step fails. Any other exception retries with
+exponential backoff (5 s doubling, capped at 5 min) until `max_retries` (default
+5), then dead-letters.
+
 ## Configuration
 
 Configuration is resolved in the following order: explicit path, `FW_CONFIG`
@@ -83,6 +104,16 @@ The `afl.config.json` file format:
 mvn compile
 mvn test
 mvn package
+```
+
+`ConformanceTest` runs the protocol's shared cases (`agents/protocol/conformance/`).
+The retry cases need nothing; the claim and lifecycle cases need a MongoDB and
+are skipped without one:
+
+```bash
+docker run -d --rm --name fw-agent-conformance -p 127.0.0.1:27999:27017 mongo:7
+FW_AGENT_TEST_MONGO_URL=mongodb://127.0.0.1:27999 mvn test
+docker stop fw-agent-conformance
 ```
 
 ## Protocol Reference

@@ -1,7 +1,6 @@
 {
-  "version": "1.1",
-  "description": "AFL protocol constants for multi-language agent interoperability",
-
+  "version": "1.2",
+  "description": "Facetwork protocol constants for multi-language agent interoperability. v1.2 (2026-10-20): full claim contract (identity, lease, cooldown, capability filters), lease renewal, ownership-guarded completion, retry/dead-letter transition, cancellation, server capacity. Shared conformance cases: conformance/.",
   "collections": {
     "steps": "steps",
     "events": "events",
@@ -15,19 +14,16 @@
     "step_logs": "step_logs",
     "handler_registrations": "handler_registrations"
   },
-
   "step_log_levels": {
     "info": "info",
     "warning": "warning",
     "error": "error",
     "success": "success"
   },
-
   "step_log_sources": {
     "framework": "framework",
     "handler": "handler"
   },
-
   "task_states": {
     "pending": "pending",
     "running": "running",
@@ -37,21 +33,19 @@
     "canceled": "canceled",
     "dead_letter": "dead_letter"
   },
-
   "step_states": {
     "EVENT_TRANSMIT": "state.EventTransmit",
     "CREATED": "state.statement.Created",
     "STATEMENT_ERROR": "state.statement.Error",
     "COMPLETED": "state.statement.Complete"
   },
-
   "server_states": {
     "startup": "startup",
     "running": "running",
     "shutdown": "shutdown",
-    "error": "error"
+    "error": "error",
+    "quarantine": "quarantine"
   },
-
   "protocol_tasks": {
     "resume": {
       "name": "fw:resume",
@@ -96,7 +90,6 @@
       }
     }
   },
-
   "task_document": {
     "uuid": "string — unique task ID",
     "name": "string — task name (e.g. event facet name or 'fw:resume')",
@@ -110,9 +103,20 @@
     "error": "object|null — { message: string } on failure",
     "task_list_name": "string — task list for routing (default: 'default')",
     "data_type": "string — optional type discriminator",
-    "data": "object|null — task-specific payload"
+    "data": "object|null — task-specific payload",
+    "server_id": "string — uuid of the server (agent process) that holds the task; '' when pending",
+    "lease_expires": "int — ms; a running task whose lease is in the past may be reclaimed by another server",
+    "task_heartbeat": "int — ms; last handler-level heartbeat",
+    "retry_count": "int — attempts that failed so far",
+    "max_retries": "int — dead-letter once retry_count reaches this (0 = unlimited; absent = 5)",
+    "next_retry_after": "int — ms; a pending task is not claimable before this (0/absent = now)",
+    "timeout_ms": "int — optional per-task execution timeout",
+    "kind": "string — '' for handler tasks, 'script' for env-routed script tasks (agents never claim these)",
+    "environment_hash": "string — script environment the task needs ('' = none)",
+    "required_features": "array[string] — FFL constructs the workflow needs (agents run no evaluator, so they decline any task that lists one)",
+    "requires": "object — resource floor, e.g. { memory_gb: 12, dataset_planet_gb: 80 }",
+    "requires_dims": "array[string] — the keys of `requires`, kept for the subset filter"
   },
-
   "step_document": {
     "uuid": "string — unique step ID",
     "workflow_id": "string — parent workflow UUID",
@@ -127,7 +131,6 @@
       "returns": "object — { name: { name, value, type_hint } }"
     }
   },
-
   "server_document": {
     "uuid": "string — unique server ID",
     "server_group": "string — logical group name",
@@ -139,11 +142,14 @@
     "topics": "array[string] — event facet names this server handles",
     "handlers": "array[string] — registered handler names",
     "handled": "array[{ handler, handled, not_handled }] — stats",
-    "state": "string — one of server_states"
+    "state": "string — one of server_states",
+    "task_list": "string — the task list this server was started for",
+    "resources": "object — MEASURED capacity { memory_gb, cpus, ... }; static per process. A dimension that cannot be measured is OMITTED, never guessed",
+    "free_resources": "object — { memory_gb, at } published on every heartbeat: memory available NOW",
+    "provided_environments": "array[string] — script environments (agents: [])",
+    "ast_features": "array[string] — FFL constructs this server executes (agents: [])"
   },
-
   "timestamp_format": "int — milliseconds since Unix epoch (e.g. 1706745600000)",
-
   "config": {
     "file_name": "afl.config.json",
     "search_order": [
@@ -161,21 +167,242 @@
       "FW_MONGODB_DATABASE": "afl"
     }
   },
-
   "mongodb_operations": {
     "claim_task": {
-      "description": "Atomically transition a pending task to running",
+      "description": "Claim one pending task. ALL clauses are required: an agent that omits one claims work the runtime would have withheld (a cooled-down retry, a task needing more memory than this host has free, a workflow using a construct the agent cannot honour). Then, at most every lease_reclaim_scan_ms, try reclaim_expired_task.",
       "collection": "tasks",
       "operation": "findOneAndUpdate",
       "filter": {
         "state": "pending",
-        "name": { "$in": ["<task_names>"] },
-        "task_list_name": "<task_list>"
+        "task_list_name": "<task_list> | { $in: [<task_lists>] }",
+        "$and": [
+          {
+            "$or": [
+              {
+                "name": {
+                  "$in": [
+                    "<task_names>"
+                  ]
+                }
+              },
+              {
+                "name": {
+                  "$regex": "^<escaped task_name>:"
+                }
+              }
+            ]
+          },
+          {
+            "$or": [
+              {
+                "next_retry_after": {
+                  "$exists": false
+                }
+              },
+              {
+                "next_retry_after": 0
+              },
+              {
+                "next_retry_after": {
+                  "$lte": "<now_ms>"
+                }
+              }
+            ]
+          },
+          {
+            "$or": [
+              {
+                "environment_hash": {
+                  "$exists": false
+                }
+              },
+              {
+                "environment_hash": ""
+              }
+            ]
+          },
+          {
+            "$or": [
+              {
+                "required_features": {
+                  "$exists": false
+                }
+              },
+              {
+                "required_features": []
+              }
+            ]
+          },
+          {
+            "$or": [
+              {
+                "requires": {
+                  "$exists": false
+                }
+              },
+              {
+                "requires": {}
+              },
+              {
+                "$and": [
+                  {
+                    "requires_dims": {
+                      "$not": {
+                        "$elemMatch": {
+                          "$nin": [
+                            "<each dimension this server measured>"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$or": [
+                      {
+                        "requires.<dim>": {
+                          "$exists": false
+                        }
+                      },
+                      {
+                        "requires.<dim>": {
+                          "$lte": "<offered value of dim>"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "offered_resources": "measured capacity, with memory_gb replaced by min(capacity, memory available now). One `requires.<dim>` clause per measured dimension. A dimension the task names that the server did not measure DECLINES the claim.",
+      "update": {
+        "$set": {
+          "state": "running",
+          "updated": "<now_ms>",
+          "server_id": "<server_id>",
+          "lease_expires": "<now_ms + lease_ms>"
+        }
+      },
+      "options": {
+        "returnDocument": "after"
+      }
+    },
+    "reclaim_expired_task": {
+      "description": "Take over a running task whose holder stopped renewing its lease. It is a RETRY, so retry_count is incremented, and only while budget remains (an exhausted one is left to the runtime's reaper, which dead-letters it).",
+      "collection": "tasks",
+      "operation": "findOneAndUpdate",
+      "filter": {
+        "state": "running",
+        "task_list_name": "<task_list> | { $in: [<task_lists>] }",
+        "lease_expires": {
+          "$lt": "<now_ms>",
+          "$gt": 0
+        },
+        "$and": [
+          {
+            "$or": [
+              {
+                "name": {
+                  "$in": [
+                    "<task_names>"
+                  ]
+                }
+              },
+              {
+                "name": {
+                  "$regex": "^<escaped task_name>:"
+                }
+              }
+            ]
+          },
+          {
+            "$or": [
+              {
+                "environment_hash": {
+                  "$exists": false
+                }
+              },
+              {
+                "environment_hash": ""
+              }
+            ]
+          },
+          {
+            "$or": [
+              {
+                "max_retries": {
+                  "$lte": 0
+                }
+              },
+              {
+                "$expr": {
+                  "$lt": [
+                    {
+                      "$ifNull": [
+                        "$retry_count",
+                        0
+                      ]
+                    },
+                    {
+                      "$ifNull": [
+                        "$max_retries",
+                        5
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "update": {
-        "$set": { "state": "running", "updated": "<now_ms>" }
+        "$set": {
+          "state": "running",
+          "updated": "<now_ms>",
+          "server_id": "<server_id>",
+          "lease_expires": "<now_ms + lease_ms>"
+        },
+        "$inc": {
+          "retry_count": 1
+        }
       },
-      "options": { "returnDocument": "after" }
+      "options": {
+        "returnDocument": "after"
+      }
+    },
+    "renew_task_lease": {
+      "description": "While a handler runs, renew every heartbeat (and on progress). Ownership-gated: a server whose task was reclaimed must not extend the NEW holder's lease.",
+      "collection": "tasks",
+      "operation": "updateOne",
+      "filter": {
+        "uuid": "<task_id>",
+        "state": "running",
+        "server_id": "<server_id>"
+      },
+      "update": {
+        "$set": {
+          "task_heartbeat": "<now_ms>",
+          "lease_expires": "<now_ms + lease_ms>",
+          "progress_pct": "<optional 0-100>",
+          "progress_message": "<optional>"
+        }
+      }
+    },
+    "check_cancellation": {
+      "description": "Why an in-flight execution should stop, or none. Stop (writing nothing) when: the task is gone; its state is canceled or already terminal (completed/failed/dead_letter/ignored — e.g. the runtime's timeout watchdog); or server_id is no longer this server (reclaimed). Check before writing step returns.",
+      "collection": "tasks",
+      "operation": "findOne",
+      "filter": {
+        "uuid": "<task_id>"
+      },
+      "projection": {
+        "state": 1,
+        "server_id": 1,
+        "_id": 0
+      }
     },
     "update_step_returns": {
       "description": "Write return attributes to a step at EVENT_TRANSMIT",
@@ -191,6 +418,115 @@
             "name": "<name>",
             "value": "<value>",
             "type_hint": "<type>"
+          }
+        }
+      }
+    },
+    "complete_task": {
+      "description": "Ownership-gated. Insert the resume task ONLY if this matched one document; matched 0 means the task was reclaimed or terminated and another execution owns the outcome.",
+      "collection": "tasks",
+      "operation": "updateOne",
+      "filter": {
+        "uuid": "<task_id>",
+        "state": "running",
+        "server_id": "<server_id>"
+      },
+      "update": {
+        "$set": {
+          "state": "completed",
+          "updated": "<now_ms>"
+        }
+      }
+    },
+    "fail_task": {
+      "description": "Handler raised. Ownership-gated like complete_task. Transition: permanent error -> dead_letter, retry_count unchanged. Otherwise retry_count += 1; if max_retries > 0 and retry_count >= max_retries -> dead_letter; else pending, server_id '', next_retry_after per timing.retry_backoff, error kept. Never write state 'failed' for a handler error: the runtime's stuck-step sweep sees no active and no dead-lettered task and creates a FRESH task with retry_count 0, so the failure retries forever, unbounded. A dead_letter task makes the sweep fail the step (catch blocks run).",
+      "collection": "tasks",
+      "operation": "updateOne",
+      "filter": {
+        "uuid": "<task_id>",
+        "state": "running",
+        "server_id": "<server_id>"
+      },
+      "update_retry": {
+        "$set": {
+          "state": "pending",
+          "server_id": "",
+          "updated": "<now_ms>",
+          "next_retry_after": "<now_ms + backoff>",
+          "error": {
+            "message": "<msg>"
+          }
+        },
+        "$inc": {
+          "retry_count": 1
+        }
+      },
+      "update_dead_letter": {
+        "$set": {
+          "state": "dead_letter",
+          "updated": "<now_ms>",
+          "error": {
+            "message": "<msg>",
+            "permanent": "<bool>"
+          }
+        },
+        "$inc": {
+          "retry_count": "<1, or 0 when permanent>"
+        }
+      }
+    },
+    "create_resume_task": {
+      "description": "After complete_task matched. task_list_name: the event task's own list (Python runners poll their namespaces plus 'default').",
+      "collection": "tasks",
+      "operation": "insertOne",
+      "document": {
+        "uuid": "<generate UUID>",
+        "name": "fw:resume:<facet_name>",
+        "runner_id": "",
+        "workflow_id": "<workflow_id>",
+        "flow_id": "",
+        "step_id": "<step_id>",
+        "state": "pending",
+        "created": "<now_ms>",
+        "updated": "<now_ms>",
+        "error": null,
+        "task_list_name": "<event task's task_list_name>",
+        "data_type": "resume",
+        "data": {
+          "step_id": "<step_id>",
+          "workflow_id": "<workflow_id>"
+        }
+      }
+    },
+    "register_server": {
+      "description": "Upsert the server record at start, and again whenever heartbeat_server matches 0 (the record was pruned or marked shutdown by a reaper false positive).",
+      "collection": "servers",
+      "operation": "updateOne (upsert)",
+      "filter": {
+        "uuid": "<server_id>"
+      },
+      "update": {
+        "$set": "<server_document, including resources and task_list>"
+      }
+    },
+    "heartbeat_server": {
+      "description": "Every server_heartbeat_ms. Matches only a non-terminal record, so a quarantined server keeps pinging without resurrecting itself. matched 0 -> register_server again.",
+      "collection": "servers",
+      "operation": "updateOne",
+      "filter": {
+        "uuid": "<server_id>",
+        "state": {
+          "$nin": [
+            "shutdown"
+          ]
+        }
+      },
+      "update": {
+        "$set": {
+          "ping_time": "<now_ms>",
+          "free_resources": {
+            "memory_gb": "<available now>",
+            "at": "<now_ms>"
           }
         }
       }
@@ -211,29 +547,26 @@
         "details": {},
         "time": "<now_ms>"
       }
-    },
-    "create_resume_task": {
-      "description": "Insert an fw:resume task so the Python RunnerService resumes the workflow",
-      "collection": "tasks",
-      "operation": "insertOne",
-      "document": {
-        "uuid": "<generate UUID>",
-        "name": "fw:resume:<facet_name>",
-        "runner_id": "",
-        "workflow_id": "<workflow_id>",
-        "flow_id": "",
-        "step_id": "<step_id>",
-        "state": "pending",
-        "created": "<now_ms>",
-        "updated": "<now_ms>",
-        "error": null,
-        "task_list_name": "default",
-        "data_type": "resume",
-        "data": {
-          "step_id": "<step_id>",
-          "workflow_id": "<workflow_id>"
-        }
-      }
     }
-  }
+  },
+  "server_states_terminal": [
+    "shutdown"
+  ],
+  "timing": {
+    "lease_ms": 960000,
+    "lease_ms_note": "max(5 min, execution timeout 15 min + 1 min). A server must renew well inside this (Python renews every heartbeat and on handler progress).",
+    "lease_reclaim_scan_ms": 30000,
+    "server_heartbeat_ms": 10000,
+    "retry_backoff": "next_retry_after = now + min(5000 * 2^retry_count, 300000)  (retry_count AFTER increment)",
+    "default_max_retries": 5
+  },
+  "agent_sequence": [
+    "claim_task (+ reclaim_expired_task, paced)",
+    "renew_task_lease every heartbeat while the handler runs",
+    "check_cancellation before writing results",
+    "update_step_returns",
+    "complete_task (ownership-gated)",
+    "create_resume_task only if complete_task matched",
+    "on handler error: fail_task (retry or dead_letter), never 'failed'"
+  ]
 }

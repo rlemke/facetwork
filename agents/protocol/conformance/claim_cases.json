@@ -1,0 +1,32 @@
+{
+  "description": "Which tasks a server may claim. Every agent library runs these against its own claim (and the Python runtime against MongoStore.claim_task) so the rule exists once, as data. Each case: insert `task`, claim as `server`, expect `claimed`. Time values given as {\"rel_ms\": N} mean now + N.",
+  "server": {
+    "task_names": ["ns.Facet"],
+    "task_lists": ["ns", "default"],
+    "resources": {"memory_gb": 8, "cpus": 4}
+  },
+  "cases": [
+    {"id": "plain", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending"}, "claimed": true},
+    {"id": "other-name", "task": {"name": "ns.Other", "task_list_name": "ns", "state": "pending"}, "claimed": false},
+    {"id": "other-list", "task": {"name": "ns.Facet", "task_list_name": "elsewhere", "state": "pending"}, "claimed": false},
+    {"id": "suffixed-name", "task": {"name": "ns.Facet:extra", "task_list_name": "ns", "state": "pending"}, "claimed": true},
+    {"id": "regex-literal", "task": {"name": "nsXFacet:extra", "task_list_name": "ns", "state": "pending"}, "claimed": false},
+    {"id": "cooldown-future", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "next_retry_after": {"rel_ms": 60000}}, "claimed": false},
+    {"id": "cooldown-past", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "next_retry_after": {"rel_ms": -1000}}, "claimed": true},
+    {"id": "cooldown-zero", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "next_retry_after": 0}, "claimed": true},
+    {"id": "memory-fits", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "requires": {"memory_gb": 6}, "requires_dims": ["memory_gb"]}, "claimed": true},
+    {"id": "memory-too-big", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "requires": {"memory_gb": 12}, "requires_dims": ["memory_gb"]}, "claimed": false},
+    {"id": "unmeasured-dimension", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "requires": {"dataset_planet_gb": 80}, "requires_dims": ["dataset_planet_gb"]}, "claimed": false},
+    {"id": "empty-requires", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "requires": {}}, "claimed": true},
+    {"id": "environment-tagged", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "environment_hash": "abc123"}, "claimed": false},
+    {"id": "environment-empty", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "environment_hash": ""}, "claimed": true},
+    {"id": "needs-feature", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "required_features": ["after"]}, "claimed": false},
+    {"id": "no-features", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "pending", "required_features": []}, "claimed": true},
+    {"id": "running-live-lease", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "running", "server_id": "someone", "lease_expires": {"rel_ms": 600000}}, "claimed": false},
+    {"id": "running-expired-lease", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "running", "server_id": "someone", "lease_expires": {"rel_ms": -1000}, "retry_count": 1, "max_retries": 5}, "claimed": true, "retry_count_after": 2},
+    {"id": "running-expired-exhausted", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "running", "server_id": "someone", "lease_expires": {"rel_ms": -1000}, "retry_count": 5, "max_retries": 5}, "claimed": false},
+    {"id": "running-expired-unlimited", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "running", "server_id": "someone", "lease_expires": {"rel_ms": -1000}, "retry_count": 50, "max_retries": 0}, "claimed": true, "retry_count_after": 51},
+    {"id": "running-no-lease", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "running", "server_id": "someone", "lease_expires": 0}, "claimed": false},
+    {"id": "completed", "task": {"name": "ns.Facet", "task_list_name": "ns", "state": "completed"}, "claimed": false}
+  ]
+}
