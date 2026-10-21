@@ -37,6 +37,18 @@ The server record carries measured `resources` and is heartbeated with
 
 The Python `RunnerService` polls for `fw:resume` tasks, calls `evaluator.continue_step()` to validate and transition the step, then calls `evaluator.resume()` to advance the workflow.
 
+## Optional: claiming through the host's claimer
+
+Where the fleet runs a per-host claimer, `FW_CLAIM_PROXY_URL` names it. An
+agent may then `POST {url}/next` with
+`{"server_id", "claims": [[names, task_lists]], "known_features": [],
+"resources", "script_environments": [], "wait_s", "kick"}` instead of running
+`claim_task` itself. The reply `{"task": uuid|null}` names a task already
+`running` under that `server_id`; re-read it and run it only if it still is.
+`POST {url}/kick` after finishing a task. If the claimer is unreachable, claim
+directly and ask again after 60 s. The Java library implements this
+(`ClaimProxy`); see `docs/reference/runtime-impl.md` §17.1.3.
+
 ## Conformance cases
 
 `conformance/claim_cases.json` (which tasks a server may claim) and

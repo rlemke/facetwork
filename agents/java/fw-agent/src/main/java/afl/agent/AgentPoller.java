@@ -19,6 +19,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +62,12 @@ public class AgentPoller implements AutoCloseable {
     private final Map<String, AtomicBoolean> activeTasks = new ConcurrentHashMap<>();
     private volatile long lastReclaimScanMs = 0;
 
+    // The host's claimer (FW_CLAIM_PROXY_URL), or null to claim directly.
+    private ClaimProxy claimProxy = ClaimProxy.fromEnvironment();
+    private volatile long proxyDownUntilMs = 0;
+    // A task finished since the last ask: follow-on work may be waiting.
+    private volatile boolean workFinished = true;
+
     public AgentPoller(AgentPollerConfig config) {
         this.config = config;
         this.serverId = UUID.randomUUID().toString();
@@ -71,6 +78,20 @@ public class AgentPoller implements AutoCloseable {
      */
     public void setMetadataProvider(java.util.function.Function<String, Map<String, Object>> provider) {
         this.metadataProvider = provider;
+    }
+
+    /**
+     * Claims through this claimer instead of polling MongoDB (null claims
+     * directly). Defaults to {@code FW_CLAIM_PROXY_URL}.
+     */
+    public void setClaimProxy(ClaimProxy proxy) {
+        this.claimProxy = proxy;
+        this.proxyDownUntilMs = 0;
+    }
+
+    /** This poller's server id (the {@code server_id} it claims under). */
+    public String serverId() {
+        return serverId;
     }
 
     /**
@@ -259,6 +280,16 @@ public class AgentPoller implements AutoCloseable {
      */
     private Optional<TaskDocument> claimNext(List<String> handlerNames) {
         long now = System.currentTimeMillis();
+        ClaimProxy proxy = claimProxy;
+        if (proxy != null && now >= proxyDownUntilMs) {
+            try {
+                return claimViaProxy(proxy, handlerNames);
+            } catch (IOException e) {
+                proxyDownUntilMs = now + Protocol.CLAIM_PROXY_RETRY_MS;
+                logger.warning("Claimer " + proxy.baseUrl() + " unreachable (" + e.getMessage()
+                        + "); claiming directly for " + Protocol.CLAIM_PROXY_RETRY_MS / 1000 + "s");
+            }
+        }
         boolean reclaim = now - lastReclaimScanMs >= Protocol.LEASE_RECLAIM_SCAN_MS;
         Optional<TaskDocument> task = ops.claimTask(handlerNames, List.of(config.taskList()),
                 serverId, Resources.claimResources(), reclaim);
@@ -266,6 +297,25 @@ public class AgentPoller implements AutoCloseable {
             lastReclaimScanMs = now;
         }
         return task;
+    }
+
+    /**
+     * Asks the host's claimer, long-polling up to {@link Protocol#CLAIM_PROXY_WAIT_S}.
+     * The claimer also does the lease-expiry reclaim scan for its waiters. A task
+     * it returns is already held by this server; it is re-read and run only if
+     * that is still true (it may have been reaped between hand-over and read).
+     */
+    private Optional<TaskDocument> claimViaProxy(ClaimProxy proxy, List<String> handlerNames)
+            throws IOException {
+        boolean kick = workFinished;
+        workFinished = false;
+        Optional<String> uid = proxy.next(serverId, handlerNames, List.of(config.taskList()),
+                Resources.claimResources(), Protocol.CLAIM_PROXY_WAIT_S, kick);
+        if (uid.isEmpty()) {
+            return Optional.empty();
+        }
+        return ops.getTask(uid.get()).filter(t -> serverId.equals(t.serverId())
+                && Protocol.TASK_STATE_RUNNING.equals(t.state()));
     }
 
     private void emitStepLog(String stepId, String workflowId, String facetName,
@@ -413,6 +463,13 @@ public class AgentPoller implements AutoCloseable {
             logger.log(Level.WARNING, "Handler error for " + task.name() + " (" + what + ")", e);
         } finally {
             activeTasks.remove(task.uuid());
+            workFinished = true;
+            ClaimProxy proxy = claimProxy;
+            if (proxy != null && System.currentTimeMillis() >= proxyDownUntilMs) {
+                // The poll thread may be inside a long-poll; the claimer itself
+                // must hear that a slot freed and follow-on work may exist.
+                proxy.kick();
+            }
         }
     }
 

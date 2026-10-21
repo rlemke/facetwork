@@ -1019,7 +1019,10 @@ off the runners entirely: one process per host polls for all of them.
 Enable per host with `fw fleet set --claimer HOST,...|all|off`; the fleet-agent
 starts `runner-claimer` there and sets `FW_CLAIM_PROXY_URL` on that host's
 runners (which recreates them). The API is JSON over HTTP so agents in other
-languages can use it; only the Python runners do so far.
+languages can use it; the Python runners and the Java `fw-agent`
+(`ClaimProxy`, used by `AgentPoller` when `FW_CLAIM_PROXY_URL` is set) do. An
+agent sends `known_features: []` and `script_environments: []`, since it runs no
+evaluator, so the claimer hands it only what its direct claim would take.
 
 **Claiming is atomic, not coordinated.** `claim_task()` is a single Mongo
 `find_one_and_update({state: pending, …}, {$set: {state: running, …}})`

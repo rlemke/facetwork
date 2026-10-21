@@ -112,6 +112,12 @@ public class MongoOps {
         return doc == null ? Optional.empty() : Optional.of(TaskDocument.fromDocument(doc));
     }
 
+    /** Reads one task by uuid, or empty when it does not exist. */
+    public Optional<TaskDocument> getTask(String taskId) {
+        Document doc = db.getCollection(Protocol.COLLECTION_TASKS).find(eq("uuid", taskId)).first();
+        return doc == null ? Optional.empty() : Optional.of(TaskDocument.fromDocument(doc));
+    }
+
     private static Object taskListFilter(List<String> taskLists) {
         return taskLists.size() == 1 ? taskLists.get(0) : new Document("$in", taskLists);
     }

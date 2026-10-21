@@ -80,6 +80,10 @@ public final class Protocol {
     public static final long LEASE_MS = 960_000L;
     /** How often to look for expired leases to take over. */
     public static final long LEASE_RECLAIM_SCAN_MS = 30_000L;
+    /** Longest a claim through the host's claimer waits for a task. */
+    public static final double CLAIM_PROXY_WAIT_S = 5.0;
+    /** After the claimer was unreachable, claim directly this long before asking it again. */
+    public static final long CLAIM_PROXY_RETRY_MS = 60_000L;
     /** max_retries assumed when a task document has none. */
     public static final int DEFAULT_MAX_RETRIES = 5;
 
