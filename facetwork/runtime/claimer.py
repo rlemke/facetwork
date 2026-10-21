@@ -95,15 +95,11 @@ class Waiter:
 def spec_accepts(waiter: Waiter, task: Any, resources: dict | None = None) -> bool:
     """Whether ``claim_any`` with this waiter's spec could have claimed ``task``.
 
-    Mirrors the filters in ``MongoStore.claim_any``: the script branch, then the
-    name branches with environment, feature and resource routing. Used to pick
-    which waiting runner receives a task the merged query returned.
+    Mirrors the filters in ``MongoStore.claim_any``: feature and resource
+    routing for every task, then the script branch (by environment) or the name
+    branches (by name and list). Used to pick which waiting runner receives a
+    task the merged query returned.
     """
-    env = getattr(task, "environment_hash", "") or ""
-    if getattr(task, "kind", "") == "script" and env and env in waiter.script_environments:
-        return True
-    if env:  # runners claim name branches with no provided_environments
-        return False
     needed = set(getattr(task, "required_features", None) or [])
     if not needed <= set(waiter.known_features or []):
         return False
@@ -112,6 +108,11 @@ def spec_accepts(waiter: Waiter, task: Any, resources: dict | None = None) -> bo
         cap = (have or {}).get(dim)
         if not isinstance(cap, (int, float)) or want > cap:
             return False
+    env = getattr(task, "environment_hash", "") or ""
+    if getattr(task, "kind", "") == "script":
+        return bool(env) and env in waiter.script_environments
+    if env:  # runners claim name branches with no provided_environments
+        return False
     return any(
         names and _name_matches(task.name, list(names)) and _list_matches(task.task_list_name, tl)
         for names, tl in waiter.claims
@@ -334,7 +335,7 @@ class Claimer:
         reserved = self.reserved_gb()
         entries: list[tuple] = []
         seen: set[str] = set()
-        scripts: set[str] = set()
+        scripts: list[tuple] = []
         for w in waiters:
             offered = dict(w.resources)
             if isinstance(offered.get("memory_gb"), (int, float)):
@@ -346,7 +347,15 @@ class Claimer:
                 if key not in seen:
                     seen.add(key)
                     entries.append((names, tl, caps))
-            scripts.update(w.script_environments)
+            if w.script_environments:
+                # Per runner, like the name entries: a script task's memory
+                # floor must be checked against THIS runner's offer, never a
+                # pooled list that any runner's environments could satisfy.
+                envs = sorted(w.script_environments)
+                key = json.dumps(["<script>", envs, caps], sort_keys=True, default=str)
+                if key not in seen:
+                    seen.add(key)
+                    scripts.append((envs, caps))
 
         now = self._clock()
         reclaim = now - self._last_reclaim_scan >= self._reclaim_scan_s
@@ -360,7 +369,7 @@ class Claimer:
             # would claim only unconstrained work, never too much.
             resources={},
             known_features=[],
-            script_environments=sorted(scripts),
+            script_claims=scripts,
             reclaim_expired=reclaim,
         )
         if task is None:

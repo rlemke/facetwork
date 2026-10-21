@@ -145,6 +145,64 @@ def test_mongo_store_matches_memory_store(requires, resources, expected, why):
     assert (got2 is not None) is expected, f"MemoryStore disagrees: {why}"
 
 
+def _script_task(requires):
+    return TaskDefinition(
+        uuid="t1",
+        name="ns.Script",
+        runner_id="r",
+        workflow_id="w",
+        flow_id="f",
+        step_id="s",
+        task_list_name="ns",
+        kind="script",
+        environment_hash="h1",
+        requires=requires,
+    )
+
+
+@pytest.mark.parametrize("requires,resources,expected,why", CASES)
+@pytest.mark.parametrize("store_kind", ["mongo", "memory"])
+def test_a_script_task_floor_is_routed_like_a_handler_task(
+    store_kind, requires, resources, expected, why
+):
+    """Script tasks are claimed by environment, not name, and that branch used
+    to skip the floor entirely. Measured 2026-10-21: three 30 GB script tasks
+    all ran at once on a host advertising 20 GB free."""
+    store = (
+        MongoStore(database_name="t_res_s", client=mongomock.MongoClient())
+        if store_kind == "mongo"
+        else MemoryStore()
+    )
+    store.save_task(_script_task(requires))
+    got = store.claim_any(
+        [(["ns.Other"], ["ns"])],
+        server_id="srv",
+        resources=resources,
+        known_features=[],
+        script_environments=["h1"],
+    )
+    assert (got is not None) is expected, f"{store_kind} claim_any disagrees: {why}"
+
+    store2 = (
+        MongoStore(database_name="t_res_s2", client=mongomock.MongoClient())
+        if store_kind == "mongo"
+        else MemoryStore()
+    )
+    store2.save_task(_script_task(requires))
+    got2 = store2.claim_script_task(["h1"], server_id="srv", resources=resources)
+    assert (got2 is not None) is expected, f"{store_kind} claim_script_task disagrees: {why}"
+
+
+def test_script_claims_use_each_entrys_own_resources():
+    """The claimer's form: one script branch per runner, under that runner's offer."""
+    store = MongoStore(database_name="t_res_s3", client=mongomock.MongoClient())
+    store.save_task(_script_task({"memory_gb": 30}))
+    small = (["h1"], {"known_features": [], "resources": {"memory_gb": 20}})
+    assert store.claim_any([], server_id="s", script_claims=[small]) is None
+    big = (["h1"], {"known_features": [], "resources": {"memory_gb": 42}})
+    assert store.claim_any([], server_id="s", script_claims=[small, big]) is not None
+
+
 def test_requires_survives_the_round_trip():
     """The field must actually persist — required_features did NOT, so the
     feature-routing filter queried a field nothing ever wrote (0 of 15,600 live

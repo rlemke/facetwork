@@ -92,6 +92,9 @@ def test_spec_accepts_mirrors_the_claim_filters():
     s = Waiter(server_id="r", claims=[], script_environments=["h1"])
     assert spec_accepts(s, _task("t", "ns.Script", kind="script", environment_hash="h1"))
     assert not spec_accepts(s, _task("t", "ns.Script", kind="script", environment_hash="h2"))
+    big = _task("t", "ns.Script", kind="script", environment_hash="h1", requires={"memory_gb": 30})
+    assert not spec_accepts(s, big)  # a script task's floor counts too
+    assert spec_accepts(s, big, {"memory_gb": 42})
 
 
 # --- routing through the claimer ----------------------------------------------
@@ -231,6 +234,36 @@ def test_the_ledger_stops_two_big_tasks_fitting_one_gap(store):
     c._last_reserve_check = -1e9
     assert c.reserved_gb() == 0.0
     assert c.cycle() is True
+
+
+def test_the_ledger_also_holds_script_tasks(store):
+    """The live case of 2026-10-21: three 30 GB script tasks, a host with 42 GB
+    free. Script tasks are claimed by environment, and that path checked no
+    floor at all, so all three started at once; now one runs and two wait."""
+    for i in range(3):
+        store.save_task(
+            _task(
+                f"s{i}",
+                "ledgertest.Hold",
+                task_list="ledgertest",
+                kind="script",
+                environment_hash="h1",
+                requires={"memory_gb": 30},
+            )
+        )
+    c = Claimer(store, min_gap_s=0.0, reserve_hold_s=600)
+    c._register()
+    for rid in ("r1", "r2", "r3"):
+        c._waiters.append(
+            Waiter(
+                server_id=rid, claims=[], script_environments=["h1"], resources={"memory_gb": 42.0}
+            )
+        )
+    assert c.cycle() is True
+    assert c.reserved_gb() == 30.0
+    assert c.cycle() is False  # offered 42 - 30 = 12
+    running = [t for t in ("s0", "s1", "s2") if store.get_task(t).state == TaskState.RUNNING]
+    assert len(running) == 1
 
 
 def test_a_reservation_expires_after_the_hold(store):

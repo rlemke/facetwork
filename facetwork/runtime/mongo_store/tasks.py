@@ -180,6 +180,7 @@ class TaskMixin(_MixinBase):
         resources: dict | None = None,
         script_environments: Sequence[str] | None = None,
         reclaim_expired: bool = True,
+        script_claims: Sequence[tuple] | None = None,
     ) -> TaskDefinition | None:
         """Claim ONE task matching any of several (names, task lists) specs.
 
@@ -197,7 +198,12 @@ class TaskMixin(_MixinBase):
         query this way: a single global capability set would let one runner's
         features or memory claim work for another that cannot run it.
 
-        ``script_environments`` adds the ``claim_script_task`` branch. Lease
+        ``script_environments`` adds the ``claim_script_task`` branch, under
+        the default capabilities; ``script_claims`` adds one such branch per
+        ``(environments, caps)`` pair, each under its own runner's features and
+        memory (the claimer's form). A script task's floor is checked exactly as
+        a handler task's: before 2026-10-21 this branch filtered on environment
+        alone, so a 30 GB script task was claimed by a runner with 20 GB free. Lease
         reclaim keeps ``claim_task``'s semantics for the name branches (script
         tasks were never lease-reclaimed) and is skipped when
         ``reclaim_expired`` is False: a lease is >= 5 min, so a caller polling
@@ -248,13 +254,21 @@ class TaskMixin(_MixinBase):
             }
             for names, tl, env_ok, feat_ok, res_ok in specs
         ]
+        scripts: list[tuple] = []
         if script_environments:
+            scripts.append((script_environments, {}))
+        scripts.extend(c for c in script_claims or [] if c and c[0])
+        for envs, overrides in scripts:
+            caps = {**default_caps, **(overrides or {})}
+            _env, feat_ok, res_ok = self._claim_capability_filters(
+                None, caps["known_features"], caps["resources"]
+            )
             pending_branches.append(
                 {
                     "state": "pending",
                     "kind": "script",
-                    "environment_hash": {"$in": list(script_environments)},
-                    "$and": [retry_eligible],
+                    "environment_hash": {"$in": list(envs)},
+                    "$and": [retry_eligible, feat_ok, res_ok],
                 }
             )
         if not pending_branches:
@@ -707,6 +721,8 @@ class TaskMixin(_MixinBase):
         self,
         provided_environments,
         server_id: str = "",
+        known_features: list[str] | None = None,
+        resources: dict | None = None,
     ) -> TaskDefinition | None:
         """Atomically claim a pending env-routed script task (see base class).
 
@@ -714,6 +730,7 @@ class TaskMixin(_MixinBase):
         """
         if not provided_environments:
             return None
+        _env, feat_ok, res_ok = self._claim_capability_filters(None, known_features, resources)
         now = _current_time_ms()
         update: dict[str, Any] = {
             "state": "running",
@@ -727,10 +744,16 @@ class TaskMixin(_MixinBase):
                 "state": "pending",
                 "kind": "script",
                 "environment_hash": {"$in": list(provided_environments)},
-                "$or": [
-                    {"next_retry_after": {"$exists": False}},
-                    {"next_retry_after": 0},
-                    {"next_retry_after": {"$lte": now}},
+                "$and": [
+                    {
+                        "$or": [
+                            {"next_retry_after": {"$exists": False}},
+                            {"next_retry_after": 0},
+                            {"next_retry_after": {"$lte": now}},
+                        ]
+                    },
+                    feat_ok,
+                    res_ok,
                 ],
             },
             {"$set": update},

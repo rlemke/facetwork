@@ -964,12 +964,15 @@ class PersistenceAPI(Protocol):
         resources: dict | None = None,
         script_environments: "Sequence[str] | None" = None,
         reclaim_expired: bool = True,
+        script_claims: "Sequence[tuple] | None" = None,
     ) -> Optional["TaskDefinition"]:
         """Claim ONE task matching any of several ``(task_names, task_list)`` specs.
 
         A poll loop calls this once per free slot instead of one ``claim_task``
         per kind of work, so an idle cycle costs one query rather than five or
-        more. ``script_environments`` adds the ``claim_script_task`` branch.
+        more. ``script_environments`` adds the ``claim_script_task`` branch
+        under the default capabilities; ``script_claims`` adds one per
+        ``(environments, caps)`` pair under that pair's own capabilities.
         ``reclaim_expired=False`` lets the caller pace lease-expiry reclaim,
         which a backend may perform as a separate query.
 
@@ -996,21 +999,37 @@ class PersistenceAPI(Protocol):
             )
             if task is not None:
                 return task
+        scripts: list[tuple] = []
         if script_environments:
-            return self.claim_script_task(script_environments, server_id=server_id)
+            scripts.append((script_environments, {}))
+        scripts.extend(c for c in script_claims or [] if c and c[0])
+        for envs, overrides in scripts:
+            overrides = overrides or {}
+            task = self.claim_script_task(
+                envs,
+                server_id=server_id,
+                known_features=overrides.get("known_features", known_features),
+                resources=overrides.get("resources", resources),
+            )
+            if task is not None:
+                return task
         return None
 
     def claim_script_task(
         self,
         provided_environments: "Sequence[str]",
         server_id: str = "",
+        known_features: list[str] | None = None,
+        resources: dict | None = None,
     ) -> Optional["TaskDefinition"]:
         """Atomically claim a pending env-routed script task.
 
         Script tasks (``kind == "script"``) are named by their facet, which is
-        in no runner's handler set — the environment IS the capability, so the
-        claim filters only on ``kind`` + ``environment_hash`` (plus the retry
-        cooldown). Returns None when the store does not support script tasks.
+        in no runner's handler set, so the environment stands in for the name.
+        Feature and resource routing apply exactly as for a handler task: a
+        script task carrying ``requires`` is claimable only by a runner whose
+        ``resources`` meet it. Returns None when the store does not support
+        script tasks.
         """
         return None
 

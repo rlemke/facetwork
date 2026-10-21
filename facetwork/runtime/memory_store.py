@@ -503,18 +503,7 @@ class MemoryStore(PersistenceAPI):
         Mirrors MongoStore.claim_task — keep the two in behavioral lockstep.
         """
         provided = set(provided_environments or [])
-        known = set(known_features or [])
-        have = {k: v for k, v in (resources or {}).items() if isinstance(v, (int, float))}
-
-        def _fits(task) -> bool:
-            need = getattr(task, "requires", None) or {}
-            if not need:
-                return True  # unconstrained: anyone may claim
-            for dim, want in need.items():
-                cap = have.get(dim)
-                if cap is None or want > cap:
-                    return False
-            return True
+        _fits = self._capability_check(known_features, resources)
 
         with self._claim_lock:
             names_set = set(task_names)
@@ -522,13 +511,11 @@ class MemoryStore(PersistenceAPI):
             for task in self._tasks.values():
                 now = _current_time_ms()
                 env = getattr(task, "environment_hash", "") or ""
-                needed = set(getattr(task, "required_features", None) or [])
                 if (
                     task.state == "pending"
                     and task.name in names_set
                     and task.task_list_name in tl_set
                     and (env == "" or env in provided)
-                    and needed <= known
                     and _fits(task)
                     and (task.next_retry_after == 0 or task.next_retry_after <= now)
                 ):
@@ -538,6 +525,29 @@ class MemoryStore(PersistenceAPI):
                         task.server_id = server_id
                     return task
             return None
+
+    @staticmethod
+    def _capability_check(known_features: list[str] | None, resources: dict | None):
+        """Feature + resource routing for one claimer, as a task predicate.
+
+        A task listing ``required_features`` needs a runner that knows every
+        one. A task carrying ``requires`` needs a runner whose capacity meets
+        every dimension; one it does not advertise blocks the claim rather than
+        being ignored. Mirrors MongoStore._claim_capability_filters.
+        """
+        known = set(known_features or [])
+        have = {k: v for k, v in (resources or {}).items() if isinstance(v, (int, float))}
+
+        def _fits(task) -> bool:
+            if not set(getattr(task, "required_features", None) or []) <= known:
+                return False
+            for dim, want in (getattr(task, "requires", None) or {}).items():
+                cap = have.get(dim)
+                if cap is None or want > cap:
+                    return False
+            return True
+
+        return _fits
 
     def get_pending_script_environment_demand(self) -> list[tuple[str, str]]:
         """Distinct (environment_hash, workflow_id) of pending script tasks.
@@ -554,6 +564,8 @@ class MemoryStore(PersistenceAPI):
         self,
         provided_environments,
         server_id: str = "",
+        known_features: list[str] | None = None,
+        resources: dict | None = None,
     ) -> Optional["TaskDefinition"]:
         """Atomically claim a pending env-routed script task (see base class).
 
@@ -562,6 +574,7 @@ class MemoryStore(PersistenceAPI):
         provided = set(provided_environments or [])
         if not provided:
             return None
+        _fits = self._capability_check(known_features, resources)
         with self._claim_lock:
             now = _current_time_ms()
             for task in self._tasks.values():
@@ -569,6 +582,7 @@ class MemoryStore(PersistenceAPI):
                     task.state == "pending"
                     and getattr(task, "kind", "") == "script"
                     and getattr(task, "environment_hash", "") in provided
+                    and _fits(task)
                     and (task.next_retry_after == 0 or task.next_retry_after <= now)
                 ):
                     task.state = "running"
