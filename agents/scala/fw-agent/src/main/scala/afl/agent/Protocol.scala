@@ -63,6 +63,12 @@ object Protocol:
   /** max_retries assumed when a task document has none. */
   val DefaultMaxRetries = 5
 
+  /** Longest a claim through the host's claimer waits for a task (seconds). */
+  val ClaimProxyWaitS: Double = 5.0
+
+  /** After the claimer was unreachable, claim directly this long before asking it again. */
+  val ClaimProxyRetryMs: Long = 60_000L
+
   /** Delay before a failed task may be claimed again: min(5000 * 2^n, 300000),
     * n = retry count AFTER the failure.
     */

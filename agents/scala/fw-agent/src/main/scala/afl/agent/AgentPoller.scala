@@ -41,6 +41,19 @@ class AgentPoller(val config: AgentPollerConfig):
   private val activeTasks = TrieMap.empty[String, AtomicBoolean]
   @volatile private var lastReclaimScanMs = 0L
 
+  // The host's claimer (FW_CLAIM_PROXY_URL), or None to claim directly.
+  @volatile private var claimProxy: Option[ClaimProxy] = ClaimProxy.fromEnv()
+  @volatile private var proxyDownUntilMs = 0L
+  // A task finished since the last ask: follow-on work may be waiting.
+  @volatile private var workFinished = true
+
+  /** Claim through this claimer instead of polling MongoDB (None claims
+    * directly). Defaults to `FW_CLAIM_PROXY_URL`.
+    */
+  def setClaimProxy(proxy: Option[ClaimProxy]): Unit =
+    claimProxy = proxy
+    proxyDownUntilMs = 0L
+
   /** Register a handler for an event facet name.
     *
     * @param facetName  Qualified event facet name (e.g. "ns.CountDocuments")
@@ -112,9 +125,11 @@ class AgentPoller(val config: AgentPollerConfig):
     var dispatched = 0
     var continue = true
     while continue && dispatched < config.maxConcurrent do
-      claimNext() match
+      // Only the first ask of a cycle long-polls; later ones fill free slots.
+      claimNext(firstAsk = dispatched == 0) match
         case Some(task) =>
           processEvent(task)
+          workFinished = true
           dispatched += 1
         case None =>
           continue = false
@@ -124,13 +139,34 @@ class AgentPoller(val config: AgentPollerConfig):
     * memory free now, and every Protocol.LeaseReclaimScanMs also looks for a
     * running task whose lease expired.
     */
-  private def claimNext(): Option[model.TaskDocument] =
+  private def claimNext(firstAsk: Boolean): Option[model.TaskDocument] =
     val now = System.currentTimeMillis()
+    claimProxy.filter(_ => now >= proxyDownUntilMs) match
+      case Some(proxy) =>
+        try return claimViaProxy(proxy, if firstAsk then Protocol.ClaimProxyWaitS else 0.0)
+        catch
+          case e: java.io.IOException =>
+            proxyDownUntilMs = now + Protocol.ClaimProxyRetryMs
+            logger.warn(s"Claimer ${proxy.baseUrl} unreachable (${e.getMessage}); " +
+              s"claiming directly for ${Protocol.ClaimProxyRetryMs / 1000}s")
+      case None => ()
     val reclaim = now - lastReclaimScanMs >= Protocol.LeaseReclaimScanMs
     val task = mongoOps.claimTask(registeredNames, Seq(config.taskList), serverId_,
       Resources.claimResources(), reclaim)
     if task.isEmpty && reclaim then lastReclaimScanMs = now
     task
+
+  /** Ask the host's claimer. It also does the lease-expiry reclaim scan for its
+    * waiters. A task it returns is already held by this server; it is re-read
+    * and run only if that is still true (it may have been reaped between
+    * hand-over and read).
+    */
+  private def claimViaProxy(proxy: ClaimProxy, waitS: Double): Option[model.TaskDocument] =
+    val kick = workFinished
+    workFinished = false
+    proxy.next(serverId_, registeredNames, Seq(config.taskList), Resources.claimResources(), waitS, kick)
+      .flatMap(mongoOps.getTask)
+      .filter(t => t.serverId == serverId_ && t.state == Protocol.TaskState.Running)
 
   /** Emit a step log entry (best-effort). */
   private def emitStepLog(

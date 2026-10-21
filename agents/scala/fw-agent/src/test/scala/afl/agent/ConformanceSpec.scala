@@ -69,6 +69,8 @@ class ConformanceSpec extends AnyFlatSpec with Matchers with BeforeAndAfterAll:
     num(timing, "lease_ms") shouldBe Protocol.LeaseMs
     num(timing, "lease_reclaim_scan_ms") shouldBe Protocol.LeaseReclaimScanMs
     timing.getInteger("default_max_retries") shouldBe Protocol.DefaultMaxRetries
+    timing.get("claim_proxy_wait_s").asInstanceOf[Number].doubleValue shouldBe Protocol.ClaimProxyWaitS
+    num(timing, "claim_proxy_retry_ms") shouldBe Protocol.ClaimProxyRetryMs
   }
 
   // --- claim (live) -----------------------------------------------------------

@@ -46,7 +46,8 @@ agent may then `POST {url}/next` with
 `claim_task` itself. The reply `{"task": uuid|null}` names a task already
 `running` under that `server_id`; re-read it and run it only if it still is.
 `POST {url}/kick` after finishing a task. If the claimer is unreachable, claim
-directly and ask again after 60 s. The Java library implements this
+directly and ask again after 60 s (`timing.claim_proxy_wait_s` /
+`claim_proxy_retry_ms` in `constants.json`). All four libraries implement this
 (`ClaimProxy`); see `docs/reference/runtime-impl.md` §17.1.3.
 
 ## Conformance cases

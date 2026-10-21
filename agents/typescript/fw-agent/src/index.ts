@@ -72,6 +72,8 @@ export {
   LeaseMs,
   LeaseReclaimScanMs,
   DefaultMaxRetries,
+  ClaimProxyWaitS,
+  ClaimProxyRetryMs,
   retryBackoffMs,
 } from "./protocol";
 
@@ -110,6 +112,9 @@ export { ServerRegistration } from "./server-registration";
 
 // Poller
 export { AgentPoller, Handler } from "./poller";
+
+// Per-host claimer client
+export { ClaimProxy, ClaimProxyEnv } from "./claim-proxy";
 
 // RegistryRunner
 export { RegistryRunner } from "./registry-runner";

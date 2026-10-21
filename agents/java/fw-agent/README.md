@@ -86,6 +86,7 @@ env var, `afl.config.json` in the working directory, `~/.ffl/afl.config.json`,
 | `FW_MONGODB_URL` | MongoDB connection string | `mongodb://localhost:27017` |
 | `FW_MONGODB_DATABASE` | MongoDB database name | `afl` |
 | `FW_CONFIG` | Path to `afl.config.json` | (none) |
+| `FW_CLAIM_PROXY_URL` | Claim through the host's claimer (long-poll `POST /next`); unreachable = claim directly, retried after 60 s. Set by the fleet-agent on claimer hosts | (none: claim directly) |
 
 The `afl.config.json` file format:
 

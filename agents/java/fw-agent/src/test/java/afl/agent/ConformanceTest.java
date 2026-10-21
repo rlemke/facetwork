@@ -107,6 +107,8 @@ class ConformanceTest {
         assertEquals(timing.get("lease_ms").asLong(), Protocol.LEASE_MS);
         assertEquals(timing.get("lease_reclaim_scan_ms").asLong(), Protocol.LEASE_RECLAIM_SCAN_MS);
         assertEquals(timing.get("default_max_retries").asInt(), Protocol.DEFAULT_MAX_RETRIES);
+        assertEquals(timing.get("claim_proxy_wait_s").asDouble(), Protocol.CLAIM_PROXY_WAIT_S);
+        assertEquals(timing.get("claim_proxy_retry_ms").asLong(), Protocol.CLAIM_PROXY_RETRY_MS);
     }
 
     // --- claim (live) ----------------------------------------------------------

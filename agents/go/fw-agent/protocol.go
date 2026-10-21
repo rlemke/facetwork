@@ -93,6 +93,11 @@ const (
 	LeaseReclaimScanMS int64 = 30000
 	// DefaultMaxRetries is the max_retries assumed when a task has none.
 	DefaultMaxRetries = 5
+	// ClaimProxyWaitS is the longest a claim through the host's claimer waits.
+	ClaimProxyWaitS = 5.0
+	// ClaimProxyRetryMS: after the claimer was unreachable, claim directly this
+	// long before asking it again.
+	ClaimProxyRetryMS int64 = 60000
 )
 
 // RetryBackoffMS is the delay before a failed task may be claimed again:

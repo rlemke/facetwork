@@ -556,7 +556,10 @@
     "lease_reclaim_scan_ms": 30000,
     "server_heartbeat_ms": 10000,
     "retry_backoff": "next_retry_after = now + min(5000 * 2^retry_count, 300000)  (retry_count AFTER increment)",
-    "default_max_retries": 5
+    "default_max_retries": 5,
+    "claim_proxy_wait_s": 5,
+    "claim_proxy_retry_ms": 60000,
+    "claim_proxy_note": "Optional per-host claimer (FW_CLAIM_PROXY_URL): long-poll POST /next up to claim_proxy_wait_s; when unreachable claim directly and ask again after claim_proxy_retry_ms."
   },
   "agent_sequence": [
     "claim_task (+ reclaim_expired_task, paced)",

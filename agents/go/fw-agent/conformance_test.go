@@ -91,9 +91,11 @@ func TestConformanceSpecVersionAndTiming(t *testing.T) {
 	var spec struct {
 		Version string `json:"version"`
 		Timing  struct {
-			LeaseMS            int64 `json:"lease_ms"`
-			LeaseReclaimScanMS int64 `json:"lease_reclaim_scan_ms"`
-			DefaultMaxRetries  int   `json:"default_max_retries"`
+			LeaseMS            int64   `json:"lease_ms"`
+			LeaseReclaimScanMS int64   `json:"lease_reclaim_scan_ms"`
+			DefaultMaxRetries  int     `json:"default_max_retries"`
+			ClaimProxyWaitS    float64 `json:"claim_proxy_wait_s"`
+			ClaimProxyRetryMS  int64   `json:"claim_proxy_retry_ms"`
 		} `json:"timing"`
 	}
 	loadJSON(t, filepath.Join(confDir, "..", "constants.json"), &spec)
@@ -101,7 +103,8 @@ func TestConformanceSpecVersionAndTiming(t *testing.T) {
 		t.Errorf("spec version %s, library implements %s", spec.Version, ProtocolVersion)
 	}
 	if spec.Timing.LeaseMS != LeaseMS || spec.Timing.LeaseReclaimScanMS != LeaseReclaimScanMS ||
-		spec.Timing.DefaultMaxRetries != DefaultMaxRetries {
+		spec.Timing.DefaultMaxRetries != DefaultMaxRetries ||
+		spec.Timing.ClaimProxyWaitS != ClaimProxyWaitS || spec.Timing.ClaimProxyRetryMS != ClaimProxyRetryMS {
 		t.Errorf("timing mismatch: spec %+v", spec.Timing)
 	}
 }

@@ -45,6 +45,13 @@ import {
 export class MongoOps {
   constructor(private readonly db: Db) {}
 
+  /** Reads one task by uuid, or null when it does not exist. */
+  async getTask(taskId: string): Promise<TaskDocument | null> {
+    return this.db.collection<TaskDocument>(CollectionTasks).findOne(
+      { uuid: taskId } as Filter<TaskDocument>
+    ) as Promise<TaskDocument | null>;
+  }
+
   /**
    * Claims one task (protocol v1.2 `claim_task`, then optionally
    * `reclaim_expired_task`). Records `serverId` and a lease.

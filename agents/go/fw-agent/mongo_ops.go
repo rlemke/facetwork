@@ -116,6 +116,19 @@ func (m *MongoOps) ClaimTaskFor(ctx context.Context, taskNames, taskLists []stri
 		bson.M{"$set": set, "$inc": bson.M{"retry_count": 1}}, opts)
 }
 
+// GetTask reads one task by uuid, or nil when it does not exist.
+func (m *MongoOps) GetTask(ctx context.Context, taskID string) (*TaskDocument, error) {
+	var task TaskDocument
+	err := m.db.Collection(CollectionTasks).FindOne(ctx, bson.M{"uuid": taskID}).Decode(&task)
+	if err == mongo.ErrNoDocuments {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
 func findOneAndUpdate(ctx context.Context, c *mongo.Collection, filter, update interface{},
 	opts *options.FindOneAndUpdateOptions) (*TaskDocument, error) {
 	var task TaskDocument

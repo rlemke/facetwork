@@ -88,6 +88,11 @@ class MongoOps(db: MongoDatabase, timeout: Duration = 10.seconds):
       timeout
     ).map(doc => TaskDocument.fromBson(Document(doc.toBsonDocument)))
 
+  /** Read one task by uuid, or None when it does not exist. */
+  def getTask(taskId: String): Option[TaskDocument] =
+    Await.result(tasks.find(JDoc("uuid", taskId)).first().toFutureOption(), timeout)
+      .map(doc => TaskDocument.fromBson(Document(doc.toBsonDocument)))
+
   private def jl(xs: Any*): java.util.List[Any] = java.util.List.of(xs.map(_.asInstanceOf[AnyRef])*).asInstanceOf[java.util.List[Any]]
 
   private def taskListFilter(taskLists: Seq[String]): Any =

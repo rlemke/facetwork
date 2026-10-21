@@ -64,6 +64,13 @@ type AgentPoller struct {
 	active sync.Map
 	// lastReclaimScan is when an expired-lease scan last came back empty (ms).
 	lastReclaimScan int64
+
+	// claimProxy is the host's claimer (FW_CLAIM_PROXY_URL), or nil to claim
+	// directly. proxyDownUntil (ms) skips it after it was unreachable;
+	// workFinished (1/0) asks it to query now because a task just finished.
+	claimProxy     *ClaimProxy
+	proxyDownUntil int64
+	workFinished   int32
 }
 
 // NewAgentPoller creates a new AgentPoller with the given configuration.
@@ -74,8 +81,21 @@ func NewAgentPoller(cfg Config) *AgentPoller {
 		handlers: make(map[string]Handler),
 		stopCh:   make(chan struct{}),
 		sem:      make(chan struct{}, cfg.MaxConcurrent),
+		// A fresh poller may have missed work: the first ask kicks.
+		claimProxy:   ClaimProxyFromEnv(),
+		workFinished: 1,
 	}
 }
+
+// SetClaimProxy claims through this claimer instead of polling MongoDB (nil
+// claims directly). Defaults to FW_CLAIM_PROXY_URL.
+func (p *AgentPoller) SetClaimProxy(proxy *ClaimProxy) {
+	p.claimProxy = proxy
+	atomic.StoreInt64(&p.proxyDownUntil, 0)
+}
+
+// ServerID is the server id this poller claims under.
+func (p *AgentPoller) ServerID() string { return p.serverID }
 
 // Register registers a handler for a qualified facet name.
 // The facet name can be either qualified (ns.FacetName) or short (FacetName).
@@ -247,6 +267,7 @@ func (p *AgentPoller) pollCycle(ctx context.Context) {
 	go func() {
 		defer p.wg.Done()
 		defer func() { <-p.sem }()
+		defer p.taskDone()
 		p.processTask(ctx, task)
 	}()
 }
@@ -256,12 +277,59 @@ func (p *AgentPoller) pollCycle(ctx context.Context) {
 // running task whose lease expired.
 func (p *AgentPoller) claimNext(ctx context.Context, handlers []string) (*TaskDocument, error) {
 	now := NowMillis()
+	if proxy := p.claimProxy; proxy != nil && now >= atomic.LoadInt64(&p.proxyDownUntil) {
+		task, err := p.claimViaProxy(ctx, proxy, handlers)
+		if err == nil {
+			return task, nil
+		}
+		atomic.StoreInt64(&p.proxyDownUntil, now+ClaimProxyRetryMS)
+		log.Printf("Claimer %s unreachable (%v); claiming directly for %ds",
+			proxy.BaseURL(), err, ClaimProxyRetryMS/1000)
+	}
 	reclaim := now-atomic.LoadInt64(&p.lastReclaimScan) >= LeaseReclaimScanMS
 	task, err := p.ops.ClaimTaskFor(ctx, handlers, []string{p.cfg.TaskList}, p.serverID, ClaimResources(), reclaim)
 	if err == nil && task == nil && reclaim {
 		atomic.StoreInt64(&p.lastReclaimScan, now)
 	}
 	return task, err
+}
+
+// claimViaProxy asks the host's claimer, long-polling up to ClaimProxyWaitS.
+// The claimer also does the lease-expiry reclaim scan for its waiters. A task
+// it returns is already held by this server; it is re-read and run only if
+// that is still true (it may have been reaped between hand-over and read).
+// Only an unreachable claimer is an error: a failed re-read is a database
+// problem the direct claim would hit too.
+func (p *AgentPoller) claimViaProxy(ctx context.Context, proxy *ClaimProxy, handlers []string) (*TaskDocument, error) {
+	kick := atomic.SwapInt32(&p.workFinished, 0) == 1
+	uid, err := proxy.Next(ctx, p.serverID, handlers, []string{p.cfg.TaskList}, ClaimResources(),
+		ClaimProxyWaitS, kick)
+	if err != nil {
+		return nil, err
+	}
+	if uid == "" {
+		return nil, nil
+	}
+	task, err := p.ops.GetTask(ctx, uid)
+	if err != nil || task == nil {
+		if err != nil {
+			log.Printf("Reading handed-over task %s: %v", uid, err)
+		}
+		return nil, nil
+	}
+	if task.ServerID != p.serverID || task.State != TaskStateRunning {
+		return nil, nil
+	}
+	return task, nil
+}
+
+// taskDone records that a slot freed and wakes the claimer: the poll loop may
+// be inside a long-poll, and follow-on work may now exist.
+func (p *AgentPoller) taskDone() {
+	atomic.StoreInt32(&p.workFinished, 1)
+	if proxy := p.claimProxy; proxy != nil && NowMillis() >= atomic.LoadInt64(&p.proxyDownUntil) {
+		proxy.Kick()
+	}
 }
 
 // emitStepLog writes a step log entry (best-effort).

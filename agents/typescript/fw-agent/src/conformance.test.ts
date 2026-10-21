@@ -28,7 +28,14 @@ import { Db, MongoClient } from "mongodb";
 import { MongoOps, failTransition } from "./mongo-ops";
 import { ServerRegistration } from "./server-registration";
 import { defaultConfig } from "./config";
-import { DefaultMaxRetries, LeaseMs, LeaseReclaimScanMs, ProtocolVersion } from "./protocol";
+import {
+  ClaimProxyRetryMs,
+  ClaimProxyWaitS,
+  DefaultMaxRetries,
+  LeaseMs,
+  LeaseReclaimScanMs,
+  ProtocolVersion,
+} from "./protocol";
 import { TaskDocument } from "./models";
 
 const CONF = path.resolve(__dirname, "../../../protocol/conformance");
@@ -55,6 +62,8 @@ test("spec version and timing match this library", () => {
   expect(constants.timing.lease_ms).toBe(LeaseMs);
   expect(constants.timing.lease_reclaim_scan_ms).toBe(LeaseReclaimScanMs);
   expect(constants.timing.default_max_retries).toBe(DefaultMaxRetries);
+  expect(constants.timing.claim_proxy_wait_s).toBe(ClaimProxyWaitS);
+  expect(constants.timing.claim_proxy_retry_ms).toBe(ClaimProxyRetryMs);
 });
 
 const MONGO_URL = process.env.FW_AGENT_TEST_MONGO_URL;

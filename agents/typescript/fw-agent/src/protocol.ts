@@ -75,6 +75,10 @@ export const LeaseMs = 960_000;
 export const LeaseReclaimScanMs = 30_000;
 /** max_retries assumed when a task document has none. */
 export const DefaultMaxRetries = 5;
+/** Longest a claim through the host's claimer waits for a task (seconds). */
+export const ClaimProxyWaitS = 5;
+/** After the claimer was unreachable, claim directly this long before asking it again. */
+export const ClaimProxyRetryMs = 60_000;
 
 /**
  * Delay before a failed task may be claimed again:

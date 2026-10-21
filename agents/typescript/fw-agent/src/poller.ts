@@ -18,7 +18,14 @@ import { AgentPollerConfig } from "./config";
 import { MongoOps } from "./mongo-ops";
 import { ServerRegistration } from "./server-registration";
 import { TaskDocument } from "./models";
-import { LeaseReclaimScanMs, TaskStateDeadLetter } from "./protocol";
+import {
+  ClaimProxyRetryMs,
+  ClaimProxyWaitS,
+  LeaseReclaimScanMs,
+  TaskStateDeadLetter,
+  TaskStateRunning,
+} from "./protocol";
+import { ClaimProxy } from "./claim-proxy";
 import { claimResources } from "./resources";
 import { PermanentError } from "./errors";
 
@@ -51,10 +58,33 @@ export class AgentPoller {
   // Tasks this server is running, for lease renewal; value = still owned.
   private readonly activeTasks: Map<string, { owned: boolean }> = new Map();
   private lastReclaimScanMs = 0;
+  // A poll cycle is in flight: with a claimer it can long-poll for seconds,
+  // longer than the poll interval, and must not overlap the next tick.
+  private polling = false;
+
+  // The host's claimer (FW_CLAIM_PROXY_URL), or null to claim directly.
+  private claimProxy: ClaimProxy | null = ClaimProxy.fromEnv();
+  private proxyDownUntilMs = 0;
+  // A task finished since the last ask: follow-on work may be waiting.
+  private workFinished = true;
 
   constructor(config: AgentPollerConfig) {
     this.config = config;
     this.serverId = uuidv4();
+  }
+
+  /**
+   * Claims through this claimer instead of polling MongoDB (null claims
+   * directly). Defaults to `FW_CLAIM_PROXY_URL`.
+   */
+  setClaimProxy(proxy: ClaimProxy | null): void {
+    this.claimProxy = proxy;
+    this.proxyDownUntilMs = 0;
+  }
+
+  /** The server id this poller claims under. */
+  getServerId(): string {
+    return this.serverId;
   }
 
   /**
@@ -170,6 +200,18 @@ export class AgentPoller {
   }
 
   private async pollCycle(): Promise<void> {
+    if (this.polling) {
+      return;
+    }
+    this.polling = true;
+    try {
+      await this.pollCycleInner();
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  private async pollCycleInner(): Promise<void> {
     const handlers = this.registeredHandlers();
     if (handlers.length === 0) {
       return;
@@ -192,6 +234,7 @@ export class AgentPoller {
       .catch((err) => console.error("Task processing error:", err))
       .finally(() => {
         this.activeCount--;
+        this.taskDone();
       });
   }
 
@@ -202,6 +245,28 @@ export class AgentPoller {
    */
   private async claimNext(handlers: string[]): Promise<TaskDocument | null> {
     const now = Date.now();
+    const proxy = this.claimProxy;
+    if (proxy && now >= this.proxyDownUntilMs) {
+      const kick = this.workFinished;
+      this.workFinished = false;
+      let uid: string | null = null;
+      let reached = true;
+      try {
+        uid = await proxy.next(
+          this.serverId, handlers, [this.config.taskList], claimResources(), ClaimProxyWaitS, kick
+        );
+      } catch (err) {
+        reached = false;
+        this.proxyDownUntilMs = now + ClaimProxyRetryMs;
+        console.warn(
+          `Claimer ${proxy.baseUrl} unreachable (${(err as Error).message}); ` +
+          `claiming directly for ${ClaimProxyRetryMs / 1000}s`
+        );
+      }
+      if (reached) {
+        return uid ? this.handedOver(uid) : null;
+      }
+    }
     const reclaim = now - this.lastReclaimScanMs >= LeaseReclaimScanMs;
     const task = await this.ops!.claimTask(
       handlers, [this.config.taskList], this.serverId, claimResources(), reclaim
@@ -210,6 +275,30 @@ export class AgentPoller {
       this.lastReclaimScanMs = now;
     }
     return task;
+  }
+
+  /**
+   * A task the claimer handed over is already held by this server; re-read it
+   * and run it only if that is still true (it may have been reaped between
+   * hand-over and read). The claimer also does the lease-expiry reclaim scan.
+   */
+  private async handedOver(uid: string): Promise<TaskDocument | null> {
+    const task = await this.ops!.getTask(uid);
+    if (!task || task.server_id !== this.serverId || task.state !== TaskStateRunning) {
+      return null;
+    }
+    return task;
+  }
+
+  /**
+   * A slot freed: the poll loop may be inside a long-poll, so the claimer
+   * itself must hear that follow-on work may exist.
+   */
+  private taskDone(): void {
+    this.workFinished = true;
+    if (this.claimProxy && Date.now() >= this.proxyDownUntilMs) {
+      this.claimProxy.kick();
+    }
   }
 
   /** Server heartbeat (re-registering a pruned record) + lease renewal. */
