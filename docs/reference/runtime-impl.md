@@ -858,6 +858,8 @@ Workflow Complete
 ## 17. Task Resilience and Workflow Recovery
 
 > Long-running distributed workflows face compounding failure modes that don't appear in short test runs. This section documents the mechanisms that allow workflows to self-heal and run to completion despite infrastructure failures, process crashes, and transient errors.
+>
+> For the overall picture first — which process writes which document, the kinds of task, and sequence diagrams of a run, a claim through the claimer and an external agent — see [task-flow.md](task-flow.md).
 
 ### 17.1 Task Lifecycle with Recovery States
 
@@ -1309,9 +1311,10 @@ The sweep never calls full `resume()` — it processes each stuck step individua
 
 | Variable | Default | Description |
 |---|---|---|
-| `FW_REAPER_TIMEOUT_MS` | 300,000 (5 min) | Server heartbeat stale threshold |
-| `FW_STUCK_TIMEOUT_MS` | 14,400,000 (4h) | Default stuck task timeout |
-| `FW_EXECUTION_TIMEOUT_MS` | 900,000 (15 min) | Per-task execution timeout |
+| `FW_REAPER_TIMEOUT_MS` | 120,000 (2 min) | Server heartbeat stale threshold |
+| `FW_STUCK_TIMEOUT_MS` | 1,800,000 (30 min) | Default stuck task timeout |
+| `FW_TASK_EXECUTION_TIMEOUT_MS` | 900,000 (15 min) | Per-task execution timeout |
+| `FW_LEASE_DURATION_MS` | derived: execution timeout + 1 min (16 min) | Task lease; an explicit value below that is clamped up |
 | `FW_DASHBOARD_REAP_INTERVAL_S` | 60 | Dashboard reaper cycle interval |
 | `FW_MAX_CONCURRENT` | 2 | Max concurrent tasks per runner |
 | `FW_POLL_INTERVAL_MS` | 1,000 | Runner poll cycle interval |
