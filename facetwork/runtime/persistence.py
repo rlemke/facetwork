@@ -957,7 +957,7 @@ class PersistenceAPI(Protocol):
 
     def claim_any(
         self,
-        claims: "Sequence[tuple[list[str], str | list[str]]]",
+        claims: "Sequence[tuple]",
         server_id: str = "",
         provided_environments: list[str] | None = None,
         known_features: list[str] | None = None,
@@ -976,17 +976,23 @@ class PersistenceAPI(Protocol):
         This default tries each spec in order (then the script branch) and is
         correct for any backend; MongoStore overrides it with a single query.
         Which matching task wins is unspecified, as with ``claim_task``.
+
+        An entry may carry a third element: a dict overriding
+        ``provided_environments`` / ``known_features`` / ``resources`` for that
+        entry alone (how the per-host claimer merges several runners' specs).
         """
-        for task_names, task_list in claims:
+        for entry in claims:
+            task_names, task_list = entry[0], entry[1]
             if not task_names:
                 continue
+            caps = entry[2] if len(entry) > 2 and entry[2] else {}
             task = self.claim_task(
                 task_names=task_names,
                 task_list=task_list,
                 server_id=server_id,
-                provided_environments=provided_environments,
-                known_features=known_features,
-                resources=resources,
+                provided_environments=caps.get("provided_environments", provided_environments),
+                known_features=caps.get("known_features", known_features),
+                resources=caps.get("resources", resources),
             )
             if task is not None:
                 return task

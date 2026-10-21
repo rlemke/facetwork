@@ -988,7 +988,38 @@ re-read the runner's own server record for a quarantine toggle. Now:
   a quiet runner waits up to the cap. Work following that runner's own tasks is
   unaffected (completion wakes it).
 
-An idle cycle is now one query, issued at most every 5 s.
+An idle cycle is now one query, issued at most every 5 s. Measured after the
+rollout (37 idle runners): findAndModify 190 → 9.5/s, other reads 55 → 8.6/s,
+connections 342 → 149.
+
+**Per-host claimer (opt-in).** `facetwork/runtime/claimer.py` takes the claim
+off the runners entirely: one process per host polls for all of them.
+
+- A runner with a free slot long-polls `POST /next` on the claimer with the
+  same spec it would give `claim_any` (claims, known features, resources, script
+  environments). The open request is its registration; a busy or dead runner is
+  not asking, so nothing goes stale.
+- Each cycle the claimer merges the waiting specs into ONE `claim_any`. A
+  `claims` entry may carry its own capability dict (`(names, lists, caps)`), so
+  the merged query is exactly the union of what each runner would claim, never
+  one runner's features or memory claiming for another.
+- It claims under its own heartbeated server record, then hands the task over
+  with `save_task_if_owned`. A claimer that dies in between is a dead server to
+  the reaper; a runner that vanishes after the hand-over is covered by
+  reconcile (a running task its runner does not hold is reset).
+- **Memory ledger:** the `requires.memory_gb` of a task it handed out is
+  subtracted from what later claims offer, until that task stops running or
+  `FW_CLAIMER_RESERVE_HOLD_S` (600 s) passes. A claim checks free memory but
+  reserves nothing, so without this three 12 GB builds all fit one 15 GB gap
+  (measured 2026-10-16 and 2026-10-19).
+- **Fallback:** a runner reaches the claimer through `FW_CLAIM_PROXY_URL`. Unset,
+  or unreachable (then retried after 60 s), the runner claims directly, so a
+  missing claimer makes a host noisier, never stuck.
+
+Enable per host with `fw fleet set --claimer HOST,...|all|off`; the fleet-agent
+starts `runner-claimer` there and sets `FW_CLAIM_PROXY_URL` on that host's
+runners (which recreates them). The API is JSON over HTTP so agents in other
+languages can use it; only the Python runners do so far.
 
 **Claiming is atomic, not coordinated.** `claim_task()` is a single Mongo
 `find_one_and_update({state: pending, …}, {$set: {state: running, …}})`
@@ -1281,6 +1312,9 @@ The sweep never calls full `resume()` — it processes each stuck step individua
 | `FW_MAX_CONCURRENT` | 2 | Max concurrent tasks per runner |
 | `FW_POLL_INTERVAL_MS` | 1,000 | Runner poll cycle interval |
 | `FW_POLL_IDLE_MAX_MS` | 5,000 | Cap on idle backoff (consecutive empty cycles double the wait up to this) |
+| `FW_CLAIM_PROXY_URL` | unset | Claim through the per-host claimer at this URL (set by the fleet-agent on `claimer_hosts`); unset = claim directly |
+| `FW_CLAIMER_IDLE_MAX_MS` | 5,000 | Claimer: cap on its idle backoff between merged claims |
+| `FW_CLAIMER_RESERVE_HOLD_S` | 600 | Claimer: how long a handed-out memory floor stays reserved if the task is still running |
 
 ---
 

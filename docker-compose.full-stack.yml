@@ -1017,6 +1017,34 @@ services:
     restart: unless-stopped
 
   # =====================================================================
+  # claimer — ONE Mongo poller for every runner on this host
+  # (facetwork/runtime/claimer.py). Runners reach it as http://runner-claimer:8790
+  # when FW_CLAIM_PROXY_URL is set (the fleet-agent sets it on hosts listed in
+  # fleet_config `claimer_hosts`); unset or unreachable, they claim directly.
+  # Not published on the host: only containers on this compose network use it.
+  # =====================================================================
+  runner-claimer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    hostname: ${FW_FLEET_HOST:-}
+    entrypoint: ["python", "-m", "facetwork.runtime.claimer"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_FLEET_HOST: ${FW_FLEET_HOST:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8790/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # =====================================================================
   # ffl-runner — dedicated orchestration tier (continuation_mode=shared).
   #
   # Owns the stuck-step sweep (and, in the RegistryRunner model, the shared

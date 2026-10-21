@@ -251,6 +251,9 @@ fw single up        # runs the full pipeline using .env values
 | `FW_MAX_CONCURRENT` | `2` | Max concurrent work items per runner |
 | `FW_POLL_INTERVAL_MS` | `1000` | Runner poll interval in milliseconds |
 | `FW_POLL_IDLE_MAX_MS` | `5000` | Cap on idle backoff: consecutive empty polls double the wait up to this |
+| `FW_CLAIM_PROXY_URL` | unset | Claim through the per-host claimer (`python -m facetwork.runtime.claimer`); unset or unreachable = claim directly. Fleet: `fw fleet set --claimer HOST,...\|all\|off` |
+| `FW_CLAIMER_IDLE_MAX_MS` | `5000` | Claimer: cap on its idle backoff between merged claims |
+| `FW_CLAIMER_RESERVE_HOLD_S` | `600` | Claimer: how long a handed-out memory floor stays reserved while the task runs |
 | **LLM / Claude API** | | |
 | `ANTHROPIC_API_KEY` | *(empty)* | Anthropic API key for Claude-powered prompt blocks. When unset, LLM handlers fall back to deterministic stubs. Required by: `ClaudeAgentRunner`, `LLMHandler`, and example handlers like `noaa-weather` GenerateNarrative. |
 | **Data directories** | | |

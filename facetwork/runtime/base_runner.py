@@ -376,6 +376,15 @@ class BaseRunner:
     # changes failover time by seconds and removes half the idle claim load.
     _RECLAIM_SCAN_MS: int = 30_000
     _last_reclaim_scan_ms: int = 0
+    # Per-host claimer (facetwork.runtime.claimer): when FW_CLAIM_PROXY_URL is
+    # set, claims go through it instead of the database. An unreachable claimer
+    # is skipped for _PROXY_RETRY_S and the runner claims directly meanwhile, so
+    # a dead claimer makes a host noisier, never stuck.
+    _CLAIM_PROXY_URL: str = os.environ.get("FW_CLAIM_PROXY_URL", "").rstrip("/")
+    _PROXY_RETRY_S: float = 60.0
+    _proxy_down_until: float = 0.0
+    _proxy_waited: bool = False  # the last proxied claim long-polled and came back empty
+    _proxy_hits: int = 0  # proxied claims this cycle; later slots ask without waiting
 
     def _known_ast_features(self) -> list[str]:
         """AST features this runner can execute faithfully.
@@ -613,8 +622,18 @@ class BaseRunner:
         on ``stop()`` — so cascade hops cost handler time, not poll latency.
         Consecutive idle cycles back off (``_POLL_IDLE_MAX_S``).
         """
+        self._proxy_hits = 0
         if dispatched > 0 or self._stopping.is_set():
             self._idle_cycles = 0
+            self._proxy_waited = False
+            return
+        if self._proxy_waited:
+            # The claimer long-poll WAS this cycle's wait; waiting again would
+            # double the idle latency for nothing.
+            self._proxy_waited = False
+            woken = self._work_ready.is_set()
+            self._work_ready.clear()
+            self._idle_cycles = 0 if woken else min(self._idle_cycles + 1, 16)
             return
         woken = self._work_ready.wait(self._poll_wait_seconds(self._idle_wait_seconds(interval_s)))
         self._work_ready.clear()
@@ -643,6 +662,22 @@ class BaseRunner:
         lease-reclaim half paced by ``_RECLAIM_SCAN_MS``. The scan is marked done
         only when a reclaim-enabled claim came back empty, i.e. it really ran.
         """
+        if self._CLAIM_PROXY_URL and time.monotonic() >= self._proxy_down_until:
+            try:
+                return self._claim_via_proxy(
+                    claims,
+                    resources=resources,
+                    known_features=known_features,
+                    script_environments=script_environments,
+                )
+            except Exception as exc:  # noqa: BLE001 — fall back, never stall
+                self._proxy_down_until = time.monotonic() + self._PROXY_RETRY_S
+                logger.warning(
+                    "Claimer at %s unreachable (%s); claiming directly for %.0fs",
+                    self._CLAIM_PROXY_URL,
+                    exc,
+                    self._PROXY_RETRY_S,
+                )
         now = _current_time_ms()
         reclaim = now - self._last_reclaim_scan_ms >= self._RECLAIM_SCAN_MS
         task = self._persistence.claim_any(
@@ -657,10 +692,75 @@ class BaseRunner:
             self._last_reclaim_scan_ms = now
         return task
 
+    def _claim_via_proxy(
+        self,
+        claims: list[tuple[list[str], str | list[str]]],
+        *,
+        resources: dict,
+        known_features: list[str],
+        script_environments: list[str] | None,
+    ) -> Any:
+        """Ask the host's claimer for a task (see facetwork.runtime.claimer).
+
+        The first ask of a cycle long-polls for up to the idle cap, and that
+        open request is the runner's registration; asks for further free slots
+        in the same cycle do not wait. Returns the task, already owned by this
+        runner, or None. Raises when the claimer cannot be reached.
+        """
+        import json as _json
+        import urllib.request as _url
+
+        wait_s = 0.0 if self._proxy_hits else self._POLL_IDLE_MAX_S
+        body = {
+            "server_id": self._server_id,
+            "claims": [[list(n), tl] for n, tl in claims if n],
+            "known_features": list(known_features or []),
+            "resources": dict(resources or {}),
+            "script_environments": list(script_environments or []),
+            "wait_s": wait_s,
+            # Work just finished here, so follow-on tasks may be waiting.
+            "kick": self._idle_cycles == 0,
+        }
+        req = _url.Request(
+            f"{self._CLAIM_PROXY_URL}/next",
+            data=_json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with _url.urlopen(req, timeout=wait_s + 30) as resp:
+            uid = _json.loads(resp.read() or b"{}").get("task")
+        if not uid:
+            self._proxy_waited = wait_s > 0
+            return None
+        self._proxy_hits += 1
+        task = self._persistence.get_task(uid)
+        if task is None or task.server_id != self._server_id or task.state != TaskState.RUNNING:
+            # Taken from us between the hand-over and this read (reaped or
+            # reclaimed). Not ours to run.
+            return None
+        return task
+
+    def _kick_proxy(self) -> None:
+        """Tell the claimer work may be waiting, without blocking the caller."""
+        import urllib.request as _url
+
+        def _post() -> None:
+            try:
+                req = _url.Request(f"{self._CLAIM_PROXY_URL}/kick", data=b"{}", method="POST")
+                _url.urlopen(req, timeout=2).close()
+            except Exception:  # noqa: BLE001 — a lost kick costs latency only
+                pass
+
+        threading.Thread(target=_post, name="claimer-kick", daemon=True).start()
+
     def _on_future_done(self, _future: object = None) -> None:
         """Future done-callback: wake the poll loop — a slot freed and the
         finished handler's continuations may have created follow-on work."""
         self._work_ready.set()
+        if self._CLAIM_PROXY_URL and time.monotonic() >= self._proxy_down_until:
+            # The poll thread may be inside a claimer long-poll; the claimer
+            # itself must hear that follow-on work may exist.
+            self._kick_proxy()
 
     def _poll_wait_seconds(self, interval_s: float) -> float:
         """The poll interval with +/- ``_POLL_JITTER`` applied.

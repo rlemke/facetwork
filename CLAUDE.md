@@ -557,7 +557,11 @@ in-process dispatcher, no leader, no queue lock. Two consequences:
   first-come-first-served on whatever is pending.
 
 Task creation is also lock-free: each task has a unique `uuid` and is written
-once by its creator, so there's no write contention either. See
+once by its creator, so there's no write contention either. Opt-in per host
+(`fw fleet set --claimer HOST,...|all|off`): a **claimer** container polls for
+every runner there with ONE merged `claim_any`, hands each task over with an
+ownership-gated write, and keeps a memory ledger so two big tasks cannot fit one
+free gap; a runner that cannot reach it claims directly. See
 [docs/reference/runtime-impl.md §17.1.3](docs/reference/runtime-impl.md).
 
 ### Task-list routing — derived from the facet namespace

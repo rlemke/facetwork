@@ -111,6 +111,8 @@ x-fleet-env: &fleet-env
   # "(image unreported)" fleet-wide — which is what it did after the first
   # rollout that shipped it.
   FW_RUNNER_IMAGE: ${FW_RUNNER_IMAGE:-}
+  # Per-host claimer (fleet_config claimer_hosts). Empty = claim directly.
+  FW_CLAIM_PROXY_URL: ${FW_CLAIM_PROXY_URL:-}
 
 services:
   runner-anthropic:
@@ -140,6 +142,13 @@ services:
 
   # Java routing agent — its own image (FW_GH_ROUTER_IMAGE), not the shared
   # FW_RUNNER_IMAGE; the explicit `image:` overrides the anchor's default.
+  runner-claimer:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+      FW_FLEET_HOST: ${FW_FLEET_HOST:-}
+
   runner-gh-router:
     <<: *fleet-runner
     image: ${FW_GH_ROUTER_IMAGE:-osm-gh-router:latest}

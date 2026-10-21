@@ -453,6 +453,15 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     # carries a MEMBERSHIP LIST (`domains`), which no per-domain role has, and
     # because that list is the thing a light host tunes -- a 2-core/6.7 GiB box
     # serves the same cold domains as a big host, just not with 14 containers.
+    # Per-host claimer: one merged claim for every runner here (see
+    # facetwork/runtime/claimer.py). Targeted by HOST, not server group, so it
+    # can be trialled on one machine. Host names compare without case or a
+    # trailing ".local", the two ways the same Mac is spelled in the fleet.
+    def _hn(h):
+        h = (h or "").strip().lower()
+        return h[:-6] if h.endswith(".local") else h
+    _claimer_hosts = {_hn(h) for h in (cfg.get("claimer_hosts") or [])}
+    claimer_here = "*" in _claimer_hosts or _hn(HOST) in _claimer_hosts
     gen_role = roles.get("generalist", {})
     gen_domains = [d for d in (gen_role.get("domains") or []) if d]
     gen_replicas = int(gen_role.get("replicas", 1) or 0)
@@ -560,6 +569,10 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         env["FW_GEOFABRIK_BASE_URL"] = geofabrik
     if image:
         env["FW_RUNNER_IMAGE"] = image
+    if claimer_here:
+        # Every runner on this host claims through the claimer container. A
+        # runner that cannot reach it claims directly, so this cannot strand work.
+        env["FW_CLAIM_PROXY_URL"] = "http://runner-claimer:8790"
     if gh_image:
         env["FW_GH_ROUTER_IMAGE"] = gh_image
     if gh_srv_region:
@@ -668,6 +681,24 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             child_env.get("PATH", "")
             + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
         )
+        # Claimer first, so the runners recreated below find it at once (they
+        # fall back to claiming directly until it answers). Non-fatal: without
+        # it this host's runners poll Mongo themselves, as before.
+        if claimer_here:
+            cl_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
+                      "--env", envf, "--example", "claimer", "--replicas", "1"]
+            if recreate:
+                cl_cmd.append("--recreate")
+            cr = _run_compose(cl_cmd, child_env)
+            sys.stdout.write(cr.stdout)
+            if cr.returncode != 0:
+                sys.stderr.write(cr.stderr)
+                print(f"fleet-agent[{HOST}]: WARNING claimer start failed (exit {cr.returncode}); "
+                      "runners here claim directly until it is up")
+        else:
+            _gone = _fleet_lib.remove_service_containers("runner-claimer")
+            if _gone:
+                print(f"fleet-agent[{HOST}]: removed the claimer -- not enabled for this host")
         # osm tier (osm-geocoder + osm-lz, the fleet_default base): the heaviest
         # role, so it is gated by server_groups too. When this host's group isn't
         # in osm-geocoder.server_groups it is skipped entirely — another host in

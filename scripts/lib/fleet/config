@@ -95,6 +95,8 @@ def _print_cfg(cfg):
     eps = cfg.get("endpoints", {})
     print(f"  version:   {cfg.get('version', '-')}")
     print(f"  osm-offline: {'ON (third-party mirrors forbidden)' if cfg.get('osm_offline') else 'off'}")
+    _ch = cfg.get("claimer_hosts") or []
+    print(f"  claimer:   {'all hosts' if '*' in _ch else (', '.join(_ch) if _ch else 'off (runners claim directly)')}")
     print(f"  geofabrik: {eps.get('geofabrik') or '- (compose default: MinIO osm-extracts)'}")
     print(f"  updated:   {cfg.get('updated_at', '-')}")
     # Infra services are identified by access URL only (single node, cluster, or
@@ -157,6 +159,12 @@ def cmd_set(a):
         cfg.setdefault("minio", {})["bucket"] = a.bucket
     if a.osm_offline is not None:
         cfg["osm_offline"] = (a.osm_offline == "on")
+    if a.claimer is not None:
+        _v = a.claimer.strip()
+        cfg["claimer_hosts"] = (
+            [] if _v in ("", "off") else ["*"] if _v == "all"
+            else [h.strip() for h in _v.split(",") if h.strip()]
+        )
     if a.geofabrik_base:
         # Where runners fetch <region>-latest.osm.pbf from. Config, never a
         # literal in code or a compose default: the two candidate stores differ
@@ -506,6 +514,12 @@ def main():
     ps.add_argument("--dashboard-url", help="dashboard URL, e.g. http://afl-dashboard:8080 (informational; URL-addressed service)")
     ps.add_argument("--osm-replicas", type=int, help="osm runners per server")
     ps.add_argument("--task-list", help="task list for osm runners (default osm)")
+    ps.add_argument("--claimer", metavar="HOST,...|all|off", default=None,
+                    help="run the per-host claimer (facetwork.runtime.claimer) on these hosts "
+                         "and point their runners at it: one merged Mongo claim per host "
+                         "instead of one per runner, plus a memory ledger against the "
+                         "claim race. A change recreates that host's runners (their env "
+                         "gains/loses FW_CLAIM_PROXY_URL).")
     ps.add_argument("--osm-offline", choices=("on", "off"), default=None,
                     help="forbid osm extract fetches to THIRD-PARTY mirrors "
                          "(geofabrik/osmfr) fleet-wide; the self-hosted mirror is "

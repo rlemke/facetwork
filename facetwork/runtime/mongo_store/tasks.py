@@ -173,7 +173,7 @@ class TaskMixin(_MixinBase):
 
     def claim_any(
         self,
-        claims: Sequence[tuple[list[str], str | list[str]]],
+        claims: Sequence[tuple],
         server_id: str = "",
         provided_environments: list[str] | None = None,
         known_features: list[str] | None = None,
@@ -189,6 +189,13 @@ class TaskMixin(_MixinBase):
         measured 2026-10-20: ~190 findAndModify/s from 34 idle runners with zero
         pending tasks. This folds them into one ``$or`` per query (each branch
         self-contained, so the planner can serve every clause from an index).
+
+        A ``claims`` entry may carry a third element, a dict of capability
+        overrides (``provided_environments`` / ``known_features`` /
+        ``resources``) for that entry alone. The per-host claimer
+        (``facetwork.runtime.claimer``) merges several runners' specs into one
+        query this way: a single global capability set would let one runner's
+        features or memory claim work for another that cannot run it.
 
         ``script_environments`` adds the ``claim_script_task`` branch. Lease
         reclaim keeps ``claim_task``'s semantics for the name branches (script
@@ -214,11 +221,21 @@ class TaskMixin(_MixinBase):
                 {"next_retry_after": {"$lte": now}},
             ]
         }
-        env_ok, feat_ok, res_ok = self._claim_capability_filters(
-            provided_environments, known_features, resources
-        )
-
-        specs = [(list(n), tl) for n, tl in claims if n]
+        default_caps = {
+            "provided_environments": provided_environments,
+            "known_features": known_features,
+            "resources": resources,
+        }
+        specs = []
+        for entry in claims:
+            names, tl = entry[0], entry[1]
+            if not names:
+                continue
+            caps = {**default_caps, **(entry[2] if len(entry) > 2 and entry[2] else {})}
+            env_ok, feat_ok, res_ok = self._claim_capability_filters(
+                caps["provided_environments"], caps["known_features"], caps["resources"]
+            )
+            specs.append((list(names), tl, env_ok, feat_ok, res_ok))
         # NOTE: each $and below combines several top-level ``$or`` filters —
         # spreading them into one dict would silently drop all but the last
         # (duplicate key), e.g. making the runner claim *any* pending task
@@ -229,7 +246,7 @@ class TaskMixin(_MixinBase):
                 "task_list_name": self._task_list_filter(tl),
                 "$and": [self._name_filter(names), retry_eligible, env_ok, feat_ok, res_ok],
             }
-            for names, tl in specs
+            for names, tl, env_ok, feat_ok, res_ok in specs
         ]
         if script_environments:
             pending_branches.append(
@@ -281,7 +298,7 @@ class TaskMixin(_MixinBase):
                 "lease_expires": {"$lt": now, "$gt": 0},
                 "$and": [self._name_filter(names), env_ok, within_budget],
             }
-            for names, tl in specs
+            for names, tl, env_ok, _feat, _res in specs
         ]
         doc = self._db.tasks.find_one_and_update(
             reclaim_branches[0] if len(reclaim_branches) == 1 else {"$or": reclaim_branches},
