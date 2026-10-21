@@ -134,6 +134,11 @@ exists for the step at all. A task is created only when the work has to
 cross to another process. That is why a run's task count is usually smaller
 than its event-step count.
 
+An environment binding resolves against the workflow's own declarations
+first, then against the environments the framework ships (`fw.file.FileOps`).
+Before 2026-10-21 the shipped ones were not consulted, so a user facet bound to
+`fw.file.FileOps` produced no task and ran in-process without its environment.
+
 ---
 
 ## 4. Task states

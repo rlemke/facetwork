@@ -33,6 +33,8 @@ and facetwork does not resolve them. Resolution can be disabled with
 
 from __future__ import annotations
 
+import copy
+import functools
 import hashlib
 import json
 import logging
@@ -428,4 +430,36 @@ def environment_for_decl(program_dict: dict, env_ref: str, ns: str) -> dict | No
             imported = envs.get(f"{used}.{env_ref}")
             if imported is not None:
                 return imported
+    # The framework's own environments (``fw.file.FileOps``) are ambient, like
+    # its facets: they ship in the wheel and are never in the stored AST.
+    # Without this a script facet bound to one resolved to nothing and ran
+    # in-process on whichever runner advanced the workflow, with no error.
+    # Checked last, so a workflow's own declaration is never shadowed.
+    candidates = [env_ref] if "." in env_ref else []
+    candidates += [f"{used}.{env_ref}" for used in uses_by_ns.get(ns, [])]
+    builtins = builtin_environments()
+    for name in candidates:
+        if name in builtins:
+            return builtins[name]
     return None
+
+
+@functools.lru_cache(maxsize=1)
+def builtin_environments() -> dict[str, dict]:
+    """The shipped FFL's environment declarations, frozen, by qualified name.
+
+    Frozen with the same :func:`annotate_program` a submission uses, so the hash
+    matches what the image bake materialised. Callers get the cached dicts and
+    must not mutate them.
+    """
+    from facetwork.builtin_ffl import builtin_declarations
+
+    program = {"declarations": copy.deepcopy(list(builtin_declarations()))}
+    annotate_program(program)
+    envs: dict[str, dict] = {}
+    for d in program["declarations"]:
+        if isinstance(d, dict) and d.get("type") == "Namespace":
+            for inner in d.get("declarations") or []:
+                if isinstance(inner, dict) and inner.get("type") == "EnvironmentDecl":
+                    envs[f"{d.get('name') or ''}.{inner['name']}"] = inner
+    return envs

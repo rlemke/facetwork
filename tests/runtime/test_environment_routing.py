@@ -242,6 +242,85 @@ class TestEnvScriptExecution:
         assert task.state == TaskState.PENDING
 
 
+class TestBuiltinEnvironment:
+    """A user facet bound to a SHIPPED environment (``fw.file.FileOps``).
+
+    That declaration is never compiled into the user's program, so the lookup
+    used to find nothing and the step ran in-process on whichever runner
+    advanced the workflow: no task, no environment, no error.
+    """
+
+    @staticmethod
+    def _script_tasks(src: str, workflow: str) -> list:
+        import json
+
+        from facetwork import parse
+        from facetwork.ast_utils import find_workflow
+        from facetwork.emitter import JSONEmitter
+        from facetwork.environments import annotate_program
+        from facetwork.runtime import Evaluator, Telemetry
+        from facetwork.runtime.evaluator import ExecutionStatus
+
+        program = json.loads(JSONEmitter(include_locations=False).emit(parse(src)))
+        annotate_program(program)
+        store = MemoryStore()
+        evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
+        result = evaluator.execute(
+            find_workflow(program, workflow), inputs={"x": 1}, program_ast=program, runner_id="r"
+        )
+        assert result.status == ExecutionStatus.PAUSED  # blocked on the script task
+        return [t for t in store._tasks.values() if t.kind == "script"]
+
+    @pytest.mark.parametrize(
+        "uses, ref",
+        [("", "fw.file.FileOps"), ("use fw.file", "FileOps")],
+        ids=["qualified", "imported"],
+    )
+    def test_a_shipped_environment_yields_a_script_task(self, uses, ref):
+        from facetwork.environments import builtin_environments
+
+        src = f"""
+        namespace app {{
+            {uses}
+            facet Touch(x: Long) => (y: Long)
+                in environment {ref}
+                script {{ result['y'] = params['x'] }}
+            workflow W(x: Long) => (y: Long) andThen {{
+                s = Touch(x = $.x)
+                yield W(y = s.y)
+            }}
+        }}
+        """
+        tasks = self._script_tasks(src, "app.W")
+        assert len(tasks) == 1
+        # the hash the image bake materialises for the shipped declaration
+        shipped = builtin_environments()["fw.file.FileOps"]["manifest_hash"]
+        assert tasks[0].environment_hash == shipped
+
+    def test_a_local_declaration_is_not_shadowed_by_the_shipped_one(self):
+        from facetwork.environments import builtin_environments
+
+        src = """
+        namespace app {
+            use fw.file
+            environment FileOps {
+                language = "python"
+            }
+            facet Touch(x: Long) => (y: Long)
+                in environment FileOps
+                script { result['y'] = params['x'] }
+            workflow W(x: Long) => (y: Long) andThen {
+                s = Touch(x = $.x)
+                yield W(y = s.y)
+            }
+        }
+        """
+        tasks = self._script_tasks(src, "app.W")
+        assert len(tasks) == 1
+        shipped = builtin_environments()["fw.file.FileOps"]["manifest_hash"]
+        assert tasks[0].environment_hash and tasks[0].environment_hash != shipped
+
+
 class TestEnvImportSurface:
     def test_env_script_imports_manifest_package(self, tmp_path, monkeypatch):
         """A script in a non-default environment may import the environment's
