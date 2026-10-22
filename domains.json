@@ -398,6 +398,11 @@
       "repo": "fwh_unimatch",
       "extras": [],
       "description": "Applicant profile -> universities whose PUBLISHED admission requirements it satisfies (IPEDS Admissions + Institutional Characteristics); evidence-backed likely/target/reach bands and unmet requirements, never an admission probability"
+    },
+    "pds": {
+      "repo": "fwh_pds",
+      "extras": [],
+      "description": "NASA Planetary Data System archive via the PDS Registry: a checksum audit (uniform random sample per archive site, fetched and compared with the registered size + MD5; data and labels judged separately) and per-body coverage maps from registry bounding boxes. Network only, no API key."
     }
   },
   "examples": {
