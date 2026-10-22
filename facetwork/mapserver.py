@@ -120,27 +120,85 @@ def _client():
     )
 
 
-# Cache the map listing so the gallery stays responsive when MinIO is busy: serve
-# the last good list (stale) rather than re-listing on every request / hanging.
-_maps_cache: dict = {"maps": None, "ts": 0.0}
+# Cache the map listing so the gallery stays responsive when MinIO is busy. The
+# list is refreshed in the BACKGROUND once it is older than the TTL: a request
+# never waits on the store except the very first. A domain that cannot be listed
+# keeps its last known entries and is NAMED on the page -- serving an old list
+# without saying so is how the front page stopped showing new maps (2026-10-22:
+# one listing of all of cache/ timed out on every refresh, and the stale fallback
+# kept serving a list from before the pds maps were written).
+_maps_cache: dict = {
+    "maps": None,
+    "ts": 0.0,
+    "failed": [],
+    "error": None,
+    "refreshing": False,
+}
 _maps_lock = threading.Lock()
 
 
-def cached_maps(s3, ttl: float = 20.0) -> list[dict]:
-    now = time.time()
-    with _maps_lock:
-        if _maps_cache["maps"] is not None and now - _maps_cache["ts"] < ttl:
-            return _maps_cache["maps"]
+def _refresh_maps(s3) -> None:
     try:
-        m = list_maps(s3)
-    except Exception:
+        maps, failed = _list_maps(s3)
+    except Exception as e:  # noqa: BLE001 - kept and shown on the page
         with _maps_lock:
-            if _maps_cache["maps"] is not None:
-                return _maps_cache["maps"]  # serve stale rather than error
-        raise
+            _maps_cache["error"] = str(e)
+            _maps_cache["refreshing"] = False
+        return
     with _maps_lock:
-        _maps_cache["maps"], _maps_cache["ts"] = m, now
-    return m
+        if failed and _maps_cache["maps"]:
+            # keep what we last knew under the prefixes that could not be listed
+            keep = [
+                m
+                for m in _maps_cache["maps"]
+                if any((PREFIX + m["map_rel"]).startswith(f) for f in failed)
+            ]
+            known = {m["map_rel"] for m in maps}
+            maps = maps + [m for m in keep if m["map_rel"] not in known]
+            maps.sort(key=lambda x: x["generated_at"], reverse=True)
+        _maps_cache.update(maps=maps, ts=time.time(), failed=failed, error=None, refreshing=False)
+
+
+def cached_maps(s3, ttl: float = 20.0) -> list[dict]:
+    """The current map list; refreshed in the background once older than ``ttl``."""
+    with _maps_lock:
+        have = _maps_cache["maps"] is not None
+        start = time.time() - _maps_cache["ts"] >= ttl and not _maps_cache["refreshing"]
+        if start:
+            _maps_cache["refreshing"] = True
+    if start:
+        if have:
+            threading.Thread(target=_refresh_maps, args=(s3,), daemon=True).start()
+        else:
+            _refresh_maps(s3)
+    with _maps_lock:
+        if _maps_cache["maps"] is None:
+            raise RuntimeError(_maps_cache["error"] or "the store could not be listed")
+        return _maps_cache["maps"]
+
+
+def listing_notice(now: float | None = None) -> str:
+    """HTML saying what the shown list does NOT cover; empty when it is complete
+    and recent."""
+    with _maps_lock:
+        ts, failed, error = _maps_cache["ts"], list(_maps_cache["failed"]), _maps_cache["error"]
+    if not ts:
+        return ""
+    age = (now or time.time()) - ts
+    parts = []
+    if failed:
+        names = ", ".join(escape(f[len(PREFIX) :] or f) for f in failed)
+        parts.append(f"could not list {names}; maps there are shown as last seen")
+    if error:
+        parts.append(f"the last refresh failed ({escape(error[:200])})")
+    if not parts and age < 300:
+        return ""
+    when = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(ts))
+    detail = "; ".join(parts) if parts else "no refresh has succeeded since"
+    return (
+        '<div class="empty" style="border-color:#f6c343;color:#f6c343">'
+        f"This list is from {when} ({int(age // 60)} min ago): {detail}.</div>"
+    )
 
 
 # --- publish (opt-in) ------------------------------------------------------
@@ -214,30 +272,56 @@ def publish_map(map_rel: str, dest: str, label: str = "") -> dict:
 # --- harvest --------------------------------------------------------------
 
 
-def list_maps(s3) -> list[dict]:
-    """Every map index.html under PREFIX, newest first, with its meta.json."""
-    maps: list[dict] = []
-    paginator = s3.get_paginator("list_objects_v2")
-    metas: dict[str, dict] = {}
-    index_keys: list[tuple[str, int, str]] = []
-    for page in paginator.paginate(Bucket=BUCKET, Prefix=PREFIX):
+def _prefixes(s3, prefix: str) -> list[str]:
+    """The immediate sub-"directories" of ``prefix``."""
+    out: list[str] = []
+    for page in s3.get_paginator("list_objects_v2").paginate(
+        Bucket=BUCKET, Prefix=prefix, Delimiter="/"
+    ):
+        out += [p["Prefix"] for p in page.get("CommonPrefixes", [])]
+    return out
+
+
+def _index_keys(s3, prefix: str) -> list[tuple[str, int, str]]:
+    keys = []
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=BUCKET, Prefix=prefix):
         for obj in page.get("Contents", []):
-            key = obj["Key"]
-            if key.endswith("/index.html.meta.json"):
-                metas[key] = obj  # fetched lazily below
-            elif _classify(key):
-                index_keys.append(
-                    (
-                        key,
-                        obj.get("Size", 0),
-                        obj.get("LastModified").isoformat() if obj.get("LastModified") else "",
-                    )
-                )
-    # Render straight from the LIST results — size + last-modified are already
-    # there. We deliberately do NOT fetch each map's meta.json: that was an N+1 of
-    # sequential S3 GETs that made the page crawl (and hang under heavy MinIO load,
-    # e.g. a big concurrent upload). Layer counts came from meta.json; dropping them
-    # keeps the gallery instant. `metas` is unused now but the listing pass is free.
+            if _classify(obj["Key"]):
+                mtime = obj.get("LastModified")
+                keys.append((obj["Key"], obj.get("Size", 0), mtime.isoformat() if mtime else ""))
+    return keys
+
+
+def _domain_index_keys(s3, domain_prefix: str) -> list[tuple[str, int, str]]:
+    """Map pages of one domain: everything under ``output/``, and every child of
+    ``maps/`` except the world low-zoom tree (thousands of objects with its own
+    index at /lz/; listing it took 288 s of the old single pass)."""
+    keys = _index_keys(s3, domain_prefix + "output/")
+    for child in _prefixes(s3, domain_prefix + "maps/"):
+        if child[len(PREFIX) :].startswith(LZ_REL):
+            continue
+        keys += _index_keys(s3, child)
+    return keys
+
+
+def _list_maps(s3, workers: int = 8) -> tuple[list[dict], list[str]]:
+    """(maps, domain prefixes that could not be listed). Domains are listed
+    separately and in parallel, so one slow or failing domain cannot hide the
+    rest. Only what a map can live under is listed -- never all of PREFIX, which
+    also holds the domains' caches (GeoJSON, PBF tiles, ...)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    domains = _prefixes(s3, PREFIX)
+    failed: list[str] = []
+    index_keys: list[tuple[str, int, str]] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {d: pool.submit(_domain_index_keys, s3, d) for d in domains}
+        for d, fut in futures.items():
+            try:
+                index_keys += fut.result()
+            except Exception:  # noqa: BLE001 - reported as a failed prefix
+                failed.append(d)
+    maps: list[dict] = []
     for key, size, mtime in index_keys:
         domain, name, map_rel = _classify(key)
         if map_rel.startswith(LZ_REL):
@@ -255,6 +339,27 @@ def list_maps(s3) -> list[dict]:
             }
         )
     maps.sort(key=lambda x: x["generated_at"], reverse=True)
+    return maps, failed
+
+
+def _map_exists(s3, map_rel: str) -> bool:
+    """One HEAD on the map's own page -- not a listing of the whole store."""
+    key = f"{PREFIX}{map_rel}/index.html"
+    if ".." in map_rel.split("/") or not _classify(key):
+        return False
+    try:
+        s3.head_object(Bucket=BUCKET, Key=key)
+        return True
+    except Exception:  # noqa: BLE001 - absent or unreadable
+        return False
+
+
+def list_maps(s3) -> list[dict]:
+    """Every map index.html under PREFIX, newest first (raises if any domain
+    could not be listed -- use :func:`cached_maps` to tolerate that)."""
+    maps, failed = _list_maps(s3)
+    if failed:
+        raise RuntimeError(f"could not list {', '.join(failed)}")
     return maps
 
 
@@ -514,11 +619,12 @@ def _actions(m: dict, can_publish: bool) -> str:
     return f'<div class="actions">{view}{toggle}</div>{form}'
 
 
-def render_gallery(maps: list[dict], can_publish: bool = False) -> str:
+def render_gallery(maps: list[dict], can_publish: bool = False, notice: str = "") -> str:
     blocks = [
+        notice,
         '<h2>World</h2><div class="grid"><div class="card"><div class="t">'
         '<a href="/lz/" style="color:inherit">Low-zoom road maps of the world →</a></div>'
-        '<div class="d">by continent, then country, then region</div></div></div>'
+        '<div class="d">by continent, then country, then region</div></div></div>',
     ]
     if not maps:
         body = (
@@ -574,7 +680,11 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 self._send(
                     200,
-                    render_gallery(cached_maps(s3), can_publish=self.server.can_publish),  # type: ignore[attr-defined]
+                    render_gallery(
+                        cached_maps(s3),
+                        can_publish=self.server.can_publish,  # type: ignore[attr-defined]
+                        notice=listing_notice(),
+                    ),
                 )
             except Exception as e:  # pragma: no cover - surfaced to the browser
                 self._send(
@@ -652,7 +762,7 @@ class _Handler(BaseHTTPRequestHandler):
         label = (data.get("label") or "").strip()
         # Only allow publishing a map that actually exists in the store (never an
         # arbitrary prefix — the server may be reachable on the LAN).
-        if not map_rel or not any(m["map_rel"] == map_rel for m in list_maps(self.server.s3)):  # type: ignore[attr-defined]
+        if not map_rel or not _map_exists(self.server.s3, map_rel):  # type: ignore[attr-defined]
             self._send(
                 400,
                 json.dumps({"ok": False, "error": f"unknown map {map_rel!r}"}),
