@@ -543,7 +543,7 @@ Six months of operation since the defense have falsified parts of three answers 
 
 ### Corrections
 
-**Q14 (write concern).** I said Facetwork's configuration requires majority write concern. It does not, and could not have: the evaluated deployment is a single standalone MongoDB node with no replica set. Nothing in the code sets a write concern. The step-down scenario Prof. Abadi posed therefore does not arise. The honest answer is the less comfortable one: losing that node stops the fleet, and nothing replicates its state. The start-up check I promised was not added. On a standalone node it would check nothing; the check worth having would refuse a non-replicated store in a production profile, and that does not exist either.
+**Q14 (write concern).** I said Facetwork's configuration requires majority write concern. It does not, and could not have: the evaluated deployment is a single standalone MongoDB node with no replica set. Nothing in the code sets a write concern. The step-down scenario Prof. Abadi posed therefore does not arise. The honest answer is the less comfortable one: losing that node stops the fleet, and nothing replicates its state. The start-up check I promised has since been added, in a different form from the one I described. On a replica set or sharded cluster it refuses a write concern below majority, reading the server's default when the client sets none. On every topology it refuses unacknowledged writes (`w=0`). On a standalone node there is nothing to check, so it reports the single point of failure, and refuses it only when `FW_REQUIRE_REPLICATED` is set. A default it cannot read is reported as unverified, not as safe (`facetwork/runtime/mongo_store/write_concern.py`; also shown by `fw db check`). Run against the fleet, it reports a standalone node, which is the honest answer.
 
 **Q12 (redundant continue messages).** I said coalescing was unnecessary at the scale evaluated. It became necessary at a 255-way fan-out, where un-coalesced continue messages made block evaluation O(N²) and stalled the run. It is implemented (thesis §5.7.5, §15.5). The larger load came from a source I did not consider at all: polling at idle. With 37 runners doing nothing, the fleet issued 190 claim operations per second, all of them empty. Back-off in the agent protocol and one claimer per host brought that to 2.1 per second (§15.11).
 
@@ -552,7 +552,8 @@ Six months of operation since the defense have falsified parts of three answers 
 **The closing statement's undertakings.**
 
 - *Done:* result-write gating for zombie handlers (`save_task_if_owned`), and effect annotations (`with Effect(kind = …)`), which tell a reader whether repeating a facet is safe.
-- *Not done:* the write-concern check (above) and the Flyte chapter.
+- *Done late:* the write-concern check (above), added after this addendum was first written.
+- *Not done:* the Flyte chapter.
 - *Done differently:* the timeout work became a paper on expiry ordering ([`paper-timeout-interactions.md`](paper-timeout-interactions.md)) rather than a set of stress-test configurations.
 
 ### Questions I would now expect

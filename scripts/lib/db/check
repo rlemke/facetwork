@@ -58,6 +58,31 @@ print(info.get('version', '?'))
     fi
 }
 
+check_write_concern() {
+    # The same check MongoStore runs at start-up (it refuses an unsafe concern).
+    local py; py="$(_python)"
+    local out
+    out=$(FW_CHECK_URL="${FW_MONGODB_URL:-mongodb://localhost:27017}" "$py" -c "
+import os
+from pymongo import MongoClient
+from facetwork.runtime.mongo_store.write_concern import assess_write_concern
+c = MongoClient(os.environ['FW_CHECK_URL'], serverSelectionTimeoutMS=3000)
+r = assess_write_concern(c[os.environ.get('FW_MONGODB_DATABASE', 'facetwork')])
+print(r.verdict, '|', r.topology + ': ' + r.detail)
+" 2>&1) || { _report FAIL "Write concern" "could not assess — $(echo "$out" | tail -1)"; return; }
+    local verdict="${out%% |*}" detail="${out#*| }"
+    case "$verdict" in
+        ok)         _report OK   "Write concern" "$detail" ;;
+        standalone) if [[ -n "${FW_REQUIRE_REPLICATED:-}" ]]; then
+                        _report FAIL "Write concern" "$detail (FW_REQUIRE_REPLICATED is set)"
+                    else
+                        _report SKIP "Write concern" "$detail"
+                    fi ;;
+        unverified) _report SKIP "Write concern" "UNVERIFIED — $detail" ;;
+        *)          _report FAIL "Write concern" "$detail" ;;
+    esac
+}
+
 check_postgres() {
     local label="$1" url="${2:-}" required="$3"
     if [[ -z "$url" ]]; then
@@ -85,6 +110,7 @@ check_postgres() {
 
 echo "=== Facetwork Database Health ==="
 check_mongodb
+check_write_concern
 check_postgres "Main PostGIS"  "${FW_POSTGIS_URL:-}"         true
 check_postgres "Import PG"     "${FW_IMPORT_POSTGIS_URL:-}"  false
 

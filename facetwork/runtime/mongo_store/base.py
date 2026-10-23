@@ -226,7 +226,23 @@ class BaseMixin:
         self._db: Database = self._client[database_name]
 
         if create_indexes:
+            # Only on a connection we opened: an injected client is a test
+            # double (mongomock has no ``hello``). Raises on an unsafe concern.
+            if client is None:
+                self._check_write_concern_once()
             self._ensure_indexes()
+
+    # Checked once per process: every CLI command, the dashboard and each
+    # runner build a store, and the topology does not change underneath them.
+    _write_concern_checked: ClassVar[bool] = False
+
+    def _check_write_concern_once(self) -> None:
+        if BaseMixin._write_concern_checked:
+            return
+        from .write_concern import check_write_concern
+
+        check_write_concern(self._db)
+        BaseMixin._write_concern_checked = True
 
     @classmethod
     def from_config(

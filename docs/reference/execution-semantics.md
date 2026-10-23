@@ -167,6 +167,24 @@ any of these is a second charge, a second row, or a second published artifact.
 
 ---
 
+### 5.1 The write concern is checked at start-up
+
+A claim is only as durable as the write that recorded it. Every process that
+opens a `MongoStore` (runners, claimer, dashboard, CLI) runs
+`facetwork/runtime/mongo_store/write_concern.py` once:
+
+| Topology | Write concern | Result |
+|---|---|---|
+| any | `w=0` (unacknowledged) | **refused**: a runner cannot know whether its claim landed |
+| replica set / sharded | below majority (incl. a server default of `w:1`) | **refused**: a step-down can roll back an acknowledged claim and hand the task to a second runner |
+| replica set / sharded | `majority`, or a count at or above majority | ok |
+| replica set / sharded | not set and the server default unreadable | warning, **unverified** (never reported as safe) |
+| standalone | anything else | warning: no rollback, but a single point of failure. **Refused** when `FW_REQUIRE_REPLICATED` is set |
+
+A custom tag-set concern is treated as below majority, since its meaning cannot
+be judged from the client. `fw db check` prints the same verdict. The fleet
+evaluated here is a standalone node, so it reports the single point of failure.
+
 ## 6. Evaluating this for production
 
 The claims above are about the code, not about scale. What has actually been
