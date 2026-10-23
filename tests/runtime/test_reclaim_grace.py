@@ -193,6 +193,11 @@ def test_active_stage_budget_survives_the_orphan_reaper(store):
     """A declared long phase is not reaped mid-stage."""
     _dead_server_with_task(store, budget_left_ms=20 * MIN)
     assert store.reap_orphaned_tasks(down_timeout_ms=2 * MIN) == []
+    # The STATE, not just the report: the reset once used a filter without the
+    # budget clause, so the task was reset while the report stayed empty.
+    doc = store._db.tasks.find_one({"uuid": "t1"})
+    assert (doc["state"], doc["server_id"]) == ("running", "server-A")
+    assert doc.get("retry_count", 0) == 0
 
 
 def test_expired_stage_budget_is_reaped(store):
@@ -200,6 +205,7 @@ def test_expired_stage_budget_is_reaped(store):
     _dead_server_with_task(store, budget_left_ms=0)
     reaped = store.reap_orphaned_tasks(down_timeout_ms=2 * MIN)
     assert [r["step_id"] for r in reaped] == ["s1"]
+    assert store._db.tasks.find_one({"uuid": "t1"})["state"] == "pending"
 
 
 def test_a_live_handler_on_a_stale_server_is_still_protected(store):

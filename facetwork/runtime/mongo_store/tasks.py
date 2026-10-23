@@ -305,14 +305,17 @@ class TaskMixin(_MixinBase):
                 },
             ]
         }
+        # A reclaim is a claim: the same feature and resource floors apply. They
+        # were computed for this branch and then dropped, so a 10 GB task whose
+        # lease expired could be taken by a runner the pending path refuses.
         reclaim_branches: list[dict] = [
             {
                 "state": "running",
                 "task_list_name": self._task_list_filter(tl),
                 "lease_expires": {"$lt": now, "$gt": 0},
-                "$and": [self._name_filter(names), env_ok, within_budget],
+                "$and": [self._name_filter(names), env_ok, feat_ok, res_ok, within_budget],
             }
-            for names, tl, env_ok, _feat, _res in specs
+            for names, tl, env_ok, feat_ok, res_ok in specs
         ]
         doc = self._db.tasks.find_one_and_update(
             reclaim_branches[0] if len(reclaim_branches) == 1 else {"$or": reclaim_branches},
@@ -591,40 +594,45 @@ class TaskMixin(_MixinBase):
         # heartbeat is stale.
         heartbeat_cutoff = now - down_timeout_ms
         stale_heartbeat_filter = _stale_heartbeat_or(heartbeat_cutoff)
+        # ONE filter for both the report and the reset below. The reset used to
+        # rebuild it without the stage-budget clause, so tasks this comment
+        # promises to protect were reset to pending anyway (only left out of the
+        # report), handing a mid-stage task to a second runner.
+        orphan_filter = {
+            "state": "running",
+            "server_id": {"$in": dead_ids},
+            # NB: both clauses below are $or's, so they must be combined
+            # under $and — spreading one and then adding the other as a
+            # second "$or" key silently DROPS the first (a dict literal
+            # keeps the last value for a repeated key), which quietly
+            # removes the task-heartbeat guard.
+            # An ACTIVE stage budget wins over server-heartbeat staleness.
+            # A declared long phase means the handler legitimately stops
+            # heartbeating — and the heavy work that motivates declaring one
+            # (a multi-GB osmium scan) is exactly what saturates a host until
+            # its SERVER heartbeat starves too. Without this, both signals go
+            # stale for the same benign reason and the task is handed to a
+            # second runner mid-stage, duplicating hours of work.
+            #
+            # The cost is deliberate: if the host really is dead, its
+            # budgeted task waits for the budget to expire before being
+            # recovered. That is bounded and self-healing, and the lease
+            # (which also covers the budget) already made this the behaviour
+            # for lease-expiry reclaim — this aligns the third clock with the
+            # other two. See paper-timeout-interactions.md §3 (I3).
+            "$and": [
+                stale_heartbeat_filter,
+                {
+                    "$or": [
+                        {"stage_budget_expires": {"$exists": False}},
+                        {"stage_budget_expires": 0},
+                        {"stage_budget_expires": {"$lt": now}},
+                    ]
+                },
+            ],
+        }
         orphan_cursor = self._db.tasks.find(
-            {
-                "state": "running",
-                "server_id": {"$in": dead_ids},
-                # NB: both clauses below are $or's, so they must be combined
-                # under $and — spreading one and then adding the other as a
-                # second "$or" key silently DROPS the first (a dict literal
-                # keeps the last value for a repeated key), which quietly
-                # removes the task-heartbeat guard.
-                # An ACTIVE stage budget wins over server-heartbeat staleness.
-                # A declared long phase means the handler legitimately stops
-                # heartbeating — and the heavy work that motivates declaring one
-                # (a multi-GB osmium scan) is exactly what saturates a host until
-                # its SERVER heartbeat starves too. Without this, both signals go
-                # stale for the same benign reason and the task is handed to a
-                # second runner mid-stage, duplicating hours of work.
-                #
-                # The cost is deliberate: if the host really is dead, its
-                # budgeted task waits for the budget to expire before being
-                # recovered. That is bounded and self-healing, and the lease
-                # (which also covers the budget) already made this the behaviour
-                # for lease-expiry reclaim — this aligns the third clock with the
-                # other two. See paper-timeout-interactions.md §3 (I3).
-                "$and": [
-                    stale_heartbeat_filter,
-                    {
-                        "$or": [
-                            {"stage_budget_expires": {"$exists": False}},
-                            {"stage_budget_expires": 0},
-                            {"stage_budget_expires": {"$lt": now}},
-                        ]
-                    },
-                ],
-            },
+            orphan_filter,
             {"step_id": 1, "workflow_id": 1, "name": 1, "server_id": 1, "updated": 1},
         )
         reaped: list[dict[str, str]] = [
@@ -661,11 +669,6 @@ class TaskMixin(_MixinBase):
             )
 
         # Reset running tasks: increment retry_count and set back to pending
-        orphan_filter = {
-            "state": "running",
-            "server_id": {"$in": dead_ids},
-            **stale_heartbeat_filter,
-        }
         self._db.tasks.update_many(
             orphan_filter,
             {
