@@ -16,7 +16,7 @@
 
 Distributed workflow systems sit at the uncomfortable intersection of three ongoing arguments in systems research: how work should be *described* (declaratively, imperatively, or somewhere in between), how work should be *coordinated* (through a central scheduler, a peer-to-peer claim protocol, or a broker), and how work should be *recovered* after faults (through replay of an event log, through persisted state, or through manual intervention). Each of the dominant industrial systems resolves these tensions differently. Temporal and Cadence treat workflows as deterministic programs whose history is the source of truth; Camunda models them as BPMN graphs whose state lives in a relational database; Jenkins treats them as imperative pipelines anchored to a single controller; Argo treats them as Kubernetes-native YAML. Each resolution has paid for its strengths with specific, structural weaknesses.
 
-This dissertation describes **Facetwork**, a distributed workflow runtime that takes a different, and I will argue better, position on all three axes. Facetwork introduces a declarative domain-specific language, the **Facetwork Flow Language** (FFL), in which domain experts describe workflows as algebras of *facets* — typed units of computation composable via `andThen`, mixins, implicit parameters, and conditional branching — without ever touching the runtime. Facetwork coordinates work through a **lock-free claim protocol** over an atomic document store, leveraging partial unique indices and document-level compare-and-swap semantics to achieve exactly-once execution without a centralised lock manager or coordinator. Facetwork recovers from faults through a **persistent execution graph**, not a replayed event log, allowing individual steps to be re-run, reset, or repaired in place; this drops the determinism constraint that handicaps replay-based systems and admits long-lived, non-idempotent, externally-observable side effects as first-class citizens. Finally, Facetwork is **live-updatable**: new handlers can be registered at runtime, stages within a single long-running task can carry their own dynamic timeout budgets, and individual runners can be drained or quarantined without interrupting the fleet.
+This dissertation describes **Facetwork**, a distributed workflow runtime that takes a different, and I will argue better, position on all three axes. Facetwork introduces a declarative domain-specific language, the **Facetwork Flow Language** (FFL), in which domain experts describe workflows as algebras of *facets* — typed units of computation composable via `andThen`, mixins, implicit parameters, and conditional branching — without ever touching the runtime. Facetwork coordinates work through a **lock-free claim protocol** over an atomic document store, leveraging partial unique indices and document-level compare-and-swap semantics to admit a single claimant per task at a time without a centralised lock manager or coordinator. (An earlier version of this abstract said *exactly-once execution*. That was wrong: delivery is at-least-once, and §15.10 records the measurements that show it.) Facetwork recovers from faults through a **persistent execution graph**, not a replayed event log, allowing individual steps to be re-run, reset, or repaired in place; this drops the determinism constraint that handicaps replay-based systems and admits long-lived, non-idempotent, externally-observable side effects as first-class citizens. Finally, Facetwork is **live-updatable**: new handlers can be registered at runtime, stages within a single long-running task can carry their own dynamic timeout budgets, and individual runners can be drained or quarantined without interrupting the fleet.
 
 The contributions of this thesis are:
 
@@ -812,7 +812,7 @@ doc = tasks.find_one_and_update(
 )
 ```
 
-The update is atomic at the document level. MongoDB's single-document operations are linearisable under the default write concern (majority), meaning that no two runners can both see the document as pending and both claim it. The partial unique index provides a second-level defence: if two concurrent `find_one_and_update` calls somehow raced past the atomic selection — they will not, but defence in depth is cheap — the unique index would reject the duplicate `running` document.
+The update is atomic at the document level: `find_one_and_update` is a compare-and-swap on one document, so no two runners can both see the document as pending and both claim it. That property does not depend on replication. (An earlier version of this sentence attributed it to a *majority* write concern. The evaluated deployment is a single standalone MongoDB node with no replica set, where the write concern does not arise. The cost of that choice is that the coordination store is a single point of failure; see §15.10.) The partial unique index provides a second-level defence: if two concurrent `find_one_and_update` calls somehow raced past the atomic selection — they will not, but defence in depth is cheap — the unique index would reject the duplicate `running` document.
 
 This is the entire claim protocol. There is no broker. There is no coordinator. There is no leader election. There is not even a task distribution algorithm in the usual sense: each runner asks the database for a task and is given one or not.
 
@@ -893,6 +893,8 @@ There is a subtler issue: the previous holder may still be executing when its le
 A second stress test exercises this directly. Ten replicas, 100 concurrent workflows, **three replicas killed at *t* = 30 s** (after all workflows were clearly in flight). The seven survivors absorbed the orphaned tasks via the lease reclaim protocol of this section; 99 of 100 workflows ran to completion. The one stuck workflow had its bootstrap claimed by a killed replica between starting `evaluator.execute()` and creating the first batch of child tasks — a separate edge case in workflow-level recovery, not in the lease protocol. Across the run, the **duplicate-completion count remained at zero**: the ownership-gated terminal write demonstrably prevents the lease-reclaim writeback race that the previous paragraph describes.
 
 **Liveness.** Under the assumption of eventual synchrony (arbitrarily long but bounded message and processing delays eventually prevail), the system makes progress. If a task is pending and at least one live runner matches its name, that runner's next claim attempt will succeed. If a task is running but its holder has died, the lease will eventually expire and some live runner will reclaim. If every attempt fails indefinitely, either every runner is dead (no liveness is possible) or the database is unreachable (no liveness is possible). Under partial synchrony with at least one live runner and a reachable database, progress is guaranteed.
+
+*Correction (October 2026).* "Matches its name" was the whole claim filter when this argument was written. It no longer is. A task may also carry a script-environment hash and a resource floor, and a runner claims only work whose environment it provides and whose floor it can meet *now*. The argument then holds only for a task some live runner can satisfy, and that premise can fail with no fault anywhere. A task can wait indefinitely because no runner provides its environment. It can also wait because the capacity it needs exists but is held by idle processes. The second case was measured: a 13 GB zoom build sat pending for 111 minutes with no task running anywhere in the fleet. §15.12 gives the episode and what was done about it. Progress is guaranteed for *satisfiable* work; whether a given task is satisfiable is a separate question, which the system now checks (`fw maint unsatisfiable`) rather than assumes.
 
 **Fairness.** Facetwork does not guarantee any particular fairness property across tasks. A greedy runner can monopolise a task list. In practice, per-runner concurrency limits (a thread pool of fixed size) prevent one runner from starving others, but I do not claim mathematical fairness.
 
@@ -1126,7 +1128,7 @@ Four features are worth noticing across these examples.
 
 **Second, the registration is by qualified facet name.** None of the examples mentions a workflow. The handler does not know which workflows call it, which parameters the caller might have filled from which upstream step, or which sibling `andThen` block it will sit in. That separation is what §4.10 argued for at the language level; here it is what the handler contract delivers at the runtime level. A handler can be written, registered, and exercised in isolation; FFL authors compose it later without touching its code.
 
-**Third, the shape is identical across languages.** Go, Java, Scala, and TypeScript use the **AgentPoller** model — a standalone process connected to the same MongoDB instance as the Python runners, claiming tasks whose registered facet name matches those it has registered. Python has the additional **RegistryRunner** model, which shares the process with other Python handlers and avoids an extra hop, but the handler function itself looks the same. The choice between AgentPoller and RegistryRunner is a deployment decision, invisible to handler and workflow authors.
+**Third, the shape is identical across languages.** Go, Java, Scala, and TypeScript use the **AgentPoller** model — a standalone process connected to the same MongoDB instance as the Python runners, claiming tasks whose registered facet name matches those it has registered. Python has the additional **RegistryRunner** model, which shares the process with other Python handlers and avoids an extra hop, but the handler function itself looks the same. The choice between AgentPoller and RegistryRunner is a deployment decision, invisible to handler and workflow authors. (The *shape* was identical; the *guarantees* were not. Until October 2026 the four non-Python agents claimed without a lease or a retry limit. §15.13 records the audit that found this and the conformance suite that now binds all five implementations.)
 
 **Fourth, the configuration is uniform.** All five clients resolve their MongoDB connection through the same chain — an explicit config path, the `FW_CONFIG` environment variable, an `facetwork.config.json` file in standard locations, direct `FW_MONGODB_URL` / `FW_MONGODB_DATABASE` environment variables, and finally built-in defaults. A team running handlers in multiple languages configures them all the same way, which matters more in production than any single one of the language-level details.
 
@@ -1759,6 +1761,25 @@ resolved facets only against the workflow's stored AST, which by construction
 does not contain the built-ins — both of which were latent the moment ambient
 declarations existed at all, and neither of which any test had covered.
 
+### 13.4c Porting, delegating and reproducing: what the later comparisons added
+
+The comparisons above were made in August 2026. Four later pieces of work tested them against code and data that were not written for this thesis.
+
+**A port with no collapse ratio.** The retrieve stage of PyPSA-Eur collapsed from 73 Snakemake rules into one `foreach` over a catalogue (§13.3), because those rules were near-copies of one another. The OSM stage of PyPSA-Earth was predicted *not* to collapse, and it did not: three rules of about sixty, 2,168 lines of three distinct algorithms, ported at roughly one facet per rule. That is the useful half of the result. The tax the built-in library removes is charged on near-identical download rules, and rules whose body *is* a program gain nothing from a catalogue. The port's handlers call upstream's own functions so the payload stays theirs. That surfaced three couplings Snakemake hides: functions documented as path-in, path-out that read module globals set only under `__main__`, and an argument accessed as an attribute that only Snakemake's object provides. Each is invisible when the engine and the code share one process, and each is now pinned by a test so that an upstream fix fails loudly instead of drifting. A delegation would not have found them; only a port does.
+
+The same port also contains a defect of my own, worth reporting because of its shape. To avoid a prerequisite rule I changed a default that upstream sets the other way. The run did not produce less; it produced wrong output: 36 buses with no country, and a two-country fan-out that dead-lettered on a shape mismatch. The port is therefore claimed as *plumbing*, not data parity.
+
+**Delegation depth is a property of the other engine's handle.** Running an existing Snakefile as a single Facetwork step ([`examples/snakemake-delegate`](../../examples/snakemake-delegate)) is the useful contrast with the Ray adapter of §2.6. Ray has a job API, so a submission identifier derived from the step id makes redelivery *attach* to the running job instead of starting a second one. Snakemake has no registry: completion is recorded in the filesystem by a local process. Idempotency is therefore Snakemake's own incremental model, and the adapter returns "nothing to be done" explicitly so a workflow can tell a no-op from a run. Termination has to kill the process group. The detached mode, in which another host completes a parked task, needs a durable handle that can be re-derived, and a local process has none: PIDs are reused and an empty lock file names no owner. The adapter therefore stays at the blocking depth. The design rule this yields is that the deepest delegation an engine admits is fixed by what its handle survives, not by the orchestrator.
+
+**Reproducing a published result: the trap is scope.** "Retrieve a published dataset, re-run the analysis, compare and document the discrepancies" turned out to need no domain handlers. It is `fw.http.Fetch` plus `fw.compare.Tabular`, which reports the highest level at which two outputs agree (exists, schema, cardinality, keys, values, bytes) rather than a boolean. Two studies show why the level matters more than the verdict.
+
+- *GIAB HG001* (two releases, 3.6 M and 3.9 M variants). The comparison reported 242,958 variants "retired". 99,980 of them, 41.2%, were on chromosome X, which the newer release does not cover at all. Corrected, the retired count is 146,127 and site-level carryover is 95.9%, not 93.2%. The comparison was arithmetically right and answered a question about content when the difference was one of scope. That published page was wrong twice, both times with a number that was correct and meant something other than its label.
+- *NOAA climate normals*, recomputed from daily observations at twelve stations. At New York every residual fell inside a generous tolerance, and every one fell on the same side of zero per column. A tolerance is a per-value predicate and cannot see direction, yet direction is what shows the method differs.
+
+The comparison facet now reports records that lie outside the other artifact's key space separately from records that differ. That is the same move as §13.3: the engine should report what it did not check, not only what it found.
+
+**An archive whose bytes outlast its locators.** An audit of the NASA Planetary Data System through its registry (90.7 million products) took a uniform random sample per archive site, fetched each product from the recorded URL, and compared it against the recorded size and MD5. Of 360 products, none came back corrupted, and 48 failed because the recorded *location* was wrong. On one node, files had moved one directory deeper, so about 1.8 million registered URLs answer 404 for files that still exist. This bears on §13.4's question of what to trust as evidence. The archive's content checks held; its record of where things are did not. A re-run that trusts an index entry as proof an artifact exists is making the error of §13.4 at archive scale. The audit was run first locally and then across four fleet hosts. Both runs were the same sampled workflow, and they gave identical results.
+
 ### 13.5 The seven dimensions
 
 | Dimension | Snakemake | Nextflow | Facetwork |
@@ -1912,6 +1933,15 @@ Facetwork has been exercised with:
 - Concurrent run counts of up to approximately one hundred.
 - Per-step task sizes from milliseconds to hours.
 
+*Update (October 2026).* Each of those figures has since been exceeded, on the same informal hardware:
+
+- **Fleet.** Eight hosts of mixed architecture (arm64 and x86) at a peak of 108 runner processes. After cold domains were consolidated into one generalist runner, 45 live server records remained.
+- **Fan-out width.** 3,167 branches: one county atlas per US county. It ran first unbounded, then under `foreach … limit` (§15.13), where it completed 3,173 of 3,173 tasks with none failed. That run survived a 7.4-hour hibernation of its host part-way through.
+- **Run depth.** A world low-zoom road build, fanning out from continent to country to region, produced 1,673 maps in one run.
+- **Workflow history.** The store holds about 2,450 workflow runs, 40,000 steps and 28,500 tasks.
+
+The bound that turned out to matter first was not the claim rate under load but the claim rate at *idle*. With 37 runners doing no work, the fleet issued 190 `find_one_and_update` calls per second, every one of them a poll that found nothing. §15.11 records how that was cut to 2.1 per second without adding a coordinator.
+
 Beyond this scale, I do not have empirical data. The claim protocol's throughput is bounded by MongoDB's `find_one_and_update` rate, which on modest hardware is in the hundreds to low thousands per second. The dashboard's rendering is bounded by the cursor paging; pages of ten thousand steps become slow. Neither bound has been hit in production use, but they exist.
 
 Scaling past these bounds is plausible but would require either partitioning the task collection (so that each runner only reads a shard), sharded MongoDB deployments, or optimistic claim protocols that batch work per call. None of these changes affect the design arguments of this thesis; they are operational refinements.
@@ -1966,6 +1996,73 @@ For the fleet, it reads §15.3's scale ceiling from the opposite end: not how la
 
 For the language, the same domain measures how much of a new pipeline is *lookup* rather than *generation*. Its genuinely new code was confined to the source-specific core — the NCBI streaming ingest, a gene-to-drug-class classifier, a geography-to-ISO join — while its scaffolding was reuse: the backend-aware storage layer and the year-slider map renderer adapted from a sibling migration domain, the fan-out workflow shape and the fetch-once shared cache taken from the county atlas, the gallery publish imported verbatim from the census domain. Two of those borrowings were *themselves this project's earlier solved requests*: request *N* (the county atlas) measurably became substrate for request *N+1*, the compounding a capability catalog is meant to produce (§6.9, [`composable-facet-library.md`](../architecture/composable-facet-library.md)). The reuse is **graded** — literal import of framework primitives, template copy-and-adapt of sibling structure, verbatim reuse of a publish tool — and honesty requires naming the grade, because a copied template is still maintained per-domain. The companion paper [`paper-llm-composition.md`](paper-llm-composition.md) develops this into the argument that, given a discoverable, effect/cost-annotated facet library, composing a workflow becomes *lookup-then-compose* rather than code generation, and it states plainly the controlled experiment the claim still needs. Neither result changes the runtime; both are the design of §4.10 and §6.9 observed one more time, from a domain the thesis had not anticipated.
 
+### 14.10 Delivery is at-least-once, and the coordination store is one node (correction)
+
+The abstract and §5.3 originally claimed more than the system does, and this note corrects both. Facetwork guarantees one claimant per task *at a time*. It does not guarantee that a task's work is performed once. The written contract ([`execution-semantics.md`](../reference/execution-semantics.md)) is at-least-once delivery with no fencing token. A step may therefore run twice, and handler idempotency is a requirement, not an optimisation.
+
+The lease path of §5.5 is guarded by an ordering invariant: the lease is held above the execution timeout, so the owning runner's watchdog acts before another runner's reclaim. The real window is the dead-server reaper. A runner whose heartbeat stops for two minutes is declared dead and its tasks are re-queued. "Stopped pinging" is not "stopped running". A paused, partitioned or hibernating host keeps executing, and nothing stops its writes to the object store. `save_task_if_owned` (§5.5) protects the *task document* from the superseded executor, but not the artifacts that executor writes. The informal fleet makes this routine rather than theoretical: one county-atlas host hibernated for 7.4 hours mid-run, which from the database is indistinguishable from death.
+
+A second path was found in October 2026. In 11 of 666 event tasks, all inside capped fan-outs, a second task was created for a step 15–162 ms after the first had completed, sometimes by another server. The handlers were idempotent, so the only cost was a re-run. The commit path now refuses a stale event task before writing. I could not pin down the precise stale-read sequence, because the logs were lost to container recreation; the guard closes the window without explaining it, and I record it as such.
+
+The coordination store also deserves a plainer statement than the thesis gave it. "No coordinator" (§5.7) is true of the runners and false of the deployment. The evaluated fleet coordinates through one standalone MongoDB node: no replica set, no authentication, no TLS. Every runner is replaceable; the database is not. Measured episodes since §14 include relocating the database to another host (the subject of [`paper-moving-state.md`](paper-moving-state.md)) and a live index migration that took the fleet down because older images validated indexes at start-up. A single bad write to shared state once took the fleet from 108 runners to 23. None of this contradicts the claim protocol, which assumes a linearisable store and gets one. It does bound what "leaderless" buys: the design has no master *process* to lose, but it has a master *store*. A replicated, authenticated store is the first thing a production deployment would need, and the evaluated one has neither ([`comparison-to-production-platforms.md`](../operations/comparison-to-production-platforms.md)).
+
+### 14.11 The cost of polling, and a per-host claimer that is not a coordinator (note added in proof)
+
+§5.4 argued that runners do not contend: each issues its own claim and the database arbitrates. That is true of *correctness*. It was not true of *load*, and the load came from the case the argument did not examine, which is idleness. Every runner polls every list it serves, so the database answers a fixed rate of empty claims per runner whether or not there is work. With 37 idle runners the fleet issued 190 `find_one_and_update` calls per second and held 342 connections.
+
+Two changes cut that to 2.1 per second.
+
+- **Agent protocol v1.2** (§14.13) made polling back off when it finds nothing, which brought the rate to 9.5 per second.
+- **One claimer per host.** The runners on a machine ask a local claimer process, which issues *one* merged `claim_any` for all of them and hands each task over with the ownership-gated write of §5.5.
+
+Enabled on all eight hosts, the claimer took the idle rate from 8.8 to 4.3 per second. Moving the Java agents onto it took the rate to 2.1. Through all of this, 16 test workflows completed across seven hosts, each task handed out by a claimer and none released.
+
+The design question is whether this reintroduces the coordinator the thesis argued against. I think it does not, for three reasons.
+
+- **It is per machine, not per fleet.** Two claimers race on the same atomic claim exactly as two runners did.
+- **It holds nothing durable.** A claimer that dies loses only the offers it was holding open.
+- **A runner can do without it.** One that cannot reach its claimer within a timeout claims directly, as before.
+
+The protocol of §5.3 is unchanged; the claimer is a cache in front of it, not a replacement for it. It did have one measurable cost. Backing off to one query per five seconds made a claimer host lose races for generic work to hosts still polling directly, and in a mixed fleet 13 of 13 test runs went elsewhere. The imbalance disappeared once every host had a claimer.
+
+### 14.12 Capacity is not availability (note added in proof)
+
+§15.8 described how capability-tiered server groups keep heavy work off small hosts. Group membership turned out to be too coarse: a laptop with a 7.75 GiB container VM and a server with 13.6 GiB were both "heavy". A task may now carry a resource floor (`with Requires(memory_gb = …)`, which can reference the step's own parameters, so a floor can scale with input size). A runner advertises *measured* capacity, read from the cgroup limit the OOM killer enforces, and a dimension it cannot measure makes it decline rather than accept.
+
+Three failures followed, and they are more instructive than the mechanism.
+
+- **Idle runners held the capacity.** On the world low-zoom build, an Africa region's zoom build with a 13 GB floor waited 111 minutes with *zero* tasks running anywhere. Every host had the capacity; no host had it free. Idle runner processes held 1.4–5 GB each, and with about twenty per host that was the host. The unsatisfiability check compared floors against advertised capacity and reported "OK" throughout. It now reads the free memory runners publish with every heartbeat, and reports a floored task as starved after an hour.
+- **A floor is checked, not reserved.** After idle runners were restarted, one host showed 15 GB free and claimed three 11–12 GB builds within seconds, because each claim saw the same free memory. The fix is a reservation: each host's claimer (§15.11) keeps a ledger and subtracts handed-out floors from what it offers next. Its first live test found a further defect. The script-task branch of `claim_any` filtered on environment alone and ignored the floor, so three 30 GB test tasks started at once on a 20 GB host. Once that was fixed, they ran one at a time, the next starting in the same five-second sample in which its predecessor finished.
+- **An estimate is not a measurement.** A floor of 11 GB, from a size-only model fitted on two US states, met a Brazilian state that peaked at 15.7 GB and was OOM-killed five times in succession. Raising the floor would trade those kills for stalls like the first item's. A floor guards against catastrophic placement; it is not a scheduler, and the thesis should not be read as offering one.
+
+The general lesson matches §15.5. Admission control that checks a quantity without reserving it is correct for one claimant and wrong for several. The check that should catch the failure must observe the same quantity the claim does, or it will report health while the system is stuck.
+
+### 14.13 A protocol defined by one implementation is not a protocol (note added in proof)
+
+§6.4 claimed that the Go, Java, Scala and TypeScript agents share "the same shape" as the Python runner. An audit in October 2026 found that the shape was shared and the guarantees were not. All four non-Python agent libraries claimed with a bare `{state, name, task_list}` filter. They set no `server_id` and no lease, and ignored both the retry cooldown and the resource floor. The consequences:
+
+- A dead agent's task was recovered only by the slower stuck-task watchdog.
+- A handler error was written as `failed`, which the stuck-step sweep recreated at retry count zero, so a failing handler retried without bound and never reached the dead-letter state.
+- Memory floors were ignored entirely.
+
+Nothing had caught this because nothing outside the Python implementation stated the protocol.
+
+The fix gave the protocol a machine-readable statement: version 1.2, with shared constants and conformance cases (claims and retries) that every library must pass. At the time they passed 35 (Java), 107 (Scala), 57 (Go) and 63 (TypeScript); Python runs the same cases. The rollout found one more trap. The Java agent's image fetched its SDK in a cached build layer, so an SDK-only change rebuilt to the same tag with the old SDK. The tag now carries the SDK commit.
+
+After the rollout, a killed agent's task was reclaimed by the reaper at 124 seconds and finished on another host, and a failing task reached the dead-letter state at its retry limit. This is the parity-gap result of [`paper-parity-gaps.md`](paper-parity-gaps.md) one level up. A test suite run against a single implementation cannot show that a second implementation keeps the same promises.
+
+### 14.14 A bulkhead that amplified a latent liveness defect (note added in proof)
+
+FFL gained `foreach … limit N`, a cap on how many iterations of a fan-out are in flight at once. It changes concurrency only; the elements and the result are the same. Its first use at width exposed a defect that the unbounded form had been absorbing.
+
+Leaf steps whose tasks had completed occasionally stayed parked instead of advancing. Unbounded, this was survivable: a 3,167-county run stranded about 13% of its leaves and still finished, with none failed. Capped, it was fatal. Stranded iterations held every slot in the window, admission stopped, and the run froze at 628 of 3,167, and again at 1,368 after a rollout.
+
+The cause was two defects that were each harmless alone. The evaluator discarded the update that records a step's request to be re-queued, and the store never persisted that flag in the first place. The one designed wake-up path therefore read a field that was always false.
+
+After the fix, a 60-iteration run capped at six, with its runner killed mid-flight, completed with one reaper reclaim. The full 3,167-county run, capped, then completed 3,173 of 3,173 tasks unattended, across the 7.4-hour hibernation of §15.10.
+
+The lesson generalises beyond FFL. A bulkhead converts a slow leak of capacity into a hard stop. That is the right failure mode for a resource limit, but it means introducing one is also a test of every liveness path behind it.
+
 ## Chapter 16. Conclusion
 
 ### 15.1 What has been argued
@@ -1989,6 +2086,8 @@ I have not claimed that Facetwork is better than every alternative on every work
 I have not claimed that Facetwork's lock-free protocol is novel in a deep sense. It is a straightforward application of atomic document operations, which have been available in databases for decades. The novelty, such as it is, is in the *combination* with the other design elements: the DSL, the state recovery, the live updatability, the staged timeouts.
 
 I have not claimed that FFL is the best possible DSL. It is one reasonable point in the design space; others exist; the design choices I defended are not the only defensible ones. A proper comparative evaluation of workflow DSLs is future work.
+
+I have not claimed exactly-once execution, although an earlier version of the abstract did. What the protocol provides is one claimant per task at a time. A task's work can run more than once, and a fleet whose hosts sleep makes that ordinary (§15.10). Nor have I claimed a highly available control plane: the runners are leaderless, but the store they coordinate through was, throughout the evaluation, a single unauthenticated node. Of the corrections in Chapter 15's later notes, these two matter most. They change what a reader should expect of a deployment, not of the design argument.
 
 ### 15.3 Where the design goes next
 

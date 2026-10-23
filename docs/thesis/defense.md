@@ -537,4 +537,67 @@ Thank you.
 
 ---
 
+## Addendum (October 2026): answers that no longer stand, and the questions I would now expect
+
+Six months of operation since the defense have falsified parts of three answers and raised questions the committee did not ask. I record them here rather than editing the transcript, so the original answers remain visible beside their corrections. The thesis carries the details in §13.4c and §15.10–§15.14.
+
+### Corrections
+
+**Q14 (write concern).** I said Facetwork's configuration requires majority write concern. It does not, and could not have: the evaluated deployment is a single standalone MongoDB node with no replica set. Nothing in the code sets a write concern. The step-down scenario Prof. Abadi posed therefore does not arise. The honest answer is the less comfortable one: losing that node stops the fleet, and nothing replicates its state. The start-up check I promised was not added. On a standalone node it would check nothing; the check worth having would refuse a non-replicated store in a production profile, and that does not exist either.
+
+**Q12 (redundant continue messages).** I said coalescing was unnecessary at the scale evaluated. It became necessary at a 255-way fan-out, where un-coalesced continue messages made block evaluation O(N²) and stalled the run. It is implemented (thesis §5.7.5, §15.5). The larger load came from a source I did not consider at all: polling at idle. With 37 runners doing nothing, the fleet issued 190 claim operations per second, all of them empty. Back-off in the agent protocol and one claimer per host brought that to 2.1 per second (§15.11).
+
+**Q11 (deploying a handler fix).** The path I described — `register_handler` followed by `fw fleet rolling-deploy` — still exists, but it is no longer how the fleet deploys. Domain handlers are now baked into a multi-architecture runner image, and a fix ships as an image rollout (`fw fleet rollout`): each host's agent reconciles to the new image, staggered across hosts. "Re-run From Here" remains the remedy for work the buggy version completed.
+
+**The closing statement's undertakings.**
+
+- *Done:* result-write gating for zombie handlers (`save_task_if_owned`), and effect annotations (`with Effect(kind = …)`), which tell a reader whether repeating a facet is safe.
+- *Not done:* the write-concern check (above) and the Flyte chapter.
+- *Done differently:* the timeout work became a paper on expiry ordering ([`paper-timeout-interactions.md`](paper-timeout-interactions.md)) rather than a set of stress-test configurations.
+
+### Questions I would now expect
+
+### Q29 (Prof. Kleppmann)
+
+> *Your abstract says exactly-once. Does a task's work ever run twice?*
+
+Yes, and the abstract was wrong; it has been corrected. The protocol guarantees one claimant at a time, not one execution. The window that matters is the dead-server reaper, not lease expiry. A runner that stops heartbeating for two minutes is presumed dead, but a paused or hibernating host keeps executing, and there is no fencing token on what it writes to the object store. On this fleet that is routine: one host hibernated for 7.4 hours in the middle of a run. I have also measured a second path. In 11 of 666 event tasks inside capped fan-outs, a second task was created milliseconds after the first completed. A commit-time guard now refuses it, though I could not reconstruct the stale read that produced it. The contract is at-least-once, and handler idempotency is a requirement written into the documentation, not a hope.
+
+### Q30 (Prof. Gray)
+
+> *You now run a claimer process on every host that claims for every runner there. Is that not the coordinator you spent Chapter 5 arguing against?*
+
+It is a coordinator for one machine and nothing more, and the distinction is load-bearing.
+
+- Two claimers race on the same atomic claim, exactly as two runners did.
+- A claimer holds nothing durable. A task it hands over is written with the same ownership-gated update, and a runner that cannot reach its claimer claims directly.
+- Removing every claimer returns the fleet to the protocol of §5.3 unchanged.
+
+What it adds is a place to *reserve*, which a stateless claim cannot do. That turned out to be its most important job (Q31).
+
+### Q31 (Prof. Abadi)
+
+> *Your liveness argument assumes that if a task is pending, some live runner matching it will claim it. Does it still hold?*
+
+Only for satisfiable work. A task can now carry a resource floor and an environment, and both can leave it unclaimable without any fault occurring. The measured case: a 13 GB build waited 111 minutes with nothing running anywhere, because every host had the capacity and none had it free; idle runners held it. The check meant to catch this compared floors with *capacity* and reported health. It now compares them with the free memory runners report, and calls such a task starved. The opposite failure followed. A floor that is checked but not reserved let one host claim three 11–12 GB builds in the same second. The host claimer now keeps a reservation ledger, and its first live test found a claim path that ignored floors altogether. I would restate the liveness property as: progress for any task some live runner can satisfy *now*. Satisfiability is checked, not assumed.
+
+### Q32 (Prof. Liskov)
+
+> *You have five implementations of the agent protocol. How do you know they agree?*
+
+Until October 2026 I did not, and they did not. All four non-Python agents claimed with no lease and no retry limit, so a failing handler in Java retried without bound, where the same handler in Python would have dead-lettered. The protocol existed only as the behaviour of the Python implementation. It now has a version, shared constants and conformance cases that every library runs; the libraries passed 35, 107, 57 and 63 of their cases. My answer is the one I would give about any interface: the specification has to be an artefact the second implementation is tested against, or the first implementation silently *is* the specification.
+
+### Q33 (Dr. Yegge)
+
+> *You compare against other engines and publish reproductions of other people's results. How do I know those comparisons are fair?*
+
+By looking for my own errors in them, which I have found and published.
+
+- A GIAB comparison reported 242,958 variants "retired". 41% of them were on a chromosome the newer release does not cover; corrected, the carryover is 95.9%, not 93.2%. That page was wrong twice, both times with a correct number that meant something other than its label.
+- My PyPSA-Earth port changed an upstream default and produced 36 buses with no country. I now claim it as plumbing, not as data parity.
+
+Two habits came out of these. A comparison reports the level at which two outputs agree, and separates what is out of scope from what differs. And every port records what it did *not* verify. I would trust a comparison here to the extent that it states its scope. That is the standard I would ask the committee to hold it to.
+
+---
+
 *End of defense transcript.*
