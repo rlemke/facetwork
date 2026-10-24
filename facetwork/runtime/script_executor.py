@@ -28,13 +28,32 @@ Example usage::
     # result == {"output": "HELLO"}
 
 Security Note:
-    Scripts execute in a subprocess with a restricted global namespace that
-    excludes dangerous builtins. The timeout is enforced via
-    ``subprocess.run(timeout=...)``.
+    The in-process restrictions are DEFENCE IN DEPTH, not a trust boundary. A
+    CPython namespace cannot be made escape-proof, so the layer that limits the
+    damage is the subprocess's ENVIRONMENT: it is scrubbed to an allowlist, and
+    a credential is passed only when the script imports the library that needs
+    it (object-store keys for ``fsspec``/``s3fs``/``boto3``, the API key for
+    ``anthropic``). Before 2026-10-23 the worker inherited the runner's whole
+    environment, so any escape handed over the Mongo URL and every secret.
+
+    On top of that, three restrictions close the textbook escapes:
+
+    - a syntax check rejects ``_``-prefixed attributes (``().__class__``),
+      ``__dunder__`` names, frame/generator internals (``gi_frame.f_back``) and
+      ``str.format`` (which resolves attributes from a string the check never
+      sees);
+    - ``getattr``/``setattr``/``hasattr`` refuse the same names at run time;
+    - imported modules are read-only views that never hand out a module outside
+      the allowlist (``statistics.sys`` would otherwise reach ``os``).
+
+    An ``environment``'s declared packages are trusted with what they can do
+    (``numpy.load`` reads files): declaring a package is the grant. The timeout
+    is enforced via ``subprocess.run(timeout=...)``.
 """
 
 from __future__ import annotations
 
+import ast
 import base64
 import builtins as _builtins_mod
 import json
@@ -143,6 +162,114 @@ _SAFE_IMPORT_MODULES: list[str] = [
 ]
 
 
+# Attribute names a script may not touch, beyond anything starting with "_".
+# Frames and code objects reach the worker's REAL globals and builtins
+# (``(x for x in ()).gi_frame.f_back.f_globals``); ``format`` resolves
+# attribute paths from a string (``"{0.__class__}".format(x)``) that the
+# syntax check cannot see; ``mro`` walks the class graph. f-strings remain:
+# their expressions are ordinary syntax and are checked.
+_BLOCKED_ATTRS: frozenset[str] = frozenset(
+    {
+        "gi_frame", "gi_code", "gi_yieldfrom",
+        "cr_frame", "cr_code", "cr_await",
+        "ag_frame", "ag_code", "ag_await",
+        "f_globals", "f_locals", "f_builtins", "f_back", "f_code",
+        "tb_frame", "tb_next",
+        "format", "format_map", "vformat",
+        "mro",
+    }
+)  # fmt: skip
+
+
+# Read-only dunders that only ever yield a string: safe, and used to label output.
+_SAFE_DUNDERS: frozenset[str] = frozenset({"__name__", "__qualname__", "__doc__"})
+
+
+def check_script_source(code: str) -> tuple[str | None, set[str]]:
+    """Statically check script source; return ``(error, imported_roots)``.
+
+    ``error`` is None when the code passes. ``imported_roots`` is the set of
+    top-level packages the script imports, which decides the credentials it
+    is given (see :func:`_script_env`).
+    """
+    try:
+        tree = ast.parse(code, "<script>")
+    except SyntaxError as e:
+        return f"Syntax error in script: {e}", set()
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            if (
+                node.attr.startswith("_") and node.attr not in _SAFE_DUNDERS
+            ) or node.attr in _BLOCKED_ATTRS:
+                return (
+                    f"Script refused (line {node.lineno}): attribute {node.attr!r} "
+                    "is not allowed in script blocks",
+                    imports,
+                )
+        elif isinstance(node, ast.Name) and node.id.startswith("__"):
+            return (
+                f"Script refused (line {node.lineno}): name {node.id!r} "
+                "is not allowed in script blocks",
+                imports,
+            )
+        elif isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if any(a.name == "*" for a in node.names):
+                return (
+                    f"Script refused (line {node.lineno}): 'import *' is not "
+                    "allowed in script blocks",
+                    imports,
+                )
+            if node.module and not node.level:
+                imports.add(node.module.split(".")[0])
+    return None, imports
+
+
+# Environment a script subprocess gets regardless of what it imports: enough for
+# Python, TLS and proxies to work, and nothing that names a secret.
+_PASS_ENV: frozenset[str] = frozenset(
+    {
+        "PATH", "HOME", "USER", "LANG", "LANGUAGE", "TZ",
+        "TMPDIR", "TEMP", "TMP",
+        "PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+    }
+)  # fmt: skip
+_PASS_ENV_PREFIXES: tuple[str, ...] = ("LC_", "XDG_", "OMP_", "OPENBLAS_", "MKL_")
+
+# Credentials granted per imported package: ``{package root: env names}``.
+_STORAGE_PACKAGES = frozenset({"fsspec", "s3fs", "boto3", "botocore"})
+_ANTHROPIC_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL")
+
+
+def _script_env(imports: set[str], parent: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment for a script subprocess: an allowlist plus earned grants."""
+    parent = dict(os.environ if parent is None else parent)
+    env = {k: v for k, v in parent.items() if k in _PASS_ENV or k.startswith(_PASS_ENV_PREFIXES)}
+    if imports & _STORAGE_PACKAGES:
+        env.update({k: v for k, v in parent.items() if k.startswith("AWS_")})
+        # ⚠️ `fw.file.FileOps` bundles s3fs SO THAT a script can do
+        # storage-portable I/O — but s3fs/boto3 read AWS_*, and the fleet
+        # supplies FW_S3_*. Without the alias `fsspec.open("s3://…")` fails with
+        # NoCredentialsError inside a script while the identical path works in a
+        # handler. An explicit AWS_* already in the environment always wins.
+        for aws_name, fw_name in (
+            ("AWS_ACCESS_KEY_ID", "FW_S3_ACCESS_KEY"),
+            ("AWS_SECRET_ACCESS_KEY", "FW_S3_SECRET_KEY"),
+            ("AWS_ENDPOINT_URL", "FW_S3_ENDPOINT"),
+            ("AWS_DEFAULT_REGION", "FW_S3_REGION"),
+        ):
+            fw_val = parent.get(fw_name)
+            if fw_val and not env.get(aws_name):
+                env[aws_name] = fw_val
+    if "anthropic" in imports:
+        env.update({k: parent[k] for k in _ANTHROPIC_ENV if parent.get(k)})
+    return env
+
+
 def _build_worker_script(
     code: str,
     params_json: str | None = None,
@@ -185,17 +312,54 @@ def _build_worker_script(
         # numpy.linalg, scipy.ndimage, collections.abc. The allowlist is about
         # which PACKAGES a script may reach, so the root decides; a package that
         # is not allowed still has every submodule refused.
+        "def _allowed(name):",
+        "    return name in _allowed_modules or name.split('.')[0] in _allowed_modules",
+        f"_blocked = frozenset({sorted(_BLOCKED_ATTRS)!r})",
+        f"_safe_dunders = frozenset({sorted(_SAFE_DUNDERS)!r})",
+        "def _guard(name):",
+        "    if not isinstance(name, str) or name in _blocked or (",
+        "        name.startswith('_') and name not in _safe_dunders",
+        "    ):",
+        "        raise AttributeError(f'attribute {name!r} is not allowed in script blocks')",
+        "class _ModuleView:",
+        "    # A read-only view of an allowed module. It never hands out a module",
+        "    # outside the allowlist: `statistics.sys` would otherwise reach `os`.",
+        "    __slots__ = ('_m',)",
+        "    def __init__(self, m):",
+        "        object.__setattr__(self, '_m', m)",
+        "    def __getattr__(self, name):",
+        "        _guard(name)",
+        "        v = getattr(object.__getattribute__(self, '_m'), name)",
+        "        if isinstance(v, type(_sys)):",
+        "            if not _allowed(v.__name__):",
+        "                raise AttributeError(f'module {v.__name__!r} is not allowed in script blocks')",
+        "            return _ModuleView(v)",
+        "        return v",
+        "    def __setattr__(self, name, value):",
+        "        raise AttributeError('modules are read-only in script blocks')",
+        "    def __repr__(self):",
+        "        return f'<module {object.__getattribute__(self, '_m').__name__!r}>'",
         "def _restricted_import(name, *a, **kw):",
-        "    if name not in _allowed_modules and name.split('.')[0] not in _allowed_modules:",
+        "    if not _allowed(name):",
         "        raise ImportError(f'import of {name!r} is not allowed in script blocks')",
-        "    return __import__(name, *a, **kw)",
+        "    return _ModuleView(__import__(name, *a, **kw))",
         "_safe['__import__'] = _restricted_import",
+        "def _getattr(o, name, *default):",
+        "    _guard(name)",
+        "    return getattr(o, name, *default)",
+        "def _hasattr(o, name):",
+        "    _guard(name)",
+        "    return hasattr(o, name)",
+        "def _setattr(o, name, value):",
+        "    _guard(name)",
+        "    return setattr(o, name, value)",
+        "_safe.update(getattr=_getattr, hasattr=_hasattr, setattr=_setattr)",
         "_real_stdout = _sys.stdout",
         "_capture = _io.StringIO()",
         "_safe['print'] = lambda *a, **kw: print(*a, **kw, file=_capture)",
         "_result = {}",
         params_line,
-        "_sandbox = {'__builtins__': _safe, 'params': _params, 'result': _result, 'json': _json}",
+        "_sandbox = {'__builtins__': _safe, 'params': _params, 'result': _result, 'json': _ModuleView(_json)}",
         f"_code = _base64.b64decode({code_repr}).decode()",
         "try:",
         "    _compiled = compile(_code, '<script>', 'exec')",
@@ -328,30 +492,13 @@ class ScriptExecutor:
                 error=f"Script execution error: params not serializable: {e}",
             )
 
+        refused, imports = check_script_source(code)
+        if refused:
+            return ScriptResult(success=False, result={}, error=refused)
+
         # Pass params via stdin to avoid OS ARG_MAX limits for large payloads
         worker_code = _build_worker_script(code, extra_import_modules=extra_import_modules)
-
-        # ⚠️ `fw.file.FileOps` bundles s3fs SO THAT a script can do
-        # storage-portable I/O — but s3fs/boto3 read AWS_*, and the fleet
-        # supplies FW_S3_*. Without the alias `fsspec.open("s3://…")` fails with
-        # NoCredentialsError inside a script while the identical path works in a
-        # handler, which makes the advertised capability a promise nothing keeps.
-        #
-        # This is NOT new exposure: the worker already inherits the parent
-        # environment wholesale (there is no `env=` below without this), so
-        # FW_S3_* were always visible to script code. The alias only puts the
-        # SAME secrets into the names the bundled library actually reads.
-        # An explicit AWS_* already in the environment always wins.
-        env = dict(os.environ)
-        for aws_name, fw_name in (
-            ("AWS_ACCESS_KEY_ID", "FW_S3_ACCESS_KEY"),
-            ("AWS_SECRET_ACCESS_KEY", "FW_S3_SECRET_KEY"),
-            ("AWS_ENDPOINT_URL", "FW_S3_ENDPOINT"),
-            ("AWS_DEFAULT_REGION", "FW_S3_REGION"),
-        ):
-            fw_val = os.environ.get(fw_name)
-            if fw_val and not env.get(aws_name):
-                env[aws_name] = fw_val
+        env = _script_env(imports)
 
         try:
             proc = subprocess.run(

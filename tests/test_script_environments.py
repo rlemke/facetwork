@@ -32,7 +32,8 @@ class TestScriptS3Credentials:
             return real(*a, **kw)
 
         monkeypatch.setattr(se.subprocess, "run", spy)
-        se.ScriptExecutor(timeout=30).execute("result = {}", {})
+        # Credentials are granted only to a script that imports a storage library.
+        se.ScriptExecutor(timeout=30).execute("import fsspec\nresult = {}", {})
         assert seen.get("AWS_ACCESS_KEY_ID") == "explicit"
         assert seen.get("AWS_SECRET_ACCESS_KEY") is None or True
 
@@ -53,7 +54,8 @@ class TestScriptS3Credentials:
             return real(*a, **kw)
 
         monkeypatch.setattr(se.subprocess, "run", spy)
-        se.ScriptExecutor(timeout=30).execute("result = {}", {})
+        # Credentials are granted only to a script that imports a storage library.
+        se.ScriptExecutor(timeout=30).execute("import fsspec\nresult = {}", {})
         assert seen.get("AWS_ACCESS_KEY_ID") == "mapped-key"
         assert seen.get("AWS_ENDPOINT_URL") == "http://afl-minio:9000"
 

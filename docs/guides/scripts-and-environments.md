@@ -36,6 +36,32 @@ JSON-serializable `params`, and run under the task timeout with no lease
 renewal. If a facet fights those limits, it is telling you it belongs in the
 capability tier.
 
+### What the sandbox actually guarantees
+
+The language-level limits are **defence in depth, not a trust boundary**: a
+CPython namespace cannot be made escape-proof. Until 2026-10-23 they were also
+easy to step around. Three lines (`import statistics`, then
+`statistics.sys.modules['os']`) read the runner's Mongo URL and ran a shell,
+and 12 of 15 textbook escapes worked. What limits the damage now:
+
+- **The environment is scrubbed.** The script subprocess gets `PATH`, `HOME`,
+  locale, temp, TLS and proxy variables and nothing else. Credentials are
+  granted by **what the script imports**: `fsspec`/`s3fs`/`boto3` earn the
+  object-store keys (as `AWS_*`), `anthropic` earns `ANTHROPIC_API_KEY`.
+  Nothing earns the Mongo URL or any other secret.
+- **A syntax check runs first** and refuses `_`-prefixed attributes (allowing
+  only `__name__`, `__qualname__`, `__doc__`), `__dunder__` names, frame and
+  generator internals (`gi_frame`, `f_back`, …), `.mro()`, `import *`, and
+  `str.format` (it resolves attribute paths from a string the check cannot
+  see; use f-strings, which are checked).
+- **`getattr`/`hasattr`/`setattr` refuse the same names at run time**, and
+  imported modules are **read-only views** that never return a module outside
+  the allowlist (`statistics.sys`, `json.codecs`).
+
+An environment's declared packages are trusted with whatever they can do
+(`numpy.load` reads files); declaring a package is the grant. Pinned in
+`tests/runtime/test_script_sandbox_escapes.py`.
+
 A useful shortcut: facets already annotated `with Effect(kind = "pure")` and
 `with Cost(tier = "cheap")` are the natural script candidates —
 `fw_capabilities(effect="pure", max_cost="cheap")` enumerates them.
