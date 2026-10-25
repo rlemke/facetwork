@@ -672,6 +672,20 @@ class ExecutionContext:
         if not declarations:
             return None
 
+        # A short name resolves in the workflow's OWN namespace first, as the
+        # compiler resolves it. Without this the search below takes the first
+        # declaration with that short name anywhere in the program — and the
+        # workflow's root step carries its SHORT name. Measured 2026-10-25:
+        # `nfl.workflows.Backtest` calling `nfl.model.Backtest` resolved its own
+        # root step to the EVENT facet (declared earlier in the file), so the
+        # whole workflow was dispatched as a task named "Backtest" on the
+        # default list, which no runner serves: pending forever, no error.
+        if "." not in facet_name and "." in (self.qualified_workflow_name or ""):
+            own_ns = self.qualified_workflow_name.rsplit(".", 1)[0]
+            result = self._search_declarations_qualified(declarations, f"{own_ns}.{facet_name}")
+            if result:
+                return result
+
         # If the name contains a dot, try qualified lookup first
         if "." in facet_name:
             result = self._search_declarations_qualified(declarations, facet_name)
