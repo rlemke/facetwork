@@ -343,10 +343,12 @@ services:
     container_name: facetwork-dashboard
     # `afl-mongodb` is ALREADY taken inside this compose network by the bundled
     # Mongo, so a cluster member needs a name that unambiguously means "the
-    # fleet's". Driven by FW_INFRA_IP like the runners' aliases, so recreating
-    # the container follows DHCP drift instead of freezing an address.
+    # fleet's". Driven by FW_MONGO_IP (falling back to FW_INFRA_IP) like the
+    # runners' afl-mongodb alias: Mongo no longer runs on the infra host, so the
+    # infra address alone answers "connection refused". Recreating the container
+    # follows DHCP drift instead of freezing an address.
     extra_hosts:
-      - "afl-fleet-mongodb:${FW_INFRA_IP:-127.0.0.1}"
+      - "afl-fleet-mongodb:${FW_MONGO_IP:-${FW_INFRA_IP:-127.0.0.1}}"
     depends_on:
       mongodb:
         condition: service_healthy

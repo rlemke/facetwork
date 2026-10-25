@@ -8,5 +8,5 @@ services:
     environment:
       FW_MONGODB_URL: mongodb://afl-mongodb:27017
     extra_hosts:
-      - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
+      - "afl-mongodb:${FW_MONGO_IP:-${FW_INFRA_IP:-127.0.0.1}}"
       - "afl-minio:${FW_INFRA_IP:-127.0.0.1}"
