@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# fw-summary: refresh NFL data, ratings, predictions and season odds; --install adds the daily timer
+#
+# Submits nfl.workflows.Update: fetch what changed from nflverse (conditional
+# GETs, so an unchanged file costs one request), reload only files whose
+# checksum moved, re-rate every game, freeze predictions for games not yet
+# played, and re-simulate the rest of the season.
+#
+# Timing: 06:30 LOCAL every day. nflverse rebuilds its schedule/result and
+# player-stats files overnight, and the last game of a week (Monday night)
+# ends around 05:00 UTC, so a morning run picks up the whole week. Every day
+# rather than game days only: Thursday, Saturday and international games move
+# around, and a day with no change is nearly free.
+#
+# ⚠️ Predictions are frozen once a game's date has passed, so this timer is
+# what MAKES the live track record: a game that kicks off with no run since
+# the previous result was predicted from slightly stale ratings, and a game
+# with no prediction stored at all is simply absent from the record.
+#
+# Safe to re-run: every step is idempotent (upserts, per-season replace).
+#
+# Usage:
+#   fw svc nfl-update                # run one update now (also what the timer calls)
+#   fw svc nfl-update --sims N       # simulations (default 10000)
+#   fw svc nfl-update --install      # write + load the daily timer
+#   fw svc nfl-update --at 07:15     # install at a different local time
+#   fw svc nfl-update --uninstall    # unload + remove
+#   fw svc nfl-update --status       # is the timer loaded, and when did it last run?
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -euo pipefail
+
+LABEL="com.facetwork.nfl-update"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/nfl-update.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/nfl-update.log"
+SIMS=10000 ACTION="run" AT="06:30" LOAD=1
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --sims) SIMS="$2"; shift 2 ;;
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        --at) AT="$2"; shift 2 ;;
+        --no-load) LOAD=0; shift ;;
+        -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+FFL="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_nfl/src/nfl/ffl/nfl.ffl"
+
+run_update() {
+    [ -f "$FFL" ] || { echo "no NFL FFL at $FFL — is fwh_nfl installed?" >&2; exit 1; }
+    echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] NFL update, $SIMS simulations"
+    # A runner serving nfl.* executes it; nothing here needs the domain importable.
+    "$FW_ROOT/fw" ffl run --primary "$FFL" --library "$FW_ROOT/facetwork/ffl/http.ffl" \
+        --workflow nfl.workflows.Update \
+        --inputs "{\"sims\": $SIMS}"
+}
+
+case "$ACTION" in
+run) run_update ;;
+
+status)
+    # NOT `launchctl list | grep -q`: under `set -o pipefail`, grep -q exits on
+    # the first match, launchctl then dies on SIGPIPE, and pipefail propagates
+    # THAT failure — so the check reports "not loaded" for a job that is
+    # demonstrably running. Whether it fires depends on how much launchctl had
+    # left to write, which made it look intermittent. Capture, then test.
+    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
+        echo "timer: LOADED ($LABEL)"
+    else
+        echo "timer: not loaded — install with: fw svc nfl-update --install"
+    fi
+    [ -f "$PLIST" ] && echo "plist:  $PLIST" || echo "plist:  (none)"
+    if [ -f "$LOG" ]; then
+        echo "last log lines ($LOG):"
+        tail -5 "$LOG" | sed 's/^/  /'
+    else
+        echo "log:    (none yet at $LOG)"
+    fi
+    ;;
+
+uninstall)
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL (removed $PLIST + $WRAPPER)."
+    echo "NFL data, odds and the live prediction record stop updating."
+    ;;
+
+install)
+    # Linux installs the same wrapper on a cron line; only the scheduler differs.
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    case "$AT" in
+        [0-9][0-9]:[0-9][0-9]) HH="${AT%%:*}"; MM="${AT##*:}" ;;
+        *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
+    esac
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+
+    # Login shell so PATH/venv/docker resolve the way they do interactively —
+    # a LaunchAgent otherwise starts with almost no environment.
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Facetwork daily NFL update — launched by $LABEL.
+# Regenerate via 'fw svc nfl-update --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+# The update is executed by a RUNNER, not by this script, so wait for Docker
+# rather than failing on a machine that just woke up.
+if ! docker info >/dev/null 2>&1; then
+  open -a Docker >/dev/null 2>&1 || true
+  for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 5; done
+fi
+cd "$FW_ROOT" || exit 1
+exec ./fw svc nfl-update
+WRAP
+    chmod +x "$WRAPPER"
+
+    if ! fw_timer_is_darwin; then
+        case "$AT" in
+            [0-9][0-9]:[0-9][0-9]) : ;;
+            *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
+        esac
+        SPEC="$((10#${AT##*:})) $((10#${AT%%:*})) * * *"
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: $SPEC  (daily at $AT local)"
+        echo "  check:   fw svc nfl-update --status"
+        exit 0
+    fi
+
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- Daily. RunAtLoad is FALSE: installing a timer must not start a
+         multi-minute download-and-simulate run as a side effect. -->
+    <key>RunAtLoad</key><false/>
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>$((10#$HH))</integer><key>Minute</key><integer>$((10#$MM))</integer></dict>
+    <key>WorkingDirectory</key><string>$FW_ROOT</string>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/nfl-update.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+
+    echo "wrote:"
+    echo "  $WRAPPER"
+    echo "  $PLIST   (daily at $AT local)"
+    if [ "$LOAD" = 1 ]; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        launchctl load "$PLIST"
+        echo "loaded $LABEL — NFL update daily at $AT."
+        echo "  logs: $LOG  ·  check: fw svc nfl-update --status"
+    else
+        echo "not loaded (--no-load). Activate with: launchctl load $PLIST"
+    fi
+    ;;
+esac

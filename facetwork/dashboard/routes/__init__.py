@@ -29,6 +29,7 @@ def register_routes(app: FastAPI) -> None:
     from .core.home import router as home_router
     from .domain.census_maps import router as census_maps_router
     from .domain.climate_trends import router as climate_trends_router
+    from .domain.nfl import router as nfl_router
     from .domain.site_selection import router as site_selection_router
     from .domain.stocks import router as stocks_router
     from .execution.catalog import router as catalog_router
@@ -81,3 +82,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(site_selection_router)
     app.include_router(climate_trends_router)
     app.include_router(stocks_router)
+    app.include_router(nfl_router)

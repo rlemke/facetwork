@@ -1,0 +1,85 @@
+{# Shared styles + macros for the NFL app.
+
+   Team identity is shown as the abbreviation in a chip edged with the team's
+   own colour — the colour is decoration, the text carries the meaning. Model
+   and market probabilities use categorical slots 1 and 2 of the validated
+   palette (the same pair the stocks app uses for group vs benchmark). #}
+
+{% macro styles() %}
+<style>
+.nfl{ --series-1:#3987e5; --series-2:#d95926; --good:#0ca30c; --bad:#d03b3b; }
+[data-theme="light"] .nfl{ --series-1:#2a78d6; --series-2:#eb6834; --good:#006300; --bad:#c22c2c; }
+.nfl .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:1.1rem}
+.nfl .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.9rem;margin-bottom:1.1rem}
+.nfl .kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:.85rem .95rem}
+.nfl .kpi .lbl{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.nfl .kpi .val{font-size:24px;font-weight:600;letter-spacing:-.02em;margin-top:.35rem;line-height:1.1}
+.nfl .kpi .sub{font-size:11.5px;color:var(--muted);margin-top:.25rem;line-height:1.4}
+.nfl .section{margin-bottom:1.1rem}
+.nfl .tm{display:inline-flex;align-items:center;gap:.4rem;text-decoration:none;color:var(--text);font-weight:600;white-space:nowrap}
+.nfl .tm i{width:4px;height:16px;border-radius:2px;display:inline-block;flex:none}
+.nfl .tm:hover{color:var(--accent)}
+.nfl .t{font-size:11.5px;color:var(--muted)}
+.nfl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.nfl .good{color:var(--good)} .nfl .bad{color:var(--bad)}
+.nfl .pbar{display:inline-block;width:64px;height:7px;border-radius:4px;background:var(--surface-3);vertical-align:middle;margin-left:.4rem;overflow:hidden}
+.nfl .pbar>b{display:block;height:100%;background:var(--series-1)}
+.nfl .pbar.mkt>b{background:var(--series-2)}
+.nfl .note{font-size:11.5px;color:var(--text-2);line-height:1.55;padding:.8rem .95rem;border:1px solid var(--border);
+  background:var(--surface-2);border-radius:var(--r-md);margin-top:1rem}
+.nfl .note b{color:var(--text)}
+.nfl .weeks{display:flex;gap:.3rem;flex-wrap:wrap}
+.nfl .weeks a{font:600 11px/1 var(--mono);padding:.3rem .45rem;border-radius:var(--r-sm);border:1px solid var(--border);
+  color:var(--text-2);text-decoration:none}
+.nfl .weeks a.cur{background:var(--accent);border-color:var(--accent);color:#001}
+.nfl .bracket{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:.6rem;padding:.9rem;overflow-x:auto}
+.nfl .bracket .col h4{margin:0 0 .5rem;font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.nfl .slot{border:1px solid var(--border);border-radius:var(--r-sm);padding:.4rem .5rem;margin-bottom:.4rem;background:var(--surface-2);font-size:12.5px}
+.nfl .slot .seed{font:600 10.5px/1 var(--mono);color:var(--muted);margin-right:.35rem}
+.nfl .slot .p{float:right;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.nfl .chart svg{width:100%;height:auto;display:block}
+.nfl .chart polyline{fill:none;stroke:var(--series-1);stroke-width:1.6}
+.nfl .chart .axis{stroke:var(--border);stroke-width:1}
+.nfl .chart text{fill:var(--muted);font:10px var(--mono)}
+.nfl .tabs{display:flex;gap:.4rem;flex-wrap:wrap}
+.nfl form.inline{display:inline}
+.nfl .overflow-x{overflow-x:auto}
+.nfl .champ{font-weight:600;color:var(--good)}
+.nfl .roster{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.2rem 1.2rem;padding:.8rem .95rem}
+.nfl .roster h4{margin:.6rem 0 .2rem;font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.nfl .roster a{display:block;font-size:12.5px;padding:.1rem 0;text-decoration:none;color:var(--text)}
+.nfl .roster a:hover{color:var(--accent)}
+.nfl .search{display:flex;gap:.5rem;padding:.8rem .9rem}
+.nfl .search input,.nfl .search select{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);
+  color:var(--text);padding:.45rem .6rem;font:13px var(--sans)}
+.nfl .search input{flex:1;min-width:0}
+</style>
+{% endmacro %}
+
+{% macro team(abbr, teams, label=None) -%}
+{%- set t = teams.get(abbr) if teams else None -%}
+<a class="tm" href="/nfl/teams/{{ abbr }}" title="{{ t.name if t else abbr }}"><i style="background:{{ (t.color if t else '') or 'var(--border-strong)' }}"></i>{{ label or abbr }}</a>
+{%- endmacro %}
+
+{% macro pct(v, digits=0) -%}
+{%- if v is none or v is undefined -%}<span class="t">&mdash;</span>
+{%- elif v > 0 and v < 0.005 and digits == 0 -%}&lt;1%
+{%- elif v < 1 and v > 0.995 and digits == 0 -%}&gt;99%
+{%- else -%}{{ "%.*f"|format(digits, v * 100) }}%{%- endif -%}
+{%- endmacro %}
+
+{% macro pbar(v, cls='') -%}
+<span class="pbar {{ cls }}"><b style="width:{{ ((v or 0) * 100)|round(1) }}%"></b></span>
+{%- endmacro %}
+
+{% macro fav(g, v) -%}
+{%- if v is none or v is undefined -%}<span class="t">&mdash;</span>
+{%- elif v == 0 -%}Pick&rsquo;em
+{%- else -%}{{ g.home if v > 0 else g.away }} &minus;{{ "%.1f"|format(v|abs) }}{%- endif -%}
+{%- endmacro %}
+
+{% macro num(v, digits=0) -%}
+{%- if v is none or v is undefined or v == 0 -%}<span class="t">&middot;</span>
+{%- elif digits -%}{{ "%.*f"|format(digits, v) }}
+{%- else -%}{{ "{:,}".format(v|round|int) }}{%- endif -%}
+{%- endmacro %}

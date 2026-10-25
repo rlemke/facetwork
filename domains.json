@@ -403,6 +403,11 @@
       "repo": "fwh_pds",
       "extras": [],
       "description": "NASA Planetary Data System archive via the PDS Registry: a checksum audit (uniform random sample per archive site, fetched and compared with the registered size + MD5; data and labels judged separately) and per-body coverage maps from registry bounding boxes. Network only, no API key."
+    },
+    "nfl": {
+      "repo": "fwh_nfl",
+      "extras": [],
+      "description": "NFL players, teams and game predictions from nflverse (results since 1999, weekly player stats): an Elo team rating scored game by game against the betting line, frozen pre-kickoff predictions for an honest live record, and a Monte Carlo of the rest of the season with the league's real tiebreakers (reproduces every seeding since 2002) for playoff, bracket and Super Bowl odds. Dashboard app at /nfl. Network only, no API key."
     }
   },
   "examples": {

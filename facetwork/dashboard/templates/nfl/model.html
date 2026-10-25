@@ -1,0 +1,82 @@
+{% extends "v3/base.html" %}
+{% import "nfl/_shared.html" as n %}
+{% block title %}Model &middot; NFL &middot; Facetwork{% endblock %}
+{% block head_extra %}{{ n.styles() }}{% endblock %}
+{% block breadcrumb %}<nav class="crumb"><a href="/nfl/">NFL</a><span>/</span><span class="cur">How good is the model?</span></nav>{% endblock %}
+{% block topbar_actions %}
+<form class="inline" method="post" action="/nfl/backtest"><button class="btn primary" type="submit">Re-run backtest</button></form>
+{% endblock %}
+
+{% block content %}
+<div class="nfl">
+  {% if not backtest %}
+  <div class="empty"><h1>No backtest yet</h1><p>Run <code>nfl.workflows.ScoreModel</code> to score the model against history.</p>
+    <form method="post" action="/nfl/backtest"><button class="btn primary" type="submit">Run backtest</button></form></div>
+  {% else %}
+  {% set m = backtest.model %}{% set k = backtest.market %}
+  <section class="kpis">
+    <div class="kpi"><div class="lbl">Picked the winner</div><div class="val">{{ n.pct(m.accuracy, 1) }}</div>
+      <div class="sub">Betting line: {{ n.pct(k.accuracy, 1) }} &middot; {{ "{:,}".format(m.n) }} games, {{ backtest.first_season }}&ndash;{{ backtest.last_season }}</div></div>
+    <div class="kpi"><div class="lbl">Brier score</div><div class="val">{{ "%.3f"|format(m.brier) }}</div>
+      <div class="sub">Betting line {{ "%.3f"|format(k.brier) }} &middot; lower is better; a coin flip scores 0.250</div></div>
+    <div class="kpi"><div class="lbl">Spread error</div><div class="val">{{ "%.1f"|format(m.spread_mae) }} <span style="font-size:14px;color:var(--muted)">pts</span></div>
+      <div class="sub">Betting line {{ "%.1f"|format(k.spread_mae) }} pts &middot; mean miss on the final margin</div></div>
+    <div class="kpi"><div class="lbl">This season, live</div><div class="val">{% if live.n %}{{ n.pct(live.accuracy) }}{% else %}<span class="t">no games yet</span>{% endif %}</div>
+      <div class="sub">{% if live.n %}{{ live.n }} games from predictions frozen before kickoff{% if live.market_n %} &middot; line {{ n.pct(live.market_accuracy) }}{% endif %}{% else %}Counts only predictions stored before kickoff{% if live.since %}; the first was made {{ live.since[:10] }}{% endif %}{% endif %}</div></div>
+  </section>
+
+  <div class="grid2 section">
+    <section class="panel">
+      <div class="panel-head"><h2>Season by season</h2><span class="t">same games for both</span></div>
+      <table class="dtable">
+        <thead><tr><th>Season</th><th class="num">Games</th><th class="num">Model</th><th class="num">Line</th><th class="num">Model Brier</th><th class="num">Line Brier</th></tr></thead>
+        <tbody>
+        {% for s in backtest.seasons %}
+          <tr><td>{{ s.season }}</td><td class="num">{{ s.model.n }}</td>
+            <td class="num {{ 'good' if s.model.accuracy > s.market.accuracy else '' }}">{{ n.pct(s.model.accuracy, 1) }}</td>
+            <td class="num">{{ n.pct(s.market.accuracy, 1) }}</td>
+            <td class="num">{{ "%.3f"|format(s.model.brier) }}</td><td class="num">{{ "%.3f"|format(s.market.brier) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Calibration</h2><span class="t">when the model says 70%, does the favourite win 70%?</span></div>
+      <table class="dtable">
+        <thead><tr><th>Model said</th><th class="num">Games</th><th class="num">Average</th><th class="num">Favourite won</th></tr></thead>
+        <tbody>
+        {% for c in backtest.calibration %}
+          <tr><td>{{ c.bucket }}</td><td class="num">{{ c.games }}</td><td class="num">{{ n.pct(c.predicted, 1) }}</td><td class="num">{{ n.pct(c.actual, 1) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if backtest.playoff_odds %}{% set po = backtest.playoff_odds %}
+      <div class="panel-head" style="border-top:1px solid var(--border)"><h2>Playoff odds after week {{ po.after_week }}</h2>
+        <span class="t">Brier {{ "%.3f"|format(po.brier) }} over {{ po.team_seasons }} team-seasons</span></div>
+      <table class="dtable">
+        <thead><tr><th>Playoff chance</th><th class="num">Teams</th><th class="num">Average</th><th class="num">Made it</th></tr></thead>
+        <tbody>
+        {% for c in po.calibration %}
+          <tr><td>{{ c.bucket }}</td><td class="num">{{ c.teams }}</td><td class="num">{{ n.pct(c.predicted, 1) }}</td><td class="num">{{ n.pct(c.actual, 1) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </section>
+  </div>
+  {% endif %}
+
+  <div class="note">
+    <b>Method.</b> FiveThirtyEight&rsquo;s published NFL Elo without its quarterback adjustment: home field worth {{ (meta.params.hfa if meta.params else 48)|round|int }} rating points,
+    {{ (meta.params.bye_bonus if meta.params else 25)|round|int }} for coming off a bye, a margin-of-victory multiplier damped for favourites, playoff differences scaled by {{ meta.params.playoff_mult if meta.params else 1.2 }},
+    and {{ ((meta.params.regress if meta.params else 0.4) * 100)|round|int }}% regression to the mean between seasons. 25 rating points = 1 point on the scoreboard.
+    The constants were chosen on 2005&ndash;2014 and are reported from 2015 on, so these numbers are out of sample.<br><br>
+    <b>Two different records.</b> The backtest re-scores history game by game using only results before each game. The <i>live</i> record uses predictions stored
+    before kickoff and never rewritten, so it cannot benefit from anything learned afterwards. The betting line is converted to a probability with a 13.45-point
+    standard deviation around the spread.<br><br>
+    <b>Known limit.</b> The model cannot see quarterback changes, injuries, weather or coaching. When it and the line disagree by more than a few points,
+    the line usually knows something the model does not.
+  </div>
+</div>
+{% endblock %}

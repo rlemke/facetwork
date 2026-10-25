@@ -1,0 +1,141 @@
+{% extends "v3/base.html" %}
+{% import "nfl/_shared.html" as n %}
+{% block title %}{{ team.name }} &middot; NFL &middot; Facetwork{% endblock %}
+{% block head_extra %}{{ n.styles() }}{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><a href="/nfl/">NFL</a><span>/</span><span class="cur">{{ team.name }}</span></nav>{% endblock %}
+
+{% block content %}
+<div class="nfl">
+
+  <section class="kpis">
+    <div class="kpi" style="border-left:4px solid {{ team.color or 'var(--border-strong)' }}">
+      <div class="lbl">{{ team.division }}</div>
+      <div class="val">{{ team.name }}</div>
+      <div class="sub">{{ season }}: {{ record.text }}</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Elo rating</div>
+      <div class="val">{{ rating.elo|round|int if rating.elo else '—' }}</div>
+      <div class="sub">#{{ rating.rank }} of 32 &middot; league average 1505</div>
+    </div>
+    {% if team_odds %}
+    <div class="kpi">
+      <div class="lbl">Playoffs</div>
+      <div class="val">{{ n.pct(team_odds.playoffs) }}</div>
+      <div class="sub">Division {{ n.pct(team_odds.division) }} &middot; projected {{ "%.1f"|format(team_odds.mean_wins) }} wins</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Super Bowl</div>
+      <div class="val">{{ n.pct(team_odds.super_bowl) }}</div>
+      <div class="sub">Win it {{ n.pct(team_odds.champion) }}</div>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if team_odds and team_odds.seeds %}
+  <section class="panel section">
+    <div class="panel-head"><h2>Path to the Super Bowl</h2><span class="t">from {{ "{:,}".format(odds.sims) }} simulated seasons</span></div>
+    <table class="dtable"><tbody>
+      <tr><td>Make the playoffs</td><td class="num">{{ n.pct(team_odds.playoffs) }}{{ n.pbar(team_odds.playoffs) }}</td></tr>
+      <tr><td>Win the division</td><td class="num">{{ n.pct(team_odds.division) }}{{ n.pbar(team_odds.division) }}</td></tr>
+      <tr><td>First-round bye (1 seed)</td><td class="num">{{ n.pct(team_odds.bye) }}{{ n.pbar(team_odds.bye) }}</td></tr>
+      <tr><td>Reach the divisional round</td><td class="num">{{ n.pct(team_odds.divisional_round) }}{{ n.pbar(team_odds.divisional_round) }}</td></tr>
+      <tr><td>Reach the conference game</td><td class="num">{{ n.pct(team_odds.conference_game) }}{{ n.pbar(team_odds.conference_game) }}</td></tr>
+      <tr><td>Reach the Super Bowl</td><td class="num">{{ n.pct(team_odds.super_bowl) }}{{ n.pbar(team_odds.super_bowl) }}</td></tr>
+      <tr><td>Win the Super Bowl</td><td class="num">{{ n.pct(team_odds.champion) }}{{ n.pbar(team_odds.champion) }}</td></tr>
+      <tr><td>Seed</td><td class="num t">{% for s, p in team_odds.seeds.items() %}{{ s }}: {{ n.pct(p) }}{% if not loop.last %} &middot; {% endif %}{% endfor %}</td></tr>
+    </tbody></table>
+  </section>
+  {% endif %}
+
+  <section class="panel section">
+    <div class="panel-head"><h2>{{ season }} schedule</h2>
+      <form method="get" style="margin-left:auto"><select name="season" onchange="this.form.submit()" class="btn">
+        {% for s in seasons %}<option value="{{ s }}" {% if s == season %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select></form>
+    </div>
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr><th>Week</th><th>Opponent</th><th>Date</th><th class="num">Win chance</th><th class="num">Model line</th><th class="num">Betting line</th><th class="num">Result</th></tr></thead>
+      <tbody>
+      {% for g in games %}
+        {% set home = g.home == abbr %}
+        {% set opp = g.away if home else g.home %}
+        {% set p = (g.p_home if home else (1 - g.p_home)) if g.p_home is not none else none %}
+        <tr>
+          <td class="t">{{ g.round }}</td>
+          <td><span class="t">{{ 'vs' if home else 'at' }}</span> {{ n.team(opp, teams) }}</td>
+          <td class="t">{{ g.gameday }}</td>
+          <td class="num">{{ n.pct(p) }}{{ n.pbar(p) }}</td>
+          <td class="num">{{ n.fav(g, g.spread_pred) }}</td>
+          <td class="num">{{ n.fav(g, g.spread_line) }}</td>
+          <td class="num">{% if g.played %}
+            {% set mine = g.home_score if home else g.away_score %}{% set theirs = g.away_score if home else g.home_score %}
+            <span class="{{ 'good' if mine > theirs else ('bad' if mine < theirs else '') }}">{{ 'W' if mine > theirs else ('L' if mine < theirs else 'T') }}</span> {{ mine }}&ndash;{{ theirs }}
+          {% else %}<span class="t">&mdash;</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {% if chart.points %}
+  <section class="panel section chart">
+    <div class="panel-head"><h2>Rating since 1999</h2><span class="t">Elo after every game &middot; range {{ chart.min }}&ndash;{{ chart.max }}</span></div>
+    <div style="padding:.6rem .9rem .9rem">
+      <svg viewBox="0 0 {{ chart.width }} {{ chart.height + 16 }}" role="img" aria-label="{{ team.name }} Elo rating history">
+        {% for m in season_marks %}<line class="axis" x1="{{ m.x }}" x2="{{ m.x }}" y1="0" y2="{{ chart.height }}"/><text x="{{ m.x + 2 }}" y="{{ chart.height + 12 }}">{{ m.label }}</text>{% endfor %}
+        <polyline points="{{ chart.points }}"/>
+      </svg>
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="grid2 section">
+    <section class="panel">
+      <div class="panel-head"><h2>{{ season }} leaders</h2></div>
+      <table class="dtable"><tbody>
+      {% for l in leaders %}
+        <tr><td class="t">{{ l.label }}</td><td>{% for r in l.rows %}<a href="/nfl/players/{{ r.player_id }}">{{ r.name }}</a> <span class="t">{{ r.position }}</span> {{ n.num(r[l.field], 1 if l.field == 'def_sacks' else 0) }}{% if not loop.last %} &middot; {% endif %}{% endfor %}</td></tr>
+      {% else %}
+        <tr><td class="t">No player stats for {{ season }}.</td></tr>
+      {% endfor %}
+      </tbody></table>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Active roster</h2><span class="t">as nflverse lists it today</span></div>
+      <div class="roster">
+      {% for grp, players in roster %}
+        <div><h4>{{ grp }}</h4>
+          {% for p in players %}<a href="/nfl/players/{{ p._id }}">{{ p.name }} <span class="t">{{ p.position }}{% if p.jersey_number %} #{{ p.jersey_number }}{% endif %}</span></a>{% endfor %}
+        </div>
+      {% else %}<span class="t">No active roster listed.</span>{% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <section class="panel section">
+    <div class="panel-head"><h2>Season by season</h2></div>
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr><th>Season</th><th class="num">Record</th><th class="num">Points for</th><th class="num">Against</th><th>Postseason</th><th class="num">Final Elo</th></tr></thead>
+      <tbody>
+      {% for h in history %}
+        <tr>
+          <td><a href="/nfl/teams/{{ abbr }}?season={{ h.season }}">{{ h.season }}</a>{% if h.abbr != abbr %} <span class="t">as {{ h.abbr }}</span>{% endif %}</td>
+          <td class="num">{{ h.record }}</td>
+          <td class="num">{{ h.pf }}</td>
+          <td class="num">{{ h.pa }}</td>
+          <td class="{{ 'champ' if h.champion else '' }}">{{ h.playoff }}</td>
+          <td class="num">{{ h.elo|round|int if h.elo else '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

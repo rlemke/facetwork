@@ -1,0 +1,84 @@
+{% extends "v3/base.html" %}
+{% import "nfl/_shared.html" as n %}
+{% block title %}{{ player.name }} &middot; NFL &middot; Facetwork{% endblock %}
+{% block head_extra %}{{ n.styles() }}{% endblock %}
+{% block breadcrumb %}<nav class="crumb"><a href="/nfl/">NFL</a><span>/</span><a href="/nfl/players">Players</a><span>/</span><span class="cur">{{ player.name }}</span></nav>{% endblock %}
+
+{% block content %}
+<div class="nfl">
+  <section class="kpis">
+    <div class="kpi">
+      <div class="lbl">{{ player.position or '' }}{% if player.jersey_number %} &middot; #{{ player.jersey_number }}{% endif %}</div>
+      <div class="val">{{ player.name }}</div>
+      <div class="sub">{% if player.latest_team %}{{ n.team(player.latest_team, teams) }} &middot; {% endif %}{{ player.status or '' }}</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Bio</div>
+      <div class="sub" style="font-size:12.5px;color:var(--text-2)">
+        {% if player.birth_date %}Born {{ player.birth_date }}<br>{% endif %}
+        {% if player.height %}{{ (player.height // 12)|int }}&prime;{{ (player.height % 12)|int }}&Prime;{% endif %}{% if player.weight %}, {{ player.weight }} lb{% endif %}<br>
+        {% if player.college %}{{ player.college }}{% endif %}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Draft</div>
+      <div class="sub" style="font-size:12.5px;color:var(--text-2)">
+        {% if player.draft_year %}{{ player.draft_year }}, round {{ player.draft_round }}, pick {{ player.draft_pick }}{% if player.draft_team %} by {{ n.team(player.draft_team, teams) }}{% endif %}{% else %}Undrafted or not recorded{% endif %}
+        {% if player.rookie_season %}<br>Rookie season {{ player.rookie_season }}{% endif %}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Career (regular season)</div>
+      <div class="val">{{ career.games }} <span style="font-size:14px;color:var(--muted)">games</span></div>
+      <div class="sub">since 1999 in nflverse stats</div>
+    </div>
+  </section>
+
+  {% for title, rows in [('Regular season', reg), ('Postseason', post)] %}{% if rows %}
+  <section class="panel section">
+    <div class="panel-head"><h2>{{ title }}</h2></div>
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr><th>Season</th><th>Team</th><th class="num">G</th>{% for h, f in columns %}<th class="num">{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for s in rows %}
+        <tr><td><a href="/nfl/players/{{ player._id }}?season={{ s.season }}">{{ s.season }}</a></td>
+          <td>{% for t in s.teams %}{{ n.team(t, teams) }} {% endfor %}</td>
+          <td class="num">{{ s.games }}</td>
+          {% for h, f in columns %}<td class="num">{{ n.num(s[f], 1 if ('epa' in f or f == 'def_sacks') else 0) }}</td>{% endfor %}</tr>
+      {% endfor %}
+      {% if title == 'Regular season' and rows|length > 1 %}
+        <tr><td><b>Career</b></td><td></td><td class="num"><b>{{ career.games }}</b></td>
+          {% for h, f in columns %}<td class="num"><b>{{ n.num(career[f], 1 if ('epa' in f or f == 'def_sacks') else 0) }}</b></td>{% endfor %}</tr>
+      {% endif %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}{% endfor %}
+
+  {% if game_log %}
+  <section class="panel section">
+    <div class="panel-head"><h2>{{ log_season }} game log</h2>
+      <form method="get" style="margin-left:auto"><select name="season" onchange="this.form.submit()" class="btn">
+        {% for s in log_seasons %}<option value="{{ s }}" {% if s == log_season %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select></form>
+    </div>
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr><th>Week</th><th>Opponent</th>{% for h, f in columns %}<th class="num">{{ h }}</th>{% endfor %}<th class="num">PPR pts</th></tr></thead>
+      <tbody>
+      {% for w in game_log %}
+        <tr><td class="t">{{ w.week }}{% if w.season_type == 'POST' %} (post){% endif %}</td>
+          <td>{{ n.team(w.team, teams) }} <span class="t">v</span> {{ n.team(w.opponent, teams) }}</td>
+          {% for h, f in columns %}<td class="num">{{ n.num(w[f], 1 if ('epa' in f or f == 'def_sacks') else 0) }}</td>{% endfor %}
+          <td class="num">{{ n.num(w.fantasy_points_ppr, 1) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+  <p class="t">EPA = expected points added: how much the player&rsquo;s plays changed his team&rsquo;s expected score, from nflverse&rsquo;s play-by-play model.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "v3/base.html" %}
+{% import "nfl/_shared.html" as n %}
+{% block title %}Players &middot; NFL &middot; Facetwork{% endblock %}
+{% block head_extra %}{{ n.styles() }}{% endblock %}
+{% block breadcrumb %}<nav class="crumb"><a href="/nfl/">NFL</a><span>/</span><span class="cur">Players</span></nav>{% endblock %}
+
+{% block content %}
+<div class="nfl">
+  <section class="panel section">
+    <form class="search" method="get" action="/nfl/players">
+      <input name="q" value="{{ q }}" placeholder="Search any player since 1999 — e.g. Mahomes" autofocus>
+      <select name="season">{% for s in seasons %}<option value="{{ s }}" {% if s == season %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <button class="btn primary" type="submit">Search</button>
+    </form>
+    {% if q %}
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr><th>Player</th><th>Pos</th><th>Latest team</th><th class="num">Seasons</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for p in results %}
+        <tr><td><a href="/nfl/players/{{ p._id }}">{{ p.name }}</a></td><td>{{ p.position }}</td>
+          <td>{% if p.latest_team %}{{ n.team(p.latest_team, teams) }}{% endif %}</td>
+          <td class="num">{{ p.rookie_season or '' }}{% if p.last_season %}&ndash;{{ p.last_season }}{% endif %}</td>
+          <td class="t">{{ p.status }}</td></tr>
+      {% else %}<tr><td colspan="5" class="t">No player matches &ldquo;{{ q }}&rdquo;.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </section>
+
+  <h2 style="font-size:14px;margin:.2rem 0 .7rem">{{ season }} regular-season leaders</h2>
+  <div class="grid2">
+  {% for l in leaders %}
+    <section class="panel">
+      <div class="panel-head"><h2>{{ l.label }}</h2></div>
+      <table class="dtable"><tbody>
+      {% for r in l.rows %}
+        <tr><td class="t">{{ loop.index }}</td><td><a href="/nfl/players/{{ r.player_id }}">{{ r.name }}</a> <span class="t">{{ r.position }}</span></td>
+          <td>{% for t in r.teams %}{{ n.team(t, teams) }} {% endfor %}</td>
+          <td class="num t">{{ r.games }} g</td>
+          <td class="num">{{ n.num(r[l.field], 1 if l.field == 'def_sacks' else 0) }}</td></tr>
+      {% else %}<tr><td class="t">No {{ season }} stats loaded.</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+  {% endfor %}
+  </div>
+</div>
+{% endblock %}

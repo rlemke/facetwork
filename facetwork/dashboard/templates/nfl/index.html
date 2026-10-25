@@ -1,0 +1,185 @@
+{% extends "v3/base.html" %}
+{% import "nfl/_shared.html" as n %}
+{% block title %}NFL &middot; Facetwork{% endblock %}
+{% block head_extra %}{{ n.styles() }}{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">NFL</span>{% if season %}<span>&middot; {{ season }} season</span>{% endif %}</nav>{% endblock %}
+
+{% block topbar_actions %}
+<a class="btn" href="/nfl/players"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> Players</a>
+<a class="btn" href="/nfl/model"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 4 8-8"/></svg> How good is the model?</a>
+<form class="inline" method="post" action="/nfl/update" style="display:inline"><button class="btn primary" type="submit"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> Update</button></form>
+{% endblock %}
+
+{% block content %}
+<div class="nfl">
+
+{% if empty %}
+  <div class="empty">
+    <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="5.5" transform="rotate(-35 12 12)"/><path d="M9 15l6-6M10 11l1 1M12 9l1 1M11 13l1 1"/></svg>
+    <h1>No NFL data loaded yet</h1>
+    <p>Run <code>nfl.workflows.Update</code> to fetch schedules, results and player stats since 1999{% if not workflow_ready %} (seed it first with <code>fw ffl seed</code>){% endif %}.</p>
+    <form method="post" action="/nfl/update"><button class="btn primary" type="submit">Run update</button></form>
+  </div>
+{% else %}
+
+  <section class="kpis">
+    <div class="kpi">
+      <div class="lbl">Data through</div>
+      <div class="val" style="font-size:19px">{{ meta.through_date or '—' }}</div>
+      <div class="sub">Last result loaded: {{ meta.through_game or '—' }}</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Model this season</div>
+      {% if live.n %}
+      <div class="val">{{ n.pct(live.accuracy) }}</div>
+      <div class="sub">{{ live.n }} games, from predictions frozen before kickoff{% if live.market_n %} &middot; betting line {{ n.pct(live.market_accuracy) }} on {{ live.market_n }}{% endif %}</div>
+      {% else %}
+      <div class="val"><span class="t">no games yet</span></div>
+      <div class="sub">The live record counts only predictions stored before kickoff{% if live.since %}; the first was made {{ live.since[:10] }}{% endif %}</div>
+      {% endif %}
+    </div>
+    <div class="kpi">
+      <div class="lbl">Model since 2015</div>
+      <div class="val">{% if backtest %}{{ n.pct(backtest.model.accuracy, 1) }}{% else %}<span class="t">not run</span>{% endif %}</div>
+      <div class="sub">{% if backtest %}Betting line {{ n.pct(backtest.market.accuracy, 1) }} on the same {{ "{:,}".format(backtest.model.n) }} games &middot; <a href="/nfl/model">details</a>{% else %}<a href="/nfl/model">Run the backtest</a>{% endif %}</div>
+    </div>
+    {% if odds %}
+    <div class="kpi">
+      <div class="lbl">Favourite</div>
+      <div class="val">{{ n.team(odds.odds[0].team, teams) }} <span style="font-size:15px;color:var(--muted)">{{ n.pct(odds.odds[0].champion) }}</span></div>
+      <div class="sub">To win the Super Bowl &middot; {{ "{:,}".format(odds.sims) }} simulated seasons</div>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ---------------- games of the week ---------------- #}
+  <section class="panel section">
+    <div class="panel-head">
+      <h2>{% if week_games and week_games[0].game_type != 'REG' %}{{ week_games[0].round }}{% else %}Week {{ shown_week }}{% endif %}</h2>
+      <div class="weeks">
+        {% for w in weeks %}<a href="/nfl/?week={{ w }}" class="{% if w == shown_week %}cur{% endif %}">{{ w }}</a>{% endfor %}
+      </div>
+    </div>
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr>
+        <th>Game</th><th>Kickoff</th>
+        <th>Model pick</th><th class="num">Model line</th><th class="num">Betting line</th>
+        <th class="num">Result</th>
+      </tr></thead>
+      <tbody>
+      {% for g in week_games %}
+        <tr>
+          <td>{{ n.team(g.away, teams) }} <span class="t">{{ 'vs' if g.neutral else 'at' }}</span> {{ n.team(g.home, teams) }}
+            {% if g.home_qb or g.away_qb %}<div class="t">{{ g.away_qb or '?' }} vs {{ g.home_qb or '?' }}</div>{% endif %}</td>
+          <td class="t">{{ g.gameday }} {{ g.gametime }}</td>
+          <td>{% if g.pick %}{{ n.team(g.pick, teams) }} {{ n.pct(g.pick_p) }}{{ n.pbar(g.pick_p) }}{% else %}<span class="t">&mdash;</span>{% endif %}</td>
+          <td class="num">{{ n.fav(g, g.spread_pred) }}</td>
+          <td class="num">{{ n.fav(g, g.spread_line) }}</td>
+          <td class="num">{% if g.played %}{{ g.away_score }}&ndash;{{ g.home_score }}
+            {% if g.pick_right is true %}<span class="good" title="model picked the winner">&#10003;</span>{% elif g.pick_right is false %}<span class="bad" title="model picked the loser">&#10007;</span>{% endif %}
+            {% else %}<span class="t">&mdash;</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {# ---------------- the path to the Super Bowl ---------------- #}
+  {% if postseason %}
+  <section class="panel section">
+    <div class="panel-head"><h2>Playoffs so far</h2></div>
+    <table class="dtable"><tbody>
+      {% for g in postseason %}
+      <tr><td class="t">{{ g.round }}</td><td>{{ n.team(g.away, teams) }} at {{ n.team(g.home, teams) }}</td>
+        <td class="num">{% if g.played %}{{ g.away_score }}&ndash;{{ g.home_score }}{% else %}{{ g.gameday }}{% endif %}</td></tr>
+      {% endfor %}
+    </tbody></table>
+  </section>
+  {% endif %}
+
+  {% if odds %}
+  <section class="panel section">
+    <div class="panel-head"><h2>Projected playoff bracket</h2>
+      <span class="t">{{ "{:,}".format(odds.sims) }} simulated seasons &middot; seeds show each seed&rsquo;s most frequent holder and how often it held it; later rounds show the likeliest teams and their chance of reaching that round</span>
+      <form class="inline" method="post" action="/nfl/simulate" style="margin-left:auto"><button class="btn" type="submit">Re-simulate</button></form>
+    </div>
+    {% for conf in ['AFC', 'NFC'] %}
+    {% set seeds = odds.bracket[conf] %}
+    <div class="bracket">
+      <div class="col">
+        <h4>{{ conf }} seeds</h4>
+        {% for s in seeds %}
+        {% set o = odds_lookup[s.team] %}
+        <div class="slot"><span class="seed">{{ s.seed }}</span>{{ n.team(s.team, teams) }}<span class="p" title="chance of this seed">{{ n.pct(s.p) }}</span></div>
+        {% endfor %}
+      </div>
+      <div class="col">
+        <h4>Divisional</h4>
+        {% for o in by_conf[conf]|sort(attribute='divisional_round', reverse=true) %}{% if loop.index <= 4 %}
+        <div class="slot">{{ n.team(o.team, teams) }}<span class="p">{{ n.pct(o.divisional_round) }}</span></div>
+        {% endif %}{% endfor %}
+      </div>
+      <div class="col">
+        <h4>Conference game</h4>
+        {% for o in by_conf[conf]|sort(attribute='conference_game', reverse=true) %}{% if loop.index <= 2 %}
+        <div class="slot">{{ n.team(o.team, teams) }}<span class="p">{{ n.pct(o.conference_game) }}</span></div>
+        {% endif %}{% endfor %}
+      </div>
+      <div class="col">
+        <h4>Super Bowl</h4>
+        {% for o in by_conf[conf]|sort(attribute='super_bowl', reverse=true) %}{% if loop.index <= 1 %}
+        <div class="slot">{{ n.team(o.team, teams) }}<span class="p">{{ n.pct(o.super_bowl) }}</span></div>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    {% if odds.matchups %}
+    <div style="padding:0 .9rem .9rem" class="t">Likeliest Super Bowls:
+      {% for m in odds.matchups[:5] %}{{ n.team(m.afc, teams) }} v {{ n.team(m.nfc, teams) }} {{ n.pct(m.p, 1) }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <div class="grid2 section">
+  {% for conf in ['AFC', 'NFC'] %}
+    <section class="panel">
+      <div class="panel-head"><h2>{{ conf }} &mdash; playoff odds</h2></div>
+      <div class="overflow-x">
+      <table class="dtable">
+        <thead><tr><th>Team</th><th class="num">Record</th><th class="num">Elo</th><th class="num">Proj. wins</th>
+          <th class="num">Playoffs</th><th class="num">Division</th><th class="num">Bye</th><th class="num">Super Bowl</th><th class="num">Win it</th></tr></thead>
+        <tbody>
+        {% for o in by_conf[conf] %}
+          <tr>
+            <td>{{ n.team(o.team, teams) }}<div class="t">{{ o.division_name }}</div></td>
+            <td class="num">{{ o.record }}</td>
+            <td class="num">{{ o.elo|round|int if o.elo else '' }} <span class="t">#{{ o.rank }}</span></td>
+            <td class="num">{{ "%.1f"|format(o.mean_wins) }}</td>
+            <td class="num">{{ n.pct(o.playoffs) }}</td>
+            <td class="num">{{ n.pct(o.division) }}</td>
+            <td class="num">{{ n.pct(o.bye) }}</td>
+            <td class="num">{{ n.pct(o.super_bowl) }}</td>
+            <td class="num">{{ n.pct(o.champion) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </section>
+  {% endfor %}
+  </div>
+  <p class="t">Simulated from the ratings after {{ odds.through_game }} ({{ odds.through_date }}). Ties for a playoff spot are broken with the league&rsquo;s own procedure, which reproduces every real seeding since 2002.</p>
+  {% endif %}
+
+  <div class="note">
+    <b>What these numbers are.</b> An Elo team rating built from every result since 1999 &mdash; who won, by how much, where, and after how much rest.
+    It does <b>not</b> know who is injured or who is starting at quarterback, which is the biggest single thing the betting line knows that it does not.
+    Over 2015&ndash;2025 it picked {% if backtest %}{{ n.pct(backtest.model.accuracy, 1) }}{% else %}about 64%{% endif %} of winners against the betting line&rsquo;s {% if backtest %}{{ n.pct(backtest.market.accuracy, 1) }}{% else %}66%{% endif %}.
+    Use it to understand the season, not to bet. Data: nflverse.
+  </div>
+{% endif %}
+</div>
+{% endblock %}

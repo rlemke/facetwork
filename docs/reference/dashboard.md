@@ -82,6 +82,15 @@ The sidebar's app switcher (top, under the brand) flips between **Platform**
 - **Census Maps** — `/census/maps`
 - **Site Selection** — `/site-selection/`
 - **Climate Trends** — `/climate-trends/`
+- **Stock Groups** — `/stocks/`
+- **NFL** — `/nfl/`: this week's games with the model's and the betting line's
+  view side by side, the projected playoff bracket and every team's odds, a page
+  per team (schedule with win chances, rating since 1999, season-by-season
+  results, roster) and per player (career, postseason, game log), and
+  `/nfl/model`, which shows how good the predictions have been. Data comes from the
+  [`fwh_nfl`](https://github.com/rlemke/fwh_nfl) domain (`nfl_*` collections).
+  The Update / Re-simulate / Re-run backtest buttons submit `nfl.workflows.*`
+  runs. Nothing on the page writes to the database directly.
 
 ## Global filters
 
