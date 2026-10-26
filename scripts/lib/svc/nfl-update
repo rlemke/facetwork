@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
-# fw-summary: refresh NFL data, ratings, predictions and season odds; --install adds the daily timer
+# fw-summary: refresh NFL data, ratings, predictions and odds, then republish the static site; --install adds the timer
 #
-# Submits nfl.workflows.Update: fetch what changed from nflverse (conditional
-# GETs, so an unchanged file costs one request), reload only files whose
-# checksum moved, re-rate every game, freeze predictions for games not yet
-# played, and re-simulate the rest of the season.
+# Submits nfl.publish.UpdateSite: nfl.workflows.Update (fetch what changed
+# from nflverse — conditional GETs, so an unchanged file costs one request —
+# reload only files whose checksum moved, re-rate every game, freeze
+# predictions for games not yet played, re-simulate the rest of the season),
+# then render the static site and publish it to the maps site under nfl/.
+# Pages are deterministic, so a run with no new results commits nothing.
+# --no-publish submits nfl.workflows.Update alone (dashboards only).
 #
-# Timing: 06:30 LOCAL every day. nflverse rebuilds its schedule/result and
-# player-stats files overnight, and the last game of a week (Monday night)
-# ends around 05:00 UTC, so a morning run picks up the whole week. Every day
-# rather than game days only: Thursday, Saturday and international games move
-# around, and a day with no change is nearly free.
+# Publishing composes census.Publish.PublishWebBundle, so this host needs the
+# fwh_census_us checkout for its FFL; without it the run falls back to the
+# data-only update and says so.
+#
+# Timing: 06:30 and 23:30 LOCAL every day. nflverse posts a final score within
+# minutes of the whistle; Sunday- and Monday-night games end around 20:30
+# Pacific, so the late run shows a game day's results the same night and the
+# morning run catches anything later plus nflverse's overnight stats rebuild.
+# Every day rather than game days only: Thursday, Saturday and international
+# games move around, and a day with no change is nearly free.
 #
 # ⚠️ Predictions are frozen once a game's date has passed, so this timer is
 # what MAKES the live track record: a game that kicks off with no run since
@@ -23,7 +31,8 @@
 #   fw svc nfl-update                # run one update now (also what the timer calls)
 #   fw svc nfl-update --sims N       # simulations (default 10000)
 #   fw svc nfl-update --install      # write + load the daily timer
-#   fw svc nfl-update --at 07:15     # install at a different local time
+#   fw svc nfl-update --no-publish   # data only; leave the published site alone
+#   fw svc nfl-update --at 07:15     # install at different local time(s), e.g. 07:15,22:00
 #   fw svc nfl-update --uninstall    # unload + remove
 #   fw svc nfl-update --status       # is the timer loaded, and when did it last run?
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
@@ -35,7 +44,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 WRAPPER="$HOME/.facetwork/nfl-update.sh"
 LOGDIR="$HOME/.facetwork"
 LOG="$LOGDIR/nfl-update.log"
-SIMS=10000 ACTION="run" AT="06:30" LOAD=1
+SIMS=10000 ACTION="run" AT="06:30,23:30" LOAD=1 PUBLISH=1
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -45,20 +54,39 @@ while [ $# -gt 0 ]; do
         --status) ACTION="status"; shift ;;
         --at) AT="$2"; shift 2 ;;
         --no-load) LOAD=0; shift ;;
-        -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --no-publish) PUBLISH=0; shift ;;
+        -h|--help) sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
 
-FFL="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_nfl/src/nfl/ffl/nfl.ffl"
+HANDLERS="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+FFL="$HANDLERS/fwh_nfl/src/nfl/ffl/nfl.ffl"
+SITE_FFL="$HANDLERS/fwh_nfl/src/nfl/ffl/nfl_site.ffl"
+CENSUS="$HANDLERS/fwh_census_us/src/census_us"
+CENSUS_FFL=("$CENSUS/handlers/publish/ffl/census_publish.ffl" "$CENSUS/handlers/downloads/ffl/census_operations.ffl")
 
 run_update() {
     [ -f "$FFL" ] || { echo "no NFL FFL at $FFL — is fwh_nfl installed?" >&2; exit 1; }
-    echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] NFL update, $SIMS simulations"
+    if [ "$PUBLISH" = 1 ] && { [ ! -f "$SITE_FFL" ] || [ ! -f "${CENSUS_FFL[0]}" ] || [ ! -f "${CENSUS_FFL[1]}" ]; }; then
+        echo "WARNING: cannot publish the site: need $SITE_FFL and the fwh_census_us FFL under $CENSUS" >&2
+        echo "WARNING: running the data-only update; the published site will NOT change" >&2
+        PUBLISH=0
+    fi
     # A runner serving nfl.* executes it; nothing here needs the domain importable.
-    "$FW_ROOT/fw" ffl run --primary "$FFL" --library "$FW_ROOT/facetwork/ffl/http.ffl" \
-        --workflow nfl.workflows.Update \
-        --inputs "{\"sims\": $SIMS}"
+    if [ "$PUBLISH" = 1 ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] NFL update + site publish, $SIMS simulations"
+        "$FW_ROOT/fw" ffl run --primary "$SITE_FFL" --library "$FFL" \
+            --library "${CENSUS_FFL[0]}" --library "${CENSUS_FFL[1]}" \
+            --library "$FW_ROOT/facetwork/ffl/http.ffl" \
+            --workflow nfl.publish.UpdateSite \
+            --inputs "{\"sims\": $SIMS}"
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] NFL update, $SIMS simulations"
+        "$FW_ROOT/fw" ffl run --primary "$FFL" --library "$FW_ROOT/facetwork/ffl/http.ffl" \
+            --workflow nfl.workflows.Update \
+            --inputs "{\"sims\": $SIMS}"
+    fi
 }
 
 case "$ACTION" in
@@ -94,10 +122,13 @@ uninstall)
 install)
     # Linux installs the same wrapper on a cron line; only the scheduler differs.
     . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
-    case "$AT" in
-        [0-9][0-9]:[0-9][0-9]) HH="${AT%%:*}"; MM="${AT##*:}" ;;
-        *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
-    esac
+    IFS=, read -r -a TIMES <<< "$AT"
+    for t in "${TIMES[@]}"; do
+        case "$t" in
+            [0-9][0-9]:[0-9][0-9]) : ;;
+            *) echo "--at wants HH:MM[,HH:MM...] (24h), got '$AT'" >&2; exit 2 ;;
+        esac
+    done
     mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
 
     # Login shell so PATH/venv/docker resolve the way they do interactively —
@@ -115,16 +146,18 @@ if ! docker info >/dev/null 2>&1; then
   for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 5; done
 fi
 cd "$FW_ROOT" || exit 1
-exec ./fw svc nfl-update
+exec ./fw svc nfl-update$([ "$PUBLISH" = 1 ] || echo " --no-publish")
 WRAP
     chmod +x "$WRAPPER"
 
     if ! fw_timer_is_darwin; then
-        case "$AT" in
-            [0-9][0-9]:[0-9][0-9]) : ;;
-            *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
-        esac
-        SPEC="$((10#${AT##*:})) $((10#${AT%%:*})) * * *"
+        # One cron line, so every time must share its minute (06:30,23:30 does).
+        MIN="${TIMES[0]##*:}" HOURS=""
+        for t in "${TIMES[@]}"; do
+            [ "${t##*:}" = "$MIN" ] || { echo "on cron all --at times must share a minute, got '$AT'" >&2; exit 2; }
+            HOURS="${HOURS:+$HOURS,}$((10#${t%%:*}))"
+        done
+        SPEC="$((10#$MIN)) $HOURS * * *"
         fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
         echo "wrote:"
         echo "  $WRAPPER"
@@ -140,11 +173,13 @@ WRAP
 <dict>
     <key>Label</key><string>$LABEL</string>
     <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
-    <!-- Daily. RunAtLoad is FALSE: installing a timer must not start a
+    <!-- Daily at each time. RunAtLoad is FALSE: installing a timer must not start a
          multi-minute download-and-simulate run as a side effect. -->
     <key>RunAtLoad</key><false/>
     <key>StartCalendarInterval</key>
-    <dict><key>Hour</key><integer>$((10#$HH))</integer><key>Minute</key><integer>$((10#$MM))</integer></dict>
+    <array>
+$(for t in "${TIMES[@]}"; do echo "        <dict><key>Hour</key><integer>$((10#${t%%:*}))</integer><key>Minute</key><integer>$((10#${t##*:}))</integer></dict>"; done)
+    </array>
     <key>WorkingDirectory</key><string>$FW_ROOT</string>
     <key>StandardOutPath</key><string>$LOG</string>
     <key>StandardErrorPath</key><string>$LOGDIR/nfl-update.err.log</string>
