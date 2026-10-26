@@ -17,10 +17,13 @@
 Handles yield/capture merging from blocks into containing step.
 """
 
+import logging
 from typing import TYPE_CHECKING
 
 from ..changers.base import StateChangeResult
 from .base import StateHandler
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..step import StepDefinition
@@ -244,11 +247,67 @@ class StatementCaptureBeginHandler(StateHandler):
                     if target:
                         self._target_to_aliases.setdefault(target, []).append(alias or "")
 
+        # A complete plain andThen block has, by definition, a complete step
+        # for every yield it declares. If this read cannot see one, the read
+        # is stale — never merge it as "no yield", which completes the step
+        # with empty returns and fails whatever reads them downstream
+        # (observed 2026-10-25: 1 of ~150 iterations of a foreach fan-out).
+        # Wait instead; the capture state is in STUCK_STEP_STATES, so the
+        # sweep re-drives it even if this push does not survive the commit.
+        unseen = self._unseen_declared_yields(statement_blocks)
+        if unseen:
+            logger.warning(
+                "Capture deferred: step %s (%s) has a complete block whose yield "
+                "step(s) %s are not visible as complete; retrying instead of "
+                "completing with empty returns",
+                self.step.id,
+                self.step.facet_name,
+                sorted(unseen),
+            )
+            return self.stay(push=True)
+
         for block in statement_blocks:
             self._merge_yields_from_block(block)
 
         self.step.request_state_change(True)
         return StateChangeResult(step=self.step)
+
+    def _unseen_declared_yields(self, statement_blocks: list["StepDefinition"]) -> set[str]:
+        """Yield statement ids a complete plain ``andThen`` block declares for
+        this step that no complete yield step under that block accounts for.
+
+        Only plain blocks are judged: a ``when`` takes one branch, a ``foreach``
+        yields from sub-blocks, a script block yields through its own returns,
+        and a catch block replaces the body — in each of those a declared
+        yield legitimately may not run.
+        """
+        from ..types import ObjectType
+
+        unseen: set[str] = set()
+        for block in statement_blocks:
+            if block.object_type != ObjectType.AND_THEN:
+                continue
+            ast = self.context.get_block_ast(block)
+            if not isinstance(ast, dict) or any(k in ast for k in ("foreach", "when", "script")):
+                continue
+            declared = list(ast.get("yields") or [])
+            if isinstance(ast.get("yield"), dict):
+                declared.append(ast["yield"])
+            wanted = {
+                str(y["id"])
+                for y in declared
+                if y.get("id")
+                and _names_match((y.get("call") or {}).get("target"), self.step.facet_name)
+            }
+            if not wanted:
+                continue
+            seen = {
+                str(s.statement_id)
+                for s in self._collect_yields_recursive(block.id)
+                if s.statement_id is not None
+            }
+            unseen |= wanted - seen
+        return unseen
 
     def _merge_yields_from_block(self, block: "StepDefinition") -> None:
         """Merge yield results from a block into the right destination.

@@ -112,6 +112,7 @@ STUCK_STEP_STATES: tuple[str, ...] = (
     StepState.BLOCK_EXECUTION_CONTINUE,
     StepState.CATCH_BEGIN,
     StepState.CATCH_CONTINUE,
+    StepState.STATEMENT_CAPTURE_BEGIN,
 )
 
 
