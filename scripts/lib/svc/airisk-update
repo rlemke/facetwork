@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# fw-summary: refresh the AI Risk Clock (pace of AI-risk drivers + the self-updating paper) and republish it; --install adds the daily timer
+#
+# Submits airisk.publish.UpdateSite: airisk.workflows.Update (resolve this
+# week's AI Incident Database snapshot, fetch every source with fw.http.Fetch
+# — conditional GETs, so an unchanged file is not downloaded again — then fit
+# each indicator's pace and render the pace board, the paper and the data
+# page), then ONE publish to the maps site under ai-risk/. Pages depend only
+# on the data, so a day with nothing new upstream commits nothing.
+# --no-publish submits airisk.workflows.Update (data and pages in the object
+# store only).
+#
+# Publishing composes census.Publish.PublishWebBundle, so this host needs the
+# fwh_census_us checkout for its FFL; without it the run falls back to the
+# data-only update and says so.
+#
+# Timing: once a day, 07:15 LOCAL. The sources move slowly (Epoch AI adds
+# models and benchmark results a few times a week; the incident snapshot is
+# weekly), so more often would only re-ask for unchanged files.
+#
+# ⚠️ Each build records its reading in the domain cache (history.json) when a
+# reading changed. That record IS the clock's own history: a host that stops
+# running this leaves a gap nothing else can fill in later.
+#
+# Usage:
+#   fw svc airisk-update                 # run one update now (also what the timer calls)
+#   fw svc airisk-update --install       # write + load the daily timer
+#   fw svc airisk-update --no-publish    # data only; leave the published site alone
+#   fw svc airisk-update --at 08:00      # install at a different local time
+#   fw svc airisk-update --uninstall     # unload + remove
+#   fw svc airisk-update --status        # is the timer loaded, and when did it last run?
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -euo pipefail
+
+LABEL="com.facetwork.airisk-update"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/airisk-update.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/airisk-update.log"
+ACTION="run" AT="07:15" LOAD=1 PUBLISH=1
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        --at) AT="$2"; shift 2 ;;
+        --no-load) LOAD=0; shift ;;
+        --no-publish) PUBLISH=0; shift ;;
+        -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+HANDLERS="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+FFL="$HANDLERS/fwh_airisk/src/airisk/ffl/airisk.ffl"
+SITE_FFL="$HANDLERS/fwh_airisk/src/airisk/ffl/airisk_site.ffl"
+CENSUS="$HANDLERS/fwh_census_us/src/census_us"
+CENSUS_FFL=("$CENSUS/handlers/publish/ffl/census_publish.ffl" "$CENSUS/handlers/downloads/ffl/census_operations.ffl")
+
+run_update() {
+    [ -f "$FFL" ] || { echo "no airisk FFL at $FFL — is fwh_airisk installed?" >&2; exit 1; }
+    if [ "$PUBLISH" = 1 ] && { [ ! -f "$SITE_FFL" ] || [ ! -f "${CENSUS_FFL[0]}" ] || [ ! -f "${CENSUS_FFL[1]}" ]; }; then
+        echo "WARNING: cannot publish the site: need $SITE_FFL and the fwh_census_us FFL under $CENSUS" >&2
+        echo "WARNING: running the data-only update; the published site will NOT change" >&2
+        PUBLISH=0
+    fi
+    # A runner serving airisk.* executes it; nothing here needs the domain importable.
+    if [ "$PUBLISH" = 1 ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] AI Risk Clock update + site publish"
+        "$FW_ROOT/fw" ffl run --primary "$SITE_FFL" --library "$FFL" \
+            --library "${CENSUS_FFL[0]}" --library "${CENSUS_FFL[1]}" \
+            --library "$FW_ROOT/facetwork/ffl/http.ffl" \
+            --workflow airisk.publish.UpdateSite
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] AI Risk Clock update (no publish)"
+        "$FW_ROOT/fw" ffl run --primary "$FFL" --library "$FW_ROOT/facetwork/ffl/http.ffl" \
+            --workflow airisk.workflows.Update
+    fi
+}
+
+case "$ACTION" in
+run) run_update ;;
+
+status)
+    # Capture, then test: `launchctl list | grep -q` under pipefail reports a
+    # loaded job as missing whenever grep exits before launchctl finishes.
+    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
+        echo "timer: LOADED ($LABEL)"
+    else
+        echo "timer: not loaded — install with: fw svc airisk-update --install"
+    fi
+    [ -f "$PLIST" ] && echo "plist:  $PLIST" || echo "plist:  (none)"
+    if [ -f "$LOG" ]; then
+        echo "last log lines ($LOG):"
+        tail -5 "$LOG" | sed 's/^/  /'
+    else
+        echo "log:    (none yet at $LOG)"
+    fi
+    ;;
+
+uninstall)
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL (removed $PLIST + $WRAPPER)."
+    echo "The AI Risk Clock stops updating and its refresh history stops growing."
+    ;;
+
+install)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    case "$AT" in
+        [0-9][0-9]:[0-9][0-9]) : ;;
+        *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
+    esac
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+
+    # Login shell so PATH/venv/docker resolve the way they do interactively —
+    # a LaunchAgent otherwise starts with almost no environment.
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Facetwork daily AI Risk Clock update — launched by $LABEL.
+# Regenerate via 'fw svc airisk-update --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+# The update is executed by a RUNNER, not by this script, so wait for Docker
+# rather than failing on a machine that just woke up.
+if ! docker info >/dev/null 2>&1; then
+  open -a Docker >/dev/null 2>&1 || true
+  for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 5; done
+fi
+cd "$FW_ROOT" || exit 1
+exec ./fw svc airisk-update$([ "$PUBLISH" = 1 ] || echo " --no-publish")
+WRAP
+    chmod +x "$WRAPPER"
+
+    if ! fw_timer_is_darwin; then
+        SPEC="$((10#${AT##*:})) $((10#${AT%%:*})) * * *"
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: $SPEC  (daily at $AT local)"
+        echo "  check:   fw svc airisk-update --status"
+        exit 0
+    fi
+
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- Daily. RunAtLoad is FALSE: installing a timer must not start a
+         download-and-publish run as a side effect. -->
+    <key>RunAtLoad</key><false/>
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>$((10#${AT%%:*}))</integer><key>Minute</key><integer>$((10#${AT##*:}))</integer></dict>
+    <key>WorkingDirectory</key><string>$FW_ROOT</string>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/airisk-update.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+
+    echo "wrote:"
+    echo "  $WRAPPER"
+    echo "  $PLIST   (daily at $AT local)"
+    if [ "$LOAD" = 1 ]; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        launchctl load "$PLIST"
+        echo "loaded $LABEL — AI Risk Clock update daily at $AT."
+        echo "  logs: $LOG  ·  check: fw svc airisk-update --status"
+    else
+        echo "not loaded (--no-load). Activate with: launchctl load $PLIST"
+    fi
+    ;;
+esac

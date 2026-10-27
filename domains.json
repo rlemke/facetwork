@@ -413,6 +413,11 @@
       "repo": "fwh_sports",
       "extras": [],
       "description": "NBA, WNBA, MLB, MLS and NWSL from one engine: ESPN results (sportsdataverse extracts; the soccer scoreboard walked one date per request), the MLB Stats API and American Soccer Analysis player lines. An Elo team rating per league, tuned on a training window and scored out of sample against naive baselines (no open betting line), frozen pre-game predictions, and a Monte Carlo of each season with the league's tiebreakers (checked against the official seeds) and bracket, keeping real postseason results. Published as five static sites. Network only, no API key."
+    },
+    "airisk": {
+      "repo": "fwh_airisk",
+      "extras": [],
+      "description": "The AI Risk Clock: the ways AI could harm humanity (capability, loss of control, cyber and bio misuse, economic disempowerment, race dynamics), each paired with open, dated indicators — Epoch AI training compute, cost and capability index, METR task time horizons, Cybench, the Remote Labor Index, GPQA Diamond, OWID private investment, AI Incident Database reports by MIT risk domain, the Doomsday Clock and AI Impacts expert surveys. Reports each indicator's pace (doubling time or yearly gain) now against the window before, and renders a pace board plus a paper whose numbers are filled in from the data. No probability of doom is computed. Published as a static site. Network only, no API key."
     }
   },
   "examples": {
