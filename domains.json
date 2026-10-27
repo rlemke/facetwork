@@ -408,6 +408,11 @@
       "repo": "fwh_nfl",
       "extras": [],
       "description": "NFL players, teams and game predictions from nflverse (results since 1999, weekly player stats): an Elo team rating scored game by game against the betting line, frozen pre-kickoff predictions for an honest live record, and a Monte Carlo of the rest of the season with the league's real tiebreakers (reproduces every seeding since 2002) for playoff, bracket and Super Bowl odds. Dashboard app at /nfl. Network only, no API key."
+    },
+    "sports": {
+      "repo": "fwh_sports",
+      "extras": [],
+      "description": "NBA, WNBA, MLB, MLS and NWSL from one engine: ESPN results (sportsdataverse extracts; the soccer scoreboard walked one date per request), the MLB Stats API and American Soccer Analysis player lines. An Elo team rating per league, tuned on a training window and scored out of sample against naive baselines (no open betting line), frozen pre-game predictions, and a Monte Carlo of each season with the league's tiebreakers (checked against the official seeds) and bracket, keeping real postseason results. Published as five static sites. Network only, no API key."
     }
   },
   "examples": {

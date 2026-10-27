@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# fw-summary: refresh NBA/WNBA/MLB/MLS/NWSL data, ratings, predictions and odds, then republish the five league sites; --install adds the timer
+#
+# Submits sports.publish.UpdateAll: for each league (two at a time),
+# sports.workflows.Update (fetch what changed — conditional GETs, and soccer
+# re-asks ESPN only for recent and future dates — reload only files whose
+# checksum moved, re-rate every game, freeze predictions for games not yet
+# started, re-simulate the rest of the season), then the backtest and the
+# static site; finally ONE publish commit to the maps site under nba/, wnba/,
+# mlb/, mls/ and nwsl/. Pages are deterministic, so a run with no new results
+# commits nothing. --no-publish submits sports.workflows.Update per league
+# (data only).
+#
+# Publishing composes census.Publish.PublishWebBundle, so this host needs the
+# fwh_census_us checkout for its FFL; without it the run falls back to the
+# data-only update and says so.
+#
+# Timing: 06:45 and 23:45 LOCAL every day. The late run catches the evening's
+# MLB, MLS and NWSL results the same night (ESPN and the MLB Stats API post
+# finals within minutes). The NBA and WNBA come from sportsdataverse's
+# extracts, rebuilt once a day around 11:35 UTC, so their results appear with
+# the morning run.
+#
+# ⚠️ Predictions are frozen once a game has started, so this timer is what
+# MAKES the live track record: a game with no prediction stored before it
+# began is simply absent from the record.
+#
+# Safe to re-run: every step is idempotent (upserts, per-season replace).
+#
+# Usage:
+#   fw svc sports-update                    # run one update now (also what the timer calls)
+#   fw svc sports-update --leagues nba,mlb  # a subset (default all five)
+#   fw svc sports-update --sims N           # simulations per league (default 10000)
+#   fw svc sports-update --install          # write + load the daily timer
+#   fw svc sports-update --no-publish       # data only; leave the published sites alone
+#   fw svc sports-update --at 07:15         # install at different local time(s), e.g. 07:15,22:15
+#   fw svc sports-update --uninstall        # unload + remove
+#   fw svc sports-update --status           # is the timer loaded, and when did it last run?
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -euo pipefail
+
+LABEL="com.facetwork.sports-update"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/sports-update.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/sports-update.log"
+SIMS=10000 ACTION="run" AT="06:45,23:45" LOAD=1 PUBLISH=1 LEAGUES="nba,wnba,mlb,mls,nwsl"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --sims) SIMS="$2"; shift 2 ;;
+        --leagues) LEAGUES="$2"; shift 2 ;;
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        --at) AT="$2"; shift 2 ;;
+        --no-load) LOAD=0; shift ;;
+        --no-publish) PUBLISH=0; shift ;;
+        -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+HANDLERS="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+FFL="$HANDLERS/fwh_sports/src/sports/ffl/sports.ffl"
+SITE_FFL="$HANDLERS/fwh_sports/src/sports/ffl/sports_site.ffl"
+CENSUS="$HANDLERS/fwh_census_us/src/census_us"
+CENSUS_FFL=("$CENSUS/handlers/publish/ffl/census_publish.ffl" "$CENSUS/handlers/downloads/ffl/census_operations.ffl")
+
+run_update() {
+    [ -f "$FFL" ] || { echo "no sports FFL at $FFL — is fwh_sports installed?" >&2; exit 1; }
+    if [ "$PUBLISH" = 1 ] && { [ ! -f "$SITE_FFL" ] || [ ! -f "${CENSUS_FFL[0]}" ] || [ ! -f "${CENSUS_FFL[1]}" ]; }; then
+        echo "WARNING: cannot publish the sites: need $SITE_FFL and the fwh_census_us FFL under $CENSUS" >&2
+        echo "WARNING: running the data-only update; the published sites will NOT change" >&2
+        PUBLISH=0
+    fi
+    # A runner serving sports.* executes it; nothing here needs the domain importable.
+    if [ "$PUBLISH" = 1 ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] sports update + site publish ($LEAGUES), $SIMS simulations"
+        "$FW_ROOT/fw" ffl run --primary "$SITE_FFL" --library "$FFL" \
+            --library "${CENSUS_FFL[0]}" --library "${CENSUS_FFL[1]}" \
+            --library "$FW_ROOT/facetwork/ffl/http.ffl" \
+            --workflow sports.publish.UpdateAll \
+            --inputs "{\"leagues\": \"$LEAGUES\", \"sims\": $SIMS}"
+    else
+        IFS=, read -r -a LGS <<< "$LEAGUES"
+        for lg in "${LGS[@]}"; do
+            echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] $lg update, $SIMS simulations"
+            "$FW_ROOT/fw" ffl run --primary "$FFL" --library "$FW_ROOT/facetwork/ffl/http.ffl" \
+                --workflow sports.workflows.Update \
+                --inputs "{\"league\": \"$lg\", \"sims\": $SIMS}"
+        done
+    fi
+}
+
+case "$ACTION" in
+run) run_update ;;
+
+status)
+    # NOT `launchctl list | grep -q`: under `set -o pipefail`, grep -q exits on
+    # the first match, launchctl then dies on SIGPIPE, and pipefail propagates
+    # THAT failure — so the check reports "not loaded" for a job that is
+    # demonstrably running. Whether it fires depends on how much launchctl had
+    # left to write, which made it look intermittent. Capture, then test.
+    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
+        echo "timer: LOADED ($LABEL)"
+    else
+        echo "timer: not loaded — install with: fw svc sports-update --install"
+    fi
+    [ -f "$PLIST" ] && echo "plist:  $PLIST" || echo "plist:  (none)"
+    if [ -f "$LOG" ]; then
+        echo "last log lines ($LOG):"
+        tail -5 "$LOG" | sed 's/^/  /'
+    else
+        echo "log:    (none yet at $LOG)"
+    fi
+    ;;
+
+uninstall)
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL (removed $PLIST + $WRAPPER)."
+    echo "League data, odds and the live prediction records stop updating."
+    ;;
+
+install)
+    # Linux installs the same wrapper on a cron line; only the scheduler differs.
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    IFS=, read -r -a TIMES <<< "$AT"
+    for t in "${TIMES[@]}"; do
+        case "$t" in
+            [0-9][0-9]:[0-9][0-9]) : ;;
+            *) echo "--at wants HH:MM[,HH:MM...] (24h), got '$AT'" >&2; exit 2 ;;
+        esac
+    done
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+
+    # Login shell so PATH/venv/docker resolve the way they do interactively —
+    # a LaunchAgent otherwise starts with almost no environment.
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Facetwork daily sports update — launched by $LABEL.
+# Regenerate via 'fw svc sports-update --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+# The update is executed by a RUNNER, not by this script, so wait for Docker
+# rather than failing on a machine that just woke up.
+if ! docker info >/dev/null 2>&1; then
+  open -a Docker >/dev/null 2>&1 || true
+  for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 5; done
+fi
+cd "$FW_ROOT" || exit 1
+exec ./fw svc sports-update --leagues $LEAGUES$([ "$PUBLISH" = 1 ] || echo " --no-publish")
+WRAP
+    chmod +x "$WRAPPER"
+
+    if ! fw_timer_is_darwin; then
+        # One cron line, so every time must share its minute (06:45,23:45 does).
+        MIN="${TIMES[0]##*:}" HOURS=""
+        for t in "${TIMES[@]}"; do
+            [ "${t##*:}" = "$MIN" ] || { echo "on cron all --at times must share a minute, got '$AT'" >&2; exit 2; }
+            HOURS="${HOURS:+$HOURS,}$((10#${t%%:*}))"
+        done
+        SPEC="$((10#$MIN)) $HOURS * * *"
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: $SPEC  (daily at $AT local)"
+        echo "  check:   fw svc sports-update --status"
+        exit 0
+    fi
+
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- Daily at each time. RunAtLoad is FALSE: installing a timer must not start a
+         multi-minute download-and-simulate run as a side effect. -->
+    <key>RunAtLoad</key><false/>
+    <key>StartCalendarInterval</key>
+    <array>
+$(for t in "${TIMES[@]}"; do echo "        <dict><key>Hour</key><integer>$((10#${t%%:*}))</integer><key>Minute</key><integer>$((10#${t##*:}))</integer></dict>"; done)
+    </array>
+    <key>WorkingDirectory</key><string>$FW_ROOT</string>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/sports-update.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+
+    echo "wrote:"
+    echo "  $WRAPPER"
+    echo "  $PLIST   (daily at $AT local)"
+    if [ "$LOAD" = 1 ]; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        launchctl load "$PLIST"
+        echo "loaded $LABEL — sports update daily at $AT."
+        echo "  logs: $LOG  ·  check: fw svc sports-update --status"
+    else
+        echo "not loaded (--no-load). Activate with: launchctl load $PLIST"
+    fi
+    ;;
+esac
