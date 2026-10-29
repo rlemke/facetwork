@@ -418,6 +418,11 @@
       "repo": "fwh_airisk",
       "extras": [],
       "description": "The AI Risk Clock: the ways AI could harm humanity (capability, loss of control, cyber and bio misuse, economic disempowerment, race dynamics), each paired with open, dated indicators — Epoch AI training compute, cost and capability index, METR task time horizons, Cybench, the Remote Labor Index, GPQA Diamond, OWID private investment, AI Incident Database reports by MIT risk domain, the Doomsday Clock and AI Impacts expert surveys. Reports each indicator's pace (doubling time or yearly gain) now against the window before, and renders a pace board plus a paper whose numbers are filled in from the data. No probability of doom is computed. Published as a static site. Network only, no API key."
+    },
+    "cookbook": {
+      "repo": "fwh_cookbook",
+      "extras": [],
+      "description": "The Low-Carb Kitchen: 151 low-carb recipes, 105 of them desserts, each dairy-free as written or with a dairy-free swap for every dairy ingredient. Nutrition per serving (as written and dairy-free) is computed from USDA FoodData Central SR Legacy; every dish is placed on a world map where its kind of dish comes from, with disputed origins marked as disputed. Recipes are data validated at build time; not kitchen-tested. Published as a static site. Network only, no API key."
     }
   },
   "examples": {
