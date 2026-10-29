@@ -422,7 +422,7 @@
     "cookbook": {
       "repo": "fwh_cookbook",
       "extras": [],
-      "description": "The Low-Carb Kitchen: 163 low-carb recipes, 112 of them desserts, each dairy-free as written or with a dairy-free swap for every dairy ingredient. Nutrition per serving (as written and dairy-free) is computed from USDA FoodData Central SR Legacy; every dish is placed on a world map where its kind of dish comes from, with disputed origins marked as disputed. Recipes are data validated at build time; not kitchen-tested. Published as a static site. Network only, no API key."
+      "description": "The Low-Carb Kitchen: 206 low-carb recipes (112 desserts, plus mains, sides and BBQ sauces, rubs and marinades), each dairy-free as written or with a dairy-free swap for every dairy ingredient. Nutrition per serving (as written and dairy-free) is computed from USDA FoodData Central SR Legacy; every dish is placed on a world map where its kind of dish comes from, with disputed origins marked as disputed. Recipes are data validated at build time; not kitchen-tested. Published as a static site. Network only, no API key."
     }
   },
   "examples": {
