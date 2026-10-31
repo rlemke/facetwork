@@ -10,6 +10,8 @@
 
 *Supervisor:* Ralph Lemke.
 
+*Current as of 31 October 2026.* Figures that have drifted since first writing are corrected in place; findings that change an argument are added as dated notes (Chapter 15). The companion papers in this directory are historical records and are not revised with it.
+
 ---
 
 ## Abstract
@@ -233,6 +235,31 @@ Kubernetes Jobs and CronJobs [Kub] are a distinct point in the design space: wor
 The idea that a running distributed system should be updatable without full restart has been pursued by the Erlang/OTP community since the 1980s [Arm03], where "hot code loading" is a first-class feature. Industrial systems have mostly given this up in favour of blue/green deployments and rolling restarts. Facetwork's live handler registration is not as radical as Erlang's module swap — the handler code itself still runs in a Python process that can be restarted if needed — but the registration-in-database model means that *which handler runs* can be changed without restarting anything. This turns out to be sufficient for most operational needs.
 
 The Kubernetes ecosystem has normalised the expectation that pods come and go during a running workflow, but the application code running *inside* each pod is fixed for the pod's lifetime. Facetwork's model pushes updatability down one level: inside a single long-running runner, the set of handlers loaded can change, the per-task timeout regime can change, and the server's operational state (running, quarantine, shutdown) can change. This is closer to the Erlang model than to the Kubernetes one.
+
+### 3.5 Agentic software, 2025–2026
+
+*Added October 2026.* When this thesis was first written, LLM agents and workflow runtimes were separate literatures. Over the following year they converged, and much of that work bears on Facetwork, because Facetwork's working mode is an LLM authoring FFL that a fleet then executes (§16.3). This section summarises that work; a longer survey with dated sources is [`agentic-landscape-2026.md`](../architecture/agentic-landscape-2026.md). Several sources below are vendor announcements or single worked examples, and are cited as such.
+
+**Durable execution for agents.** "Agent durability" has come to mean that the agent loop is checkpointed per model call and per tool call, so a crash resumes rather than replays and paid calls are not repeated. Anthropic describes this for its multi-agent research system, together with deployments that do not break in-flight agents [Ant25]. Temporal's integration with the OpenAI Agents SDK runs every agent invocation as a Temporal activity; it was announced in preview in July 2025 and became generally available for Python in March 2026 [TemOAI]. DBOS offers the same per-step durability on Postgres or SQLite with no separate server, including as a plugin that runs each LLM call as a step [DBOS]. LangGraph checkpoints after every graph node and reached 1.0 in October 2025 [LG25]. None of these durability claims is accompanied by a published benchmark.
+
+**Protocols.** The Model Context Protocol was donated to a Linux Foundation fund in December 2025. Its 2025-11-25 revision added experimental *Tasks*, a call-now, fetch-later form for long-running requests [MCPT]. The 2026-07-28 revision made the core stateless, moved Tasks into an extension with a poll-based `tasks/get`, replaced server-initiated elicitation with multi-round-trip requests, and hardened authorization; sampling and the legacy HTTP+SSE transport are deprecated with a twelve-month runway [MCP26]. The Agent2Agent protocol (A2A) reached a stable 1.0 for agent-to-agent delegation and reports more than 150 supporting organisations [A2A].
+
+**Plan-then-execute as a security property.** CaMeL extracts control and data flow from the trusted user query, so that untrusted tool output cannot change program flow, and enforces capability policies at tool calls. It solves 77% of AgentDojo tasks with provable security, against 84% undefended [CaMeL25]. A companion paper generalises this into six design patterns built on one rule: once an agent has ingested untrusted input, that input must not be able to trigger consequential actions [DP25]. Tool metadata is itself an attack surface; one study reports attack success rates of 62.64–100% across 18 model-server pairs for instructions injected through MCP tool descriptions [L2L26].
+
+**Typed tool mediation and reproducibility.** A 2026 study ran the same scientific analysis on four platforms, four times each, comparing model-written code with a typed tool the model only parameterises. The typed tool gave identical results; regenerated code did not [TM26]. This is the closest published measurement to the claim of §16.3 that a fixed, typed scaffold gives "procedural consistency with leaf-level variability".
+
+**Workflow memory and drift.** Agent Workflow Memory induces reusable workflows from past trajectories [AWM24], and AFlow searches for them [AFlow25]. SKILL.nb addresses what follows reuse: stored workflows "may fail under environment drift", and it uses execution evidence to decide which steps become code and when to revise them [SKNB26]. The multi-agent literature adds a caution. MAST annotated more than 1,600 traces across seven frameworks and found that gains over single agents "are often minimal", with failures concentrated in specification, inter-agent misalignment and verification [MAST25].
+
+**Provenance for agentic science.** PROV-AGENT extends W3C PROV to record prompts, responses and agent decisions within the wider workflow, using MCP as its capture point [PROVA25]. A 2026 survey of "AI scientist" systems found that code release is now common but that "reproducibility-grade and claim-verification" artifacts are not, which it calls the *verification gap* [VG26].
+
+**Where Facetwork stands.** It matches this work in four places, and in each case it reached the shape for authoring reasons rather than security or reproducibility ones.
+
+- *Plans are programs, separate from data.* An LLM writes FFL, the validator checks it with structured rule identifiers, and deterministic handlers do the work. That is the plan-then-execute shape of [CaMeL25] and [DP25], and the typed mediation [TM26] measured as reproducible. The catalog's review gate puts a human between generation and effect.
+- *Durable, leaderless execution with stated semantics.* Step state is persisted, tasks are leased and reclaimed, and the written contract states at-least-once delivery with no fencing token (§15.10). Most agent-framework documentation asserts durability without stating its duplicate-execution window.
+- *A memory of solved requests.* Catalog revisions are content-hashed, append-only and pinned per run, and `fw_catalog_match` returns a reuse, review or author-new verdict before anything is written (§16.3). This is the idea of [AWM24] and [SKNB26], with the added guarantee that a reused workflow cannot change underneath a run.
+- *Provenance as a built-in.* `fw.provenance.Manifest` reports inputs with no recorded provenance instead of omitting them, and `fw.compare` reports the level at which two outputs agree rather than a boolean (§13.4b, §13.4c). That addresses the verification gap of [VG26] more directly than most agent frameworks, though no external study has assessed it.
+
+It lags in the interfaces the ecosystem has standardised on. Its MCP server is stdio-only and pinned below version 2 of the SDK, so it has no Tasks, no HTTP transport and no authorization. It exports no OpenTelemetry. Its control plane is unauthenticated. An LLM loop inside a handler is one task, not journaled per call, so a reclaim pays for it again. Human approval happens in the chat session rather than as a durable runtime step. And its central composition claim has not been measured; by the standard [MAST25] sets, it is an assertion. These are listed as limitations in §15.15 and as future work in §16.3. The plan/data separation is also only a partial defence: the plan is fixed, but nothing yet stops a value derived from untrusted input reaching a mutating facet's arguments, which is the problem CaMeL's capability tracking addresses.
 
 ---
 
@@ -725,7 +752,9 @@ s = ComputeDerivedSize {
 }
 ```
 
-Script blocks are executed in a sandboxed Python subprocess with a controlled input/output boundary. They are the escape hatch of last resort and the compiler warns on their use. Most FFL programs contain none; the ones that contain many are a code smell indicating that too much logic is escaping the language.
+Script blocks are executed in a sandboxed Python subprocess with a controlled input/output boundary. They are the escape hatch of last resort. (An earlier version said the compiler warns on their use; it does not. The validator checks only that a block is non-empty and names a supported language.) Most FFL programs contain none; the ones that contain many are a code smell indicating that too much logic is escaping the language.
+
+*Update (October 2026).* Two things have changed. First, a script can now be bound to a named `environment` that declares its language and a frozen dependency list (canonical example `11-environment-script.ffl`). The environment's content hash becomes a claim-routing dimension, so only a runner that provides that environment claims the task (§5.6, [`script-environments.md`](../architecture/script-environments.md)). Second, an audit of the sandbox found that 12 of 15 well-known CPython escapes worked, one of them reading the database URL in three lines. The subprocess environment is now an allowlist, credentials are granted per import, and a syntax check plus guarded attribute access close the known escapes; all 48 existing script blocks still pass. The sandbox is documented as defence in depth, not a trust boundary, and should be read that way here.
 
 ### 4.9 Type system
 
@@ -741,7 +770,7 @@ The natural question is why Facetwork needs a new language at all. Why not simpl
 
 **Second, compile-time separation of concerns.** The author of a workflow should not need to know how any particular facet is implemented. In a library-based system, the workflow code imports the step implementations directly; refactoring the implementation affects the workflow author. In FFL, the workflow author references facets by qualified name; the binding to a handler happens at registration time. An operator can swap the implementation of `osm.Source.PostGIS.ExtractRoutes` without touching any workflow.
 
-**Third, IDE and dashboard tooling.** FFL's small, fixed grammar makes it feasible to build language servers, syntax-aware dashboards, and visual editors in a way that general-purpose code does not. The Facetwork dashboard renders FFL source inline with execution state, linking each step's current status to the corresponding source line. An equivalent affordance for Python workflow code would require running a debugger.
+**Third, IDE and dashboard tooling.** FFL's small, fixed grammar makes it feasible to build language servers, syntax-aware dashboards, and visual editors in a way that general-purpose code does not. One now exists: `fw ffl lsp` reports the validator's diagnostics as the author types, each with its `rule_id` (64 are emitted, each with its own rule document) and a link to that rule's explanation. The Facetwork dashboard renders FFL source inline with execution state, linking each step's current status to the corresponding source line. An equivalent affordance for Python workflow code would require running a debugger.
 
 The cost of a DSL is real — users must learn it, documentation must be maintained, the compiler must be kept correct — but the benefits accrue monotonically as workflows grow in number and authors multiply. In the limit of one workflow written by one author, there is no reason to use a DSL. In the limit of fifty workflows written by ten authors across five domains, there is no reason not to.
 
@@ -1188,15 +1217,15 @@ This recipe is implemented in `fw fleet rolling-deploy`. The interesting propert
 
 ### 6.8 Fleet inspection
 
-A distinguishing feature of Facetwork's operational model is that the fleet is genuinely observable. `fw runner list` produces a live view of every registered runner, its state, its ping time, its currently-claimed tasks, and its loaded handlers. The dashboard's `/v2/servers` page renders the same information graphically, with quarantine toggles on each row. The combination of a live, inspectable fleet and per-server lifecycle primitives turns fleet operations from a black art into a visible, scriptable practice.
+A distinguishing feature of Facetwork's operational model is that the fleet is genuinely observable. `fw runner list` produces a live view of every registered runner, its state, its ping time, its currently-claimed tasks, and its loaded handlers. The dashboard's servers page (`/v3/servers`; the v2 interface has since been removed) renders the same information graphically, with quarantine toggles on each row. The combination of a live, inspectable fleet and per-server lifecycle primitives turns fleet operations from a black art into a visible, scriptable practice.
 
 ### 6.9 Examples as standalone pip packages
 
-The handler-registration model of §6.3 is agnostic about *where* the registered code lives. The framework finds handlers via a Python entry-point group — `facetwork.examples` — and any package that declares one is discovered, loaded, and registered without changes to the framework. Internal `examples/<name>/` directories use this same mechanism; nothing about them is privileged.
+The handler-registration model of §6.3 is agnostic about *where* the registered code lives. The framework finds handlers via a Python entry-point group — `facetwork.examples` when this was written, now `facetwork.domains` for standalone packages, with in-repo teaching examples kept as a separate family — and any package that declares one is discovered, loaded, and registered without changes to the framework. Internal `examples/<name>/` directories use this same mechanism; nothing about them is privileged.
 
-In practice this has let entire example packages graduate out of the framework monorepo into their own pip-installable repositories. At the time of writing there are eight such packages: `fwh_osm` (OSM extraction, the canonical case study of Chapter 14), `fwh_osm_lz` (a pure FFL workflow catalog that consumes `fwh_osm`'s facets without contributing any handlers of its own), `fwh_noaa_weather`, `fwh_jenkins`, `fwh_census_us`, `fwh_genomics`, `fwh_sensor_monitoring`, and `fwh_anthropic` (a multi-area wrapper around the public surfaces at github.com/anthropics — Messages, Batch, Files, Agent SDK, Claude Code, Computer Use). Each is installable with one `pip install -e` and discoverable by every Facetwork runner via the entry point.
+In practice this has let entire example packages graduate out of the framework monorepo into their own pip-installable repositories. At the time of writing there are eight such packages: `fwh_osm` (OSM extraction, the canonical case study of Chapter 14), `fwh_osm_lz` (a pure FFL workflow catalog that consumes `fwh_osm`'s facets without contributing any handlers of its own), `fwh_noaa_weather`, `fwh_jenkins`, `fwh_census_us`, `fwh_genomics`, `fwh_sensor_monitoring`, and `fwh_anthropic` (a multi-area wrapper around the public surfaces at github.com/anthropics — Messages, Batch, Files, Agent SDK, Claude Code, Computer Use). Each is installable with one `pip install -e` and discoverable by every Facetwork runner via the entry point. *Update (October 2026):* the catalogue (`domains.json`) now lists thirty-six domain packages, from OSM ingestion to sports forecasting, a NASA archive audit and a recipe collection; §14.6 summarises what they show and what they do not.
 
-The shape that emerges is that examples are not example *folders* but example *packages*. A team that wants to ship a domain to production builds a `fwh_<domain>` repo with the same internal layout as the in-repo examples — `ffl/`, `handlers/`, `tools/_<pkg>_tools/`, `tests/` — adds a `pyproject.toml` declaring the entry point, and is operationally indistinguishable from the in-tree case from the framework's perspective. The development workflow this enables is also worth noting: a single Docker Compose file in the framework repository (`docker-compose.full-stack.yml`) starts one dedicated runner per `fwh_*` package, each bind-mounting its source directory and pip-installing it editable at container start, so that handler edits land in the running runner without a rebuild. The framework provides the entry-point discovery; the example packages provide their own dependency closure (the OSM package pulls `osmium` and `pyproj`, the Anthropic package pulls `anthropic` and optional SDK extras), and the framework remains free of any of them.
+The shape that emerges is that examples are not example *folders* but example *packages*. A team that wants to ship a domain to production builds a `fwh_<domain>` repo with the same internal layout as the in-repo examples — `ffl/`, `handlers/`, `tools/_<pkg>_tools/`, `tests/` — adds a `pyproject.toml` declaring the entry point, and is operationally indistinguishable from the in-tree case from the framework's perspective. The development workflow this enables is also worth noting: a single Docker Compose file in the framework repository (`docker-compose.full-stack.yml`) starts one dedicated runner per `fwh_*` package, each bind-mounting its source directory and pip-installing it editable at container start, so that handler edits land in the running runner without a rebuild. (That remains the development setup. The fleet no longer works this way: every fleet-deployed domain is baked into one multi-architecture runner image, so a handler change reaches the fleet through an image rollout, §6.7, rather than a per-start install.) The framework provides the entry-point discovery; the example packages provide their own dependency closure (the OSM package pulls `osmium` and `pyproj`, the Anthropic package pulls `anthropic` and optional SDK extras), and the framework remains free of any of them.
 
 This is, in a small way, the original §4.10 argument paying off downstream: because workflows reference facets by qualified name and handlers register themselves into a typed registry, the boundary between framework-code and example-code is something operators can move at will without disturbing FFL authors. The same workflow that referenced an in-tree `osm.ops.PostGisImport` last year today refers to a facet shipped from a separate Git repository on a separate release cadence; the FFL source did not change.
 
@@ -1701,9 +1730,10 @@ an absence inferred from a DAG that was never built, and that a handler or a
 ### 13.4b The built-in facet library, and the `shell:` question
 
 `fw.file.List` is one member of a library that grew in response to the audit in
-§13.3, and the shape of that growth is itself an argument. Twenty-one facets
-across four namespaces now ship with the framework and are registered by every
-runner with no handler for anyone to write:
+§13.3, and the shape of that growth is itself an argument. Twenty-five facets
+across six namespaces now ship with the framework and are registered by every
+runner with no handler for anyone to write (twenty-one across four when this
+section was first written):
 
 | Namespace | Facets | What it replaces in the domains |
 |---|---|---|
@@ -1711,9 +1741,13 @@ runner with no handler for anyone to write:
 | `fw.http` | 4 — `Fetch`, `Get`, `GetJson`, `Provenance` | download-plus-cache, hand-rolled in **14 of 23** domains |
 | `fw.archive` | 3 — `Extract`, `List`, `ReadMember` | zip/tar handling, hand-rolled in **9 of 23** across 17 sites |
 | `fw.exec` | 2 — `Run`, `Which` | *nothing* — see below |
+| `fw.compare` | 2 — `Tabular`, `Summarise` | ad-hoc "did it reproduce?" checks; see §13.4c |
+| `fw.provenance` | 2 — `Manifest`, `Verify` | nothing that existed; run-level provenance had no owner |
 
 The selection rule is visible in the last column, and only the first three rows
-satisfy it. Each was chosen because a survey found the same non-domain logic
+satisfy it. The last two were added later for a third reason: reproduction and
+provenance are claims a workflow makes about its own outputs, and an engine that
+cannot state what produced an artifact leaves that claim to each author. Each was chosen because a survey found the same non-domain logic
 rewritten many times *and getting it wrong differently each time*: the reuse
 decision in §13.3, and in the archive case a set of small recurring shapes —
 extract-then-glob for a shapefile, read the one member whose name carries a
@@ -1812,7 +1846,7 @@ If the work is a bulk pipeline on machines you control, and the failure mode you
 
 ## Chapter 14. Evaluation: The OSM Geocoder
 
-### 13.1 The workload
+### 14.1 The workload
 
 The evaluation workload is Facetwork's OSM geocoder example, a workflow that:
 
@@ -1824,7 +1858,7 @@ The evaluation workload is Facetwork's OSM geocoder example, a workflow that:
 
 The workload is representative of data-import workflows broadly: heterogeneous I/O, long-running stages, external side effects, fan-out by region.
 
-### 13.2 Observed behaviour
+### 14.2 Observed behaviour
 
 In a representative run (France + California + Germany, on a three-runner fleet), the workflow exhibited:
 
@@ -1842,13 +1876,13 @@ Failures observed during the run:
 
 These three scenarios exercise, respectively, lease-based recovery, FFL error handling, and live-updatable deployment. The workflow survived all three.
 
-### 13.3 Staged-timeout impact
+### 14.3 Staged-timeout impact
 
 Before the staged-timeout mechanism (Chapter 8) was added, the same workflow consistently died during the PBF scan for larger regions because the global execution timeout was shorter than the scan duration. The operational response was to raise the global timeout to an unreasonable value (48 hours), which made genuine stalls indistinguishable from active work.
 
 After staged timeouts were introduced, the same workflow runs to completion on the same regions, with the global timeout restored to 4 hours. The PBF scan's stage budget (scaled from file size) keeps the watchdog off the handler during legitimate work; the global timeout still catches genuine stalls. This is the staged-timeout model's intended effect.
 
-### 13.4 Dashboard observability
+### 14.4 Dashboard observability
 
 Throughout the run, the dashboard rendered:
 
@@ -1860,7 +1894,7 @@ Throughout the run, the dashboard rendered:
 
 An operator could see, at any moment, which regions were still importing, which extractions had failed, and which recovery action was appropriate. No operator needed to SSH to a runner or tail a log file. This level of first-class observability is a direct consequence of the state-recovery model: every significant event flows through the database and is visible in the dashboard.
 
-### 13.5 Summary
+### 14.5 Summary
 
 The OSM geocoder demonstrates that Facetwork's design decisions pay off on a representative long-running distributed workload:
 
@@ -1874,13 +1908,25 @@ A later extension of the same workload — converting every cached region's PBF 
 
 Whether the same design would perform similarly on a fundamentally different workload — say, a high-throughput payment processor — is addressed in the next chapter.
 
+### 14.6 Breadth: the domain portfolio as operational evidence
+
+*Added October 2026.* The evaluation above rests on one workload. Since it was written, the same runtime has carried thirty-six catalogued domain packages (§6.9) on a fleet that, at the time of writing, reports eight hosts and about forty-five runners. What follows is **operational evidence, not a controlled evaluation**. There is no baseline system run on the same work, the workloads were chosen by what the project needed rather than to test the design, and the figures are the domains' own measurements. Where a figure measures a model rather than the runtime, I say so.
+
+- **Width.** The county atlas fanned out to 3,167 US counties. Under `foreach … limit` it completed 3,173 of 3,173 tasks with none failed, unattended, across a 7.4-hour hibernation of its host (§15.14). A world road-map build fanned out from continent to country to region and produced 1,673 maps in one run (§15.3).
+- **Long-lived, scheduled work.** Several domains now run unattended on timers: an NFL forecasting site refreshed twice daily, a five-league sports site, an AI-risk indicator board, and the nightly OSM replication chain. These test the runtime as a service that must keep running, not as a batch job.
+- **Domain results that are checked against something external.** The NFL domain's Elo ratings pick 64.2% of winners out of sample (2015–2025, 3,028 games) against the betting line's 66.1%, so the model is useful but does not beat the market. Its tiebreaker code reproduces 48 of 48 real conference seedings since 2002. The sports domain's tiebreakers reproduce the official seeds in every checked season, though the current league formats are young, two to six seasons each. These measure the domain models, not Facetwork; their relevance here is that the runtime carried them to a checkable result.
+- **Ports and reproductions.** The PyPSA-Eur retrieve stage, 73 Snakemake rules and 1,631 lines, became one `foreach` over a catalogue (§13.3). A grid-builder port produced the same data as the Snakemake original it mirrors (832 rows, none differing). A NASA Planetary Data System audit of 360 sampled products found none corrupted and 48 with wrong locations, and gave identical results run locally and across four fleet hosts (§13.4c).
+- **Collapse to one host.** An antibiotic-resistance domain ingested 2.35 million isolates and rendered its outputs in eighty-five seconds on a single machine (§15.9).
+
+What this breadth supports is narrow. It shows that the language and runtime were general enough for domains the design did not anticipate, and that the failures they surfaced were absorbed as the notes of Chapter 15 describe. It does not show that Facetwork performs better than an alternative on any of them, and it does not test the composition claim of §16.3, which needs the controlled comparison described there. Not every package is fleet-deployed: two computer-vision domains with heavy dependencies and the PyPSA-Earth port run only from a local checkout.
+
 ---
 
 # Part IV — Closure
 
 ## Chapter 15. Limitations and Open Problems
 
-### 14.1 Workloads where Facetwork is not the right tool
+### 15.1 Workloads where Facetwork is not the right tool
 
 Facetwork is designed for long-running, heterogeneous, domain-authored workflows. For workloads with different characteristics, other systems are better:
 
@@ -1894,7 +1940,7 @@ Facetwork is designed for long-running, heterogeneous, domain-authored workflows
 
 Acknowledging these boundaries is important. A workflow system that claims to be universally best is generally a workflow system that is actually best only for its authors' personal workloads.
 
-### 14.2 Open problems in the Facetwork design
+### 15.2 Open problems in the Facetwork design
 
 The Facetwork design has open problems and the honest account of them is part of the thesis.
 
@@ -1915,15 +1961,15 @@ workflow RegionalReport(region: String) => (report: Report) andThen {
 
 The data-dependency semantics of §4.4 extend uniformly: a sub-workflow reached through a parallel branch runs concurrently with its siblings, and downstream facets that reference its result block until it completes. The block-mediated advancement of §5.8 applies at every level of the call tree — each sub-workflow has its own evaluator and its own continue-message discipline — so composed workflows inherit the same lock-free coordination as monolithic ones. This makes workflows first-class reusable units: a team can publish a workflow alongside its event facets, and downstream teams can consume it by name, substituting implementations at the handler level without touching the consumer's FFL.
 
-A concrete demonstration of this came together as the standalone-package pattern of §6.9 matured. The `fwh_anthropic` package declares `anthropic.messages.CreateMessage` and a small companion `anthropic.compose.DocumentQA` workflow (upload a file via the Files API, ask Claude about it via the Messages API — the canonical retrieval-augmented-generation shape). The framework's in-repo `research-agent` example was then ported to consume `anthropic.messages.CreateMessage` from `fwh_anthropic` rather than declaring its own prompt-block facets — the domain workflow plans, decomposes, gathers, analyses, drafts, and reviews entirely by issuing `CreateMessage` calls against system prompts that demand JSON, and parsing the responses through small typed `Parse<Schema>` event facets. From the FFL author's perspective there is no syntactic distinction between `anthropic.messages.CreateMessage` and any local facet; the discovery is operational (which runner has the matching handler) rather than linguistic. This is precisely the cross-package composition that §4.10 argued the language would enable; thirteen standalone packages and one cross-package consumer later, it is no longer hypothetical.
+A concrete demonstration of this came together as the standalone-package pattern of §6.9 matured. The `fwh_anthropic` package declares `anthropic.messages.CreateMessage` and a small companion `anthropic.compose.DocumentQA` workflow (upload a file via the Files API, ask Claude about it via the Messages API — the canonical retrieval-augmented-generation shape). The framework's in-repo `research-agent` example was then ported to consume `anthropic.messages.CreateMessage` from `fwh_anthropic` rather than declaring its own prompt-block facets — the domain workflow plans, decomposes, gathers, analyses, drafts, and reviews entirely by issuing `CreateMessage` calls against system prompts that demand JSON, and parsing the responses through small typed `Parse<Schema>` event facets. From the FFL author's perspective there is no syntactic distinction between `anthropic.messages.CreateMessage` and any local facet; the discovery is operational (which runner has the matching handler) rather than linguistic. This is precisely the cross-package composition that §4.10 argued the language would enable; thirteen standalone packages and one cross-package consumer later (thirty-six catalogued packages by October 2026), it is no longer hypothetical.
 
 What remains genuinely under-specified is the *cross-instance* case: when two independently-triggered top-level workflow instances need to share state, await each other's completion based on runtime-discovered identities, or serialise access to an external resource. Composition via facet-like invocation handles the static case well; the dynamic, instance-to-instance case — analogous to `signal`, `query`, and `waitForExternalEvent` primitives in Temporal — is future work.
 
-**Global observability across the fleet.** The dashboard renders per-workflow and per-server state; it does not yet render fleet-wide metrics (total throughput, queue depth, aggregate lag, SLO adherence). Grafana integration covers database-level metrics well but workflow-level metrics less well. A proper fleet dashboard is future work.
+**Global observability across the fleet.** The dashboard renders per-workflow and per-server state; it does not yet render fleet-wide metrics (total throughput, queue depth, aggregate lag, SLO adherence). Grafana integration covers database-level metrics well but workflow-level metrics less well. A proper fleet dashboard is future work. More fundamentally, the runtime exports no metrics or traces in any standard form; §15.15 returns to this.
 
 **The MongoDB dependency.** Facetwork is tightly coupled to MongoDB's atomicity primitives. A port to PostgreSQL (using `SELECT ... FOR UPDATE SKIP LOCKED`) is plausible and would widen Facetwork's applicability, but the porting work is non-trivial because the claim protocol, the partial unique index, and the heartbeat model all assume MongoDB semantics.
 
-### 14.3 Scale limits
+### 15.3 Scale limits
 
 Facetwork has been exercised with:
 
@@ -1935,7 +1981,7 @@ Facetwork has been exercised with:
 
 *Update (October 2026).* Each of those figures has since been exceeded, on the same informal hardware:
 
-- **Fleet.** Eight hosts of mixed architecture (arm64 and x86) at a peak of 108 runner processes. After cold domains were consolidated into one generalist runner, 45 live server records remained.
+- **Fleet.** Eight hosts of mixed architecture (arm64 and x86) at a peak of 108 runner processes. After cold domains were consolidated into one generalist runner, 45 live server records remained, which is still the fleet's shape at the end of October 2026: eight hosts, about forty-five runners.
 - **Fan-out width.** 3,167 branches: one county atlas per US county. It ran first unbounded, then under `foreach … limit` (§15.13), where it completed 3,173 of 3,173 tasks with none failed. That run survived a 7.4-hour hibernation of its host part-way through.
 - **Run depth.** A world low-zoom road build, fanning out from continent to country to region, produced 1,673 maps in one run.
 - **Workflow history.** The store holds about 2,450 workflow runs, 40,000 steps and 28,500 tasks.
@@ -1946,7 +1992,7 @@ Beyond this scale, I do not have empirical data. The claim protocol's throughput
 
 Scaling past these bounds is plausible but would require either partitioning the task collection (so that each runner only reads a shard), sharded MongoDB deployments, or optimistic claim protocols that batch work per call. None of these changes affect the design arguments of this thesis; they are operational refinements.
 
-### 14.4 Issues identified and resolved in cross-package validation (note added in proof)
+### 15.4 Issues identified and resolved in cross-package validation (note added in proof)
 
 The cross-package demonstration of §15.2 — porting `research-agent` to consume `anthropic.messages.CreateMessage` from `fwh_anthropic` — surfaced three latent runtime issues that the original OSM-only evaluation had not exercised. All three were corrected; they are worth recording briefly both because they illustrate the kinds of bug the state-recovery model makes visible and because the fixes themselves form part of the current codebase.
 
@@ -1958,7 +2004,7 @@ The third was an over-strict completion check in cross-block reference resolutio
 
 Each of these three issues has a regression test in the runtime test suite, exercising the patterns that surfaced them (statement-level fan-out, foreach iteration, inline-andThen back-references). Together they advance the §14.5 evaluation claim — that the design survives crashes, hiccups, and handler bugs without losing more than one stage's work — by an additional point: the state-recovery model also makes *internal* runtime bugs diagnosable through the dashboard rather than through gdb.
 
-### 14.5 Continuation coalescing under data-bounded fan-out (note added in proof)
+### 15.5 Continuation coalescing under data-bounded fan-out (note added in proof)
 
 A fourth note-in-proof issue surfaced from a workload the Chapter 14 evaluation had not previously run at *width*: converting every cached region's PBF to GeoJSON in a single `andThen foreach` over the cache listing — 255 parallel branches, the widest single fan-out the fleet had executed. Every hand-written workflow to that point fanned out to at most a few dozen branches, and the block-mediated advancement of §5.8 had carried them without incident. At 255 the actor model's *correctness* held but its *efficiency* did not: the runners filled with `resume_step` passes that did no productive work (logging `iterations=0`), the foreach's leaf conversions stopped being claimed, and throughput collapsed after the first few dozen completions.
 
@@ -1968,13 +2014,13 @@ The fix is the two-point coalescing of §5.7.5 — suppress a continue message a
 
 The episode sharpens the §14.5 evaluation claim in a direction the OSM-only workload could not: the design survives not only crashes and handler bugs but its own *scaling* defects, and for the same reason — the state lives in the database and the pipeline is observable, so an O(N²) blow-up announces itself as a flood of visible no-op tasks rather than as an opaque hang. The deeper lesson, recorded in §5.7.5, is that an actor mailbox that is provably correct under redundancy is not thereby provably *bounded* under redundancy; where fan-in is data-bounded rather than author-bounded, the mailbox must be coalesced explicitly. It is also a reminder that the same evaluation workload, re-run at a new point on a different axis — width rather than depth or duration — remains the most reliable way to find the design's next latent edge.
 
-### 14.6 A handler-side resource ceiling, and the value of a typed parameter (note added in proof)
+### 15.6 A handler-side resource ceiling, and the value of a typed parameter (note added in proof)
 
 The same 255-region conversion surfaced a second, quite different limit — one that belongs to the *handler*, not to Facetwork. Whole-region GeoJSON export via `osmium` holds a node-location index whose footprint grows with the region; the largest extracts (continents, large countries) either exhausted the memory of a modest host or, with a disk-backed index, thrashed it off the operating system's page cache down to a few kilobytes per second. No amount of runtime tuning addresses this: it is the memory profile of an external tool against a fixed machine, orthogonal to the coordination model this thesis argues for. The episode is worth recording *because* it is orthogonal — it marks the boundary of what the runtime is responsible for. Facetwork schedules, recovers, and observes the work; it does not, and should not, try to make a memory-bound external tool fit in less memory.
 
 What it does do is make the *mitigation* cheap, and that is the point worth drawing out. The fix was a single typed parameter on the conversion facet — `max_pbf_mb` — that skips any region whose cached input exceeds a size threshold, returning a `skipped` result rather than attempting the export. Because facets are typed structures with declared parameters (Chapter 4), adding the gate touched only the facet signature, its handler, and a one-line thread-through in the two workflows that call it; nothing in the runtime, the claim protocol, the recovery machinery, or any other workflow changed. An operator caps a run already in flight by setting the threshold (or an environment fallback the handler honours), and the fan-out simply converts what fits and skips what does not — the skipped regions appearing as terminal `skipped` steps rather than as failures or hangs. The separation this thesis argues for — topology and coordination in the language and runtime, domain logic in the handler — is exactly what turned a host-specific resource limit into a domain-level configuration knob instead of a systemic problem. The regions too large for the host are not lost; they are a documented follow-up, convertible unchanged on a machine with more memory by raising the same parameter.
 
-### 14.7 An upstream-availability failure, absorbed as a provider knob (note added in proof)
+### 15.7 An upstream-availability failure, absorbed as a provider knob (note added in proof)
 
 A third note-in-proof episode arrived from the OSM workload's first stage rather than its widest — the data acquisition that §14.1 lists as step one. The geocoder downloads its PBF extracts from Geofabrik; during a cache refresh, concurrent whole-region update runs tripped Geofabrik's rate limit and the provider banned the fleet's shared egress IP outright — TCP 443 refused from every host, while every other upstream (planet.osm.org, OpenStreetMap France, BBBike) stayed reachable. This is a failure the coordination model cannot touch: no amount of lease recovery, retry, or live redeployment conjures a data source that has closed its door to the caller's IP.
 
@@ -1982,13 +2028,13 @@ The episode first presented as a small dent in the observability claim of §14.5
 
 The fix is the §15.6 pattern again. A single provider abstraction — an extract-provider environment switch — routes downloads to OpenStreetMap France instead, resolved entirely inside the download tool and its companion handler: the remote URL is chosen per provider, the missing upstream checksum is tolerated (integrity falls back to the locally computed SHA-256 the cache already records), and a deterministic region-name transform bridges the two providers' spelling conventions. The cache layout, the manifest, the claim protocol, the recovery machinery, and every workflow that consumes the cache are untouched; a re-fetched extract even carries the new provider's own replication header, so subsequent delta updates follow the new source without further configuration. What this does *not* do is pretend the substitution is complete: OpenStreetMap France publishes a French-centric subset, and only some 132 of the 255 cached regions have an equivalent there — the remainder are genuinely absent and a refresh skips them by name. The fallback is a partial mitigation, honestly bounded, not a drop-in replacement. But the shape of the fix is the point the thesis keeps making: an availability failure in an external dependency, wholly outside the runtime's remit, was absorbed as a typed, operator-set configuration knob in the handler layer — topology and coordination in the runtime, domain reality in the handler — rather than as a change to the system this thesis argues for.
 
-### 14.8 From a homogeneous fleet to capability-tiered server groups (note added in proof)
+### 15.8 From a homogeneous fleet to capability-tiered server groups (note added in proof)
 
 A fourth episode came not from the workload's width or its upstream but from the *hardware* the fleet happened to run on. The evaluation fleet is an informal one — ordinary desktops and laptops, not provisioned servers (§15.3, [`informal-fleet.md`](../operations/informal-fleet.md)). Running several wide region fan-outs concurrently on one of the weaker hosts exhausted its container VM's disk; the local MongoDB on that box hit a storage-engine panic and crash-looped, taking the host out of the fleet until its volumes were pruned. As with §15.6 this is, at root, a provisioning limit rather than a defect in the coordination model — the machine was not built for that load — and the immediate response was operational (prune, serialize the heavy fan-outs, a disk-usage guard). But it sharpened a structural question the homogeneous-fleet assumption had left implicit: every runner server brought up the *same* set of roles, so every host, however modest, was asked to carry the resource profile of the heaviest domain it ran.
 
 The resolution is a near-free consequence of a property the thesis already argued for. Because task routing is **capability-scoped** — a runner claims only tasks for facets whose handlers it loaded, on task lists derived from the facet namespace (§5, §13) — a heterogeneous fleet is already *safe*: a host that does not run the heavy domain simply never sees its tasks, with no risk of misrouting. The only thing missing was a way to *express* that intent centrally. A per-role `server_groups` list in the central fleet config, paired with a host group tag the per-host agent already records, supplies it: a role is started on a host only when the host's group is named in the role's list, and a role with no list runs everywhere (so a fleet that sets none behaves exactly as before). With it, the heavy domains are pinned to the capable machines in one central setting; the under-provisioned hosts run only the light ones; and nothing in the runtime, the claim protocol, or the recovery machinery changes — the fleet of §15.3 becomes explicitly **capability-tiered** rather than homogeneous. It is the same separation the whole thesis turns on, applied one level out: topology and coordination in the runtime, and now the fleet's *shape* in the config, with routing still guaranteeing that every task reaches a host that can serve it. The design write-up is [`docs/architecture/server-groups.md`](../architecture/server-groups.md); it generalizes the role-split first taken by the `ffl-runner` tier (§5, [`ffl-runner-orchestration-tier.md`](../architecture/ffl-runner-orchestration-tier.md)) from one special orchestration role to arbitrary capability tiers.
 
-### 14.9 A late domain that instrumented two claims at once: single-box collapse and composition-by-reuse (note added in proof)
+### 15.9 A late domain that instrumented two claims at once: single-box collapse and composition-by-reuse (note added in proof)
 
 A final episode is not a failure absorbed but a construction that, built late and in a single sitting, happened to instrument two of this thesis's claims in one artifact. A new standalone domain (§6.9) — antibiotic-resistance gene spread across country, year, and species, drawn from NCBI Pathogen Detection's open per-isolate metadata — was authored, deployed, and published in one working session, and it serves as a datapoint for both the fleet's *shape* and the language's *composition* argument. Two companion papers develop each in full; this note records how one domain touched both.
 
@@ -1996,7 +2042,7 @@ For the fleet, it reads §15.3's scale ceiling from the opposite end: not how la
 
 For the language, the same domain measures how much of a new pipeline is *lookup* rather than *generation*. Its genuinely new code was confined to the source-specific core — the NCBI streaming ingest, a gene-to-drug-class classifier, a geography-to-ISO join — while its scaffolding was reuse: the backend-aware storage layer and the year-slider map renderer adapted from a sibling migration domain, the fan-out workflow shape and the fetch-once shared cache taken from the county atlas, the gallery publish imported verbatim from the census domain. Two of those borrowings were *themselves this project's earlier solved requests*: request *N* (the county atlas) measurably became substrate for request *N+1*, the compounding a capability catalog is meant to produce (§6.9, [`composable-facet-library.md`](../architecture/composable-facet-library.md)). The reuse is **graded** — literal import of framework primitives, template copy-and-adapt of sibling structure, verbatim reuse of a publish tool — and honesty requires naming the grade, because a copied template is still maintained per-domain. The companion paper [`paper-llm-composition.md`](paper-llm-composition.md) develops this into the argument that, given a discoverable, effect/cost-annotated facet library, composing a workflow becomes *lookup-then-compose* rather than code generation, and it states plainly the controlled experiment the claim still needs. Neither result changes the runtime; both are the design of §4.10 and §6.9 observed one more time, from a domain the thesis had not anticipated.
 
-### 14.10 Delivery is at-least-once, and the coordination store is one node (correction)
+### 15.10 Delivery is at-least-once, and the coordination store is one node (correction)
 
 The abstract and §5.3 originally claimed more than the system does, and this note corrects both. Facetwork guarantees one claimant per task *at a time*. It does not guarantee that a task's work is performed once. The written contract ([`execution-semantics.md`](../reference/execution-semantics.md)) is at-least-once delivery with no fencing token. A step may therefore run twice, and handler idempotency is a requirement, not an optimisation.
 
@@ -2006,7 +2052,7 @@ A second path was found in October 2026. In 11 of 666 event tasks, all inside ca
 
 The coordination store also deserves a plainer statement than the thesis gave it. "No coordinator" (§5.7) is true of the runners and false of the deployment. The evaluated fleet coordinates through one standalone MongoDB node: no replica set, no authentication, no TLS. Every runner is replaceable; the database is not. Measured episodes since §14 include relocating the database to another host (the subject of [`paper-moving-state.md`](paper-moving-state.md)) and a live index migration that took the fleet down because older images validated indexes at start-up. A single bad write to shared state once took the fleet from 108 runners to 23. None of this contradicts the claim protocol, which assumes a linearisable store and gets one. It does bound what "leaderless" buys: the design has no master *process* to lose, but it has a master *store*. A replicated, authenticated store is the first thing a production deployment would need, and the evaluated one has neither ([`comparison-to-production-platforms.md`](../operations/comparison-to-production-platforms.md)).
 
-### 14.11 The cost of polling, and a per-host claimer that is not a coordinator (note added in proof)
+### 15.11 The cost of polling, and a per-host claimer that is not a coordinator (note added in proof)
 
 §5.4 argued that runners do not contend: each issues its own claim and the database arbitrates. That is true of *correctness*. It was not true of *load*, and the load came from the case the argument did not examine, which is idleness. Every runner polls every list it serves, so the database answers a fixed rate of empty claims per runner whether or not there is work. With 37 idle runners the fleet issued 190 `find_one_and_update` calls per second and held 342 connections.
 
@@ -2015,7 +2061,7 @@ Two changes cut that to 2.1 per second.
 - **Agent protocol v1.2** (§14.13) made polling back off when it finds nothing, which brought the rate to 9.5 per second.
 - **One claimer per host.** The runners on a machine ask a local claimer process, which issues *one* merged `claim_any` for all of them and hands each task over with the ownership-gated write of §5.5.
 
-Enabled on all eight hosts, the claimer took the idle rate from 8.8 to 4.3 per second. Moving the Java agents onto it took the rate to 2.1. Through all of this, 16 test workflows completed across seven hosts, each task handed out by a claimer and none released.
+Enabled on all eight hosts, the claimer took the idle rate from 8.8 to 4.3 per second. Moving the Java agents onto it took the rate to 2.1. The Scala, Go and TypeScript agent libraries now claim through it too, so every agent library in the repository uses the claimer. Through all of this, 16 test workflows completed across seven hosts, each task handed out by a claimer and none released.
 
 The design question is whether this reintroduces the coordinator the thesis argued against. I think it does not, for three reasons.
 
@@ -2025,7 +2071,7 @@ The design question is whether this reintroduces the coordinator the thesis argu
 
 The protocol of §5.3 is unchanged; the claimer is a cache in front of it, not a replacement for it. It did have one measurable cost. Backing off to one query per five seconds made a claimer host lose races for generic work to hosts still polling directly, and in a mixed fleet 13 of 13 test runs went elsewhere. The imbalance disappeared once every host had a claimer.
 
-### 14.12 Capacity is not availability (note added in proof)
+### 15.12 Capacity is not availability (note added in proof)
 
 §15.8 described how capability-tiered server groups keep heavy work off small hosts. Group membership turned out to be too coarse: a laptop with a 7.75 GiB container VM and a server with 13.6 GiB were both "heavy". A task may now carry a resource floor (`with Requires(memory_gb = …)`, which can reference the step's own parameters, so a floor can scale with input size). A runner advertises *measured* capacity, read from the cgroup limit the OOM killer enforces, and a dimension it cannot measure makes it decline rather than accept.
 
@@ -2037,7 +2083,7 @@ Three failures followed, and they are more instructive than the mechanism.
 
 The general lesson matches §15.5. Admission control that checks a quantity without reserving it is correct for one claimant and wrong for several. The check that should catch the failure must observe the same quantity the claim does, or it will report health while the system is stuck.
 
-### 14.13 A protocol defined by one implementation is not a protocol (note added in proof)
+### 15.13 A protocol defined by one implementation is not a protocol (note added in proof)
 
 §6.4 claimed that the Go, Java, Scala and TypeScript agents share "the same shape" as the Python runner. An audit in October 2026 found that the shape was shared and the guarantees were not. All four non-Python agent libraries claimed with a bare `{state, name, task_list}` filter. They set no `server_id` and no lease, and ignored both the retry cooldown and the resource floor. The consequences:
 
@@ -2051,7 +2097,7 @@ The fix gave the protocol a machine-readable statement: version 1.2, with shared
 
 After the rollout, a killed agent's task was reclaimed by the reaper at 124 seconds and finished on another host, and a failing task reached the dead-letter state at its retry limit. This is the parity-gap result of [`paper-parity-gaps.md`](paper-parity-gaps.md) one level up. A test suite run against a single implementation cannot show that a second implementation keeps the same promises.
 
-### 14.14 A bulkhead that amplified a latent liveness defect (note added in proof)
+### 15.14 A bulkhead that amplified a latent liveness defect (note added in proof)
 
 FFL gained `foreach … limit N`, a cap on how many iterations of a fan-out are in flight at once. It changes concurrency only; the elements and the result are the same. Its first use at width exposed a defect that the unbounded form had been absorbing.
 
@@ -2063,9 +2109,24 @@ After the fix, a 60-iteration run capped at six, with its runner killed mid-flig
 
 The lesson generalises beyond FFL. A bulkhead converts a slow leak of capacity into a hard stop. That is the right failure mode for a resource limit, but it means introducing one is also a test of every liveness path behind it.
 
+### 15.15 Gaps against the current agentic ecosystem (note added October 2026)
+
+§3.5 compared Facetwork with the agent-runtime work of 2025–2026. The comparison found the core design on the side of the evidence and the interfaces behind it. Six gaps follow, each measured against the repository rather than inferred.
+
+- **The MCP server is a generation old.** It serves over stdio only and pins the MCP SDK below version 2. It therefore has no HTTP transport, no authorization, and no MCP Task for a running workflow: a caller of `fw_catalog_run` polls by hand. It cannot be offered to a remote agent or a hosted agent runtime.
+- **No telemetry export.** There is no OpenTelemetry and no metrics endpoint. The step log is detailed but visible only through the dashboard, so Facetwork runs are invisible to the observability systems an organisation already operates.
+- **The control plane is unauthenticated.** §15.10 records this for the database; it applies equally to the object store and the image registry. The gap matters more once LLM-authored workflows can reach that control plane, because one injected instruction in a fetched document would then act with the whole fleet's access.
+- **Agent loops are not journaled per call.** An LLM handler that runs a multi-turn tool loop does so inside one task. If the task is reclaimed, the whole loop runs again: the model calls are paid for twice and may return a different answer. This is the at-least-once window of §15.10 applied to the most expensive and least deterministic kind of handler.
+- **Approval lives in the chat.** The two review gates of the authoring loop (workflow shown before it runs, handler shown before use) happen in the Claude session. If the session ends, the approval state is lost, and there is no durable record of who approved what. Comparable systems treat a human wait as a durable step.
+- **The composition claim is unmeasured.** §16.3 argues that composing from a catalog beats generating code. The controlled comparison that would test it — the same requests authored with the catalog, with the library alone, and as free code — has not been run. One worked example (§15.9) is not that test.
+
+Two smaller gaps sit beside these. Catalog search is keyword-ranked, and nothing re-validates a stored revision when the library under it changes, which is the drift that [SKNB26] identifies; `fw util ffl-audit` performs that check for domain repositories but not for catalog revisions. And values derived from untrusted input are not tracked, so the plan is fixed but its arguments are not (§3.5).
+
+None of these changes the design argument. All of them bear on whether a team could adopt the system as it stands.
+
 ## Chapter 16. Conclusion
 
-### 15.1 What has been argued
+### 16.1 What has been argued
 
 This thesis has argued for a specific position in the distributed workflow design space:
 
@@ -2079,7 +2140,7 @@ This thesis has argued for a specific position in the distributed workflow desig
 
 Each of these claims has been illustrated by Facetwork's design and evaluated against the major alternative systems in the space (Temporal, Camunda, Airflow, Jenkins). The design choices reinforce rather than undercut each other: the DSL's separation of topology and implementation only matters if handlers can be changed live; the state-recovery model only scales if recovery is step-level; the step-level recovery only works if the topology graph is statically available. Facetwork arrives at a coherent point where all four are simultaneously true.
 
-### 15.2 What has not been claimed
+### 16.2 What has not been claimed
 
 I have not claimed that Facetwork is better than every alternative on every workload. I have claimed that on a specific class of workload — live long-running domain workflows — Facetwork is structurally better than each of the major alternatives, for reasons I have attempted to justify rather than assert.
 
@@ -2087,11 +2148,11 @@ I have not claimed that Facetwork's lock-free protocol is novel in a deep sense.
 
 I have not claimed that FFL is the best possible DSL. It is one reasonable point in the design space; others exist; the design choices I defended are not the only defensible ones. A proper comparative evaluation of workflow DSLs is future work.
 
-I have not claimed exactly-once execution, although an earlier version of the abstract did. What the protocol provides is one claimant per task at a time. A task's work can run more than once, and a fleet whose hosts sleep makes that ordinary (§15.10). Nor have I claimed a highly available control plane: the runners are leaderless, but the store they coordinate through was, throughout the evaluation, a single unauthenticated node. Of the corrections in Chapter 15's later notes, these two matter most. They change what a reader should expect of a deployment, not of the design argument.
+I have not claimed exactly-once execution, although an earlier version of the abstract did. What the protocol provides is one claimant per task at a time. A task's work can run more than once, and a fleet whose hosts sleep makes that ordinary (§15.10). Nor have I claimed a highly available control plane: the runners are leaderless, but the store they coordinate through was, throughout the evaluation, a single unauthenticated node. Of the corrections in Chapter 15's later notes, these two matter most. They change what a reader should expect of a deployment, not of the design argument. Finally, I have not claimed that composing workflows from a catalog has been shown to outperform generating them; §16.3 argues it, and §15.15 records that the experiment has not been run.
 
-### 15.3 Where the design goes next
+### 16.3 Where the design goes next
 
-Four directions seem most promising for further development.
+Five directions seem most promising for further development.
 
 **First, typed idempotence.** Adding `@idempotent` annotations to handler registrations, with compile-time and runtime checks, would eliminate one of the real costs of state-recovery semantics. The groundwork exists; the typing discipline is well-understood; the implementation is straightforward.
 
@@ -2105,7 +2166,7 @@ The argument is not the popular one that workflow systems are "deterministic and
 
 If AI agents become the primary authors, the operational shape shifts. The human's role becomes directing intent, reviewing generated artifacts, and curating a library of approved ones. A generated workflow becomes a **sealed skill** — FFL source plus pinned handler registrations plus a contract plus provenance metadata (model, prompt, reviewer, tests) plus a content-addressable identifier plus a signature. Sealed skills are immutable, discoverable, and composable; they form a registry that AI agents query before regenerating. The operational cycle is **AI generates, human reviews, skill seals, fleet executes**.
 
-During the development of Facetwork this stopped being hypothetical: it now ships a **workflow catalog** that realizes the core of this shape — workflows authored, stored, and run without a file, as immutable content-hashed revisions gated `draft → published` by a human reviewer, with shared libraries pinned by revision and discovery before regeneration. A revision carries the sealed-skill provenance directly, including an authoring **summary** that records the request the workflow was generated from and how it addresses it — so the artifact can be *understood*, not merely audited, which is the precondition for a reviewer meaningfully approving AI-generated FFL. The catalog is the substrate to which the refinements below attach. Several of those refinements have since been built on it: a deliberately-designed **composable primitive library** (the `fwh_osm` facets restructured into orthogonal, path-chaining layers) with a **capability index** (`fw_capabilities`) that realizes the skill-discovery-by-contract protocol at the facet level; **reuse-first matching** (`fw_catalog_match`) that finds an existing workflow by recorded intent before regenerating; and a first form of **effect/cost annotations** (`with Effect`/`Cost` mixins surfaced through that index, populated across all 247 osm facets). The companion `ai-authorship.md` (§7.1) records these in detail.
+During the development of Facetwork this stopped being hypothetical: it now ships a **workflow catalog** that realizes the core of this shape — workflows authored, stored, and run without a file, as immutable content-hashed revisions gated `draft → published` by a human reviewer, with shared libraries pinned by revision and discovery before regeneration. A revision carries the sealed-skill provenance directly, including an authoring **summary** that records the request the workflow was generated from and how it addresses it — so the artifact can be *understood*, not merely audited, which is the precondition for a reviewer meaningfully approving AI-generated FFL. The catalog is the substrate to which the refinements below attach. Several of those refinements have since been built on it: a deliberately-designed **composable primitive library** (the `fwh_osm` facets restructured into orthogonal, path-chaining layers) with a **capability index** (`fw_capabilities`) that realizes the skill-discovery-by-contract protocol at the facet level; **reuse-first matching** (`fw_catalog_match`) that finds an existing workflow by recorded intent before regenerating; and a first form of **effect/cost annotations** (`with Effect`/`Cost` mixins surfaced through that index, populated across all 247 osm facets; by October 2026, 610 of the 1,226 facets in the capability index declared an effect, so adoption is about half). The companion `ai-authorship.md` (§7.1) records these in detail.
 
 The design changes that follow are additive rather than relaxing. Effect annotations (`@pure`, `@idempotent`, `@llm`, `@external-side-effect`) on every facet. Refinement types and sum types to tighten return contracts. Pre- and post-conditions verifiable at compile time. Schema inference from examples to stop AI hallucination of shapes. Two-phase generation (typed stubs first, implementations second). Structured docstring annotations (`@purpose`, `@failure-modes`) cross-checked against the code. A content-addressable skill registry with a discovery protocol. Regeneration rendered as semantic diffs for human review. Auto-generated property-based tests as a precondition of sealing. Confidence markers on generated output. Counterfactual replay (re-running a workflow with different LLMs behind a chosen step). Removal of the `script python` escape hatch and of any remaining un-checkable surface.
 
@@ -2113,9 +2174,23 @@ Two tempting directions must be resisted. The first is making FFL unreadable to 
 
 The extended treatment — with concrete feature proposals, detailed arguments against the tempting wrong turns, and a full discussion of the implications for the handler model — appears in the companion document [`ai-authorship.md`](ai-authorship.md) alongside this thesis. That document is the authoritative record of the AI-authorship design direction; this subsection is its summary.
 
-Each of the four directions is an evolution within the thesis's design position, not a departure from it. Each preserves the DSL, the lock-free coordination, the state-recovery model, and the live updatability. Each extends the applicability of the whole.
+**Fifth, the interfaces the agent ecosystem has standardised on.** §15.15 lists the gaps. The research note behind §3.5 ranks the work that would close them by the risk of leaving each open, and the order is worth recording briefly:
 
-### 15.4 Closing
+1. An MCP server on the current specification, served over HTTP with authorization, with a workflow run exposed as an MCP Task whose identifier is the run's identifier.
+2. Human approval as a durable runtime step: a built-in facet that parks like a delegated step (§2.6) and is answered from a dashboard inbox or through MCP, so that the review gates become catalog states rather than chat turns.
+3. Per-call journaling inside LLM and agent handlers, keyed by step and turn, so a reclaimed task replays recorded calls instead of paying for them again.
+4. OpenTelemetry export using the GenAI conventions, with trace context carried in task documents so a span survives a hop between hosts, and a metrics endpoint alongside it.
+5. An authenticated control plane, followed by policy that turns declared effect classes into enforcement: a workflow written or changed by an LLM may not invoke a mutating external facet without an approval step.
+6. Taint labels on values from untrusted sources, propagated through references, so that a tainted value cannot reach a mutating facet's sensitive parameters unapproved.
+7. A composition evaluation harness that runs the controlled comparison §15.15 says is missing, and keeps it as a regression suite.
+8. Drift re-validation of stored catalog revisions, and semantic rather than keyword matching.
+9. A per-run cost ledger and budget, with model choice declared on the facet.
+
+The first five are interface and safety work rather than design changes; items 6 and 7 are where the design argument is tested. Of the nine, the evaluation harness matters most to this thesis, because without it the composition claim in this section remains advocacy.
+
+Each of the five directions is an evolution within the thesis's design position, not a departure from it. Each preserves the DSL, the lock-free coordination, the state-recovery model, and the live updatability. Each extends the applicability of the whole.
+
+### 16.4 Closing
 
 The point of a PhD thesis is not to announce that its author has had the last word. It is to argue a defensible position clearly enough that subsequent work can either build on it or refute it. I have attempted the former. Whether I have succeeded is, in the nature of these things, for the reader to decide.
 
@@ -2132,21 +2207,35 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 ## References
 
+[A2A] Linux Foundation. A2A protocol surpasses 150 organizations, lands in major cloud platforms, and sees enterprise production use in first year. Press release, 2026. https://www.linuxfoundation.org/press/a2a-protocol-surpasses-150-organizations-lands-in-major-cloud-platforms-and-sees-enterprise-production-use-in-first-year
+
+[AFlow25] AFlow: Automating agentic workflow generation. *ICLR*, 2025. arXiv:2410.10762.
+
 [Agh86] Agha, G. *Actors: A Model of Concurrent Computation in Distributed Systems*. MIT Press, 1986.
+
+[Ant25] Anthropic. How we built our multi-agent research system. Engineering blog, 13 June 2025. https://www.anthropic.com/engineering/multi-agent-research-system
 
 [Arg] Argo Workflows. https://argoproj.github.io/workflows/
 
 [Arm03] Armstrong, J. *Making reliable distributed systems in the presence of software errors*. PhD thesis, Royal Institute of Technology, Stockholm, 2003.
 
-[Bur06] Burrows, M. The Chubby lock service for loosely-coupled distributed systems. *OSDI*, 2006.
+[AWM24] Agent Workflow Memory. arXiv:2409.07429, 2024.
 
-[CCH+10] Chambers, C., Raniwala, A., Perry, F., Adams, S., Henry, R., Bradshaw, R., Weizenbaum, N. FlumeJava: Easy, efficient data-parallel pipelines. *PLDI*, 2010.
+[Bur06] Burrows, M. The Chubby lock service for loosely-coupled distributed systems. *OSDI*, 2006.
 
 [Cad] Cadence Workflow. https://cadenceworkflow.io/
 
+[CaMeL25] Defeating prompt injections by design. arXiv:2503.18813, 2025.
+
+[CCH+10] Chambers, C., Raniwala, A., Perry, F., Adams, S., Henry, R., Bradshaw, R., Weizenbaum, N. FlumeJava: Easy, efficient data-parallel pipelines. *PLDI*, 2010.
+
 [CWL20] Crusoe, M.R. et al. Methods included: Standardizing computational reuse and portability with the Common Workflow Language. *Communications of the ACM*, 65(6), 2022.
 
+[DBOS] DBOS plugin for Google ADK. https://adk.dev/integrations/dbos/ ; Pydantic AI and DBOS, https://pydantic.dev/articles/pydantic-ai-dbos.md (vendor documentation).
+
 [DLS88] Dwork, C., Lynch, N., Stockmeyer, L. Consensus in the presence of partial synchrony. *Journal of the ACM*, 35(2), 1988.
+
+[DP25] Design patterns for securing LLM agents against prompt injections. arXiv:2506.08837, 2025.
 
 [DTP+17] Di Tommaso, P., Chatzou, M., Floden, E., Barja, P., Palumbo, E., Notredame, C. Nextflow enables reproducible computational workflows. *Nature Biotechnology*, 35(4), 2017.
 
@@ -2168,7 +2257,17 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 [Kub] Kubernetes Jobs. https://kubernetes.io/docs/concepts/workloads/controllers/job/
 
+[L2L26] Log-To-Leak: Prompt injection … via the Model Context Protocol. ACM workshop on agent security, 2026. doi:10.1145/3847320.3847399; arXiv:2610.36108.
+
 [Lam98] Lamport, L. The part-time parliament. *ACM Transactions on Computer Systems*, 16(2), 1998.
+
+[LG25] LangChain. LangGraph 1.0 changelog announcement, 2025. https://changelog.langchain.com/announcements/ann_lxOZRCoFw2Qn9
+
+[MAST25] Cemri, M. et al. Why do multi-agent LLM systems fail? *NeurIPS Datasets and Benchmarks*, 2025. arXiv:2503.13657.
+
+[MCP26] Model Context Protocol. Specification release 2026-07-28. https://blog.modelcontextprotocol.io/posts/2026-07-28/
+
+[MCPT] Model Context Protocol. Specification 2025-11-25: Tasks. https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks
 
 [OMG11] Object Management Group. Business Process Model and Notation (BPMN), Version 2.0. Specification, 2011.
 
@@ -2178,9 +2277,19 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 [Per17] Perham, M. Sidekiq: Simple, efficient background jobs for Ruby. https://sidekiq.org/
 
+[PROVA25] PROV-AGENT: Unified provenance for … agentic workflows. arXiv:2508.02866, 2025.
+
+[SKNB26] SKILL.nb: Selective formalization and gated execution for durable agent workflows. arXiv:2606.08049, 2026.
+
 [Sol21] Solem, A. Celery distributed task queue. https://docs.celeryq.dev/
 
 [Tem] Temporal Workflow. https://temporal.io/
+
+[TemOAI] Temporal Technologies. Announcing the OpenAI Agents SDK integration. Blog, 2025 (preview); generally available for Python March 2026. https://temporal.io/blog/announcing-openai-agents-sdk-integration
+
+[TM26] It's not the language model, it's the tool. arXiv:2605.13245, 2026.
+
+[VG26] Autonomous research agents: … the verification gap. Survey, arXiv:2608.05179, 2026.
 
 ---
 
