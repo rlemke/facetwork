@@ -36,7 +36,7 @@ sources go into the merged set.** That answer differs by compile context.
 
 | Context | Entry point | Sources merged | Chases `use` to *load* more? |
 |---|---|---|---|
-| **CLI `afl file.ffl --auto-resolve`** | `FFLParser.parse_and_resolve` ([`parser.py`](../../facetwork/parser.py)) | the file **+ whatever the resolver loads** | **Yes.** `DependencyResolver` ([`resolver.py`](../../facetwork/resolver.py)) reads each `ns.uses`, then loads the missing namespace from sibling directories + `config.resolver.source_paths` (a filesystem `NamespaceIndex`) and, with `--mongo-resolve`, from the `afl_sources` MongoDB collection. |
+| **CLI `facetwork file.ffl --auto-resolve`** | `FFLParser.parse_and_resolve` ([`parser.py`](../../facetwork/parser.py)) | the file **+ whatever the resolver loads** | **Yes.** `DependencyResolver` ([`resolver.py`](../../facetwork/resolver.py)) reads each `ns.uses`, then loads the missing namespace from sibling directories + `config.resolver.source_paths` (a filesystem `NamespaceIndex`) and, with `--mongo-resolve`, from the `afl_sources` MongoDB collection. |
 | **Example seeder** | `_compile_ffl_files` ([`examples/__init__.py`](../../facetwork/examples/__init__.py)) | **every `.ffl` in the package** (`collect_ffl_files`), plain parse + merge | No. The caller pre-selects the whole package; cross-file `use`s resolve against that fixed set. |
 | **Catalog** | `CatalogService._compile` ([`catalog/service.py`](../../facetwork/catalog/service.py)) | the revision's **own FFL + its pinned library dependencies** (`_gather_sources`) | No. Plain `FFLParser().parse(s)` — it never scans the filesystem and never reads `afl_sources`. |
 

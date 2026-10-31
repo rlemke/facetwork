@@ -10,10 +10,10 @@ pip install -e ".[dev,test,dashboard,mcp,mongodb]" # full stack
 
 ### CLI usage
 ```bash
-afl input.ffl -o output.json       # compile to JSON
+facetwork input.ffl -o output.json       # compile to JSON
 echo 'facet Test()' | afl          # parse from stdin
-afl input.ffl --check              # syntax check only
-afl input.ffl --config config.json # custom config
+facetwork input.ffl --check              # syntax check only
+facetwork input.ffl --config config.json # custom config
 ```
 
 ### Services

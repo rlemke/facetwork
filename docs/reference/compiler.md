@@ -205,10 +205,10 @@ afl [options] [input_file]
 ### Examples
 ```bash
 # Parse file to stdout (legacy single-file input)
-afl input.ffl
+facetwork input.ffl
 
 # Parse to file
-afl input.ffl -o output.json
+facetwork input.ffl -o output.json
 
 # Multi-source input
 afl --primary main.ffl --primary util.ffl --library lib.ffl
@@ -217,10 +217,10 @@ afl --primary main.ffl --primary util.ffl --library lib.ffl
 afl --primary main.ffl --include-provenance
 
 # Compact output
-afl input.ffl --compact --no-locations
+facetwork input.ffl --compact --no-locations
 
 # Syntax check
-afl input.ffl --check
+facetwork input.ffl --check
 
 # From stdin
 echo 'facet Test()' | afl

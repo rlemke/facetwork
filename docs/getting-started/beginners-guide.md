@@ -214,8 +214,8 @@ Key concepts:
 
 To compile and check your FFL:
 ```bash
-afl myworkflow.ffl --check        # syntax check
-afl myworkflow.ffl -o output.json # compile to JSON
+facetwork myworkflow.ffl --check        # syntax check
+facetwork myworkflow.ffl -o output.json # compile to JSON
 ```
 
 ## Using Other Teams' Workflows

@@ -518,10 +518,10 @@ else:
 Validation runs by default during CLI compilation:
 ```bash
 # Validation enabled (default)
-afl input.ffl
+facetwork input.ffl
 
 # Skip validation
-afl input.ffl --no-validate
+facetwork input.ffl --no-validate
 ```
 
 ---

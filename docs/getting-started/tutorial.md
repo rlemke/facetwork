@@ -68,10 +68,10 @@ Save the file as `hello.ffl` and compile it:
 
 ```bash
 # Compile to JSON workflow definition
-afl hello.ffl -o hello.json
+facetwork hello.ffl -o hello.json
 
 # Syntax check only (no output file)
-afl hello.ffl --check
+facetwork hello.ffl --check
 ```
 
 The `--check` flag parses and validates the file without emitting JSON.  Use it

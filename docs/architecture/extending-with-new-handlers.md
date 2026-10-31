@@ -24,7 +24,7 @@ second: adding a handler.
 
 Don't guess whether a capability exists. Compose the FFL and let the tooling tell you:
 
-- **`fw_validate`** (MCP) / `afl <file> --check` — catches an FFL-level gap: a facet
+- **`fw_validate`** (MCP) / `facetwork <file> --check` — catches an FFL-level gap: a facet
   you referenced isn't declared anywhere (`USE_UNKNOWN_NAMESPACE` / undefined reference).
 - **The catalog run preflight** — on `fw_catalog_run` (or `CatalogService.run`), every
   event facet reachable from the entry workflow is checked against the fleet registry;

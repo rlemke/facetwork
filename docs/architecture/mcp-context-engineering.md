@@ -133,7 +133,7 @@ When you add a new validator check:
 When you add a new language feature:
 
 1. Add a small canonical example to `examples/canonical/` demonstrating it. Keep the file under ~20 lines and self-contained (no `use` statements, no external handlers).
-2. Validate it (`afl <file> --check`) before committing.
+2. Validate it (`facetwork <file> --check`) before committing.
 3. Update `examples/canonical/README.md` with a one-line description.
 
 ## What's deliberately *not* here
