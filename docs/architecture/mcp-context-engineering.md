@@ -32,12 +32,16 @@ A naive MCP only covers layer 3. The most leverage comes from layer 4: a tight v
 
 `ValidationError` carries `rule_id`, `severity`, `line`, `column`, `docs_uri`, `suggested_fix`. The `add_error` and `add_warning` methods accept `rule_id` as a keyword-only argument with a default of `"UNKNOWN"` — backward-compatible with any caller that doesn't pass one. The `docs_uri` is auto-populated from the `rule_id` as `fw://docs/rules/{rule_id}` when not explicitly provided.
 
-The validator emits **47 distinct rule_ids** across these categories:
+The validator emits **64 distinct rule_ids** across these categories:
 
 - **Placement** — `WORKFLOW_AT_TOP_LEVEL`, `SCHEMA_AT_TOP_LEVEL`
-- **Reference resolution** — `REF_UNKNOWN_FACET`, `REF_AMBIGUOUS_FACET`, `REF_UNKNOWN_SCHEMA`, `REF_AMBIGUOUS_SCHEMA`, `REF_UNKNOWN_TYPE`, `REF_UNDEFINED_STEP`, `REF_INVALID_STEP_FORMAT`, `REF_INVALID_STEP_ATTRIBUTE`, `REF_INVALID_INPUT`, `REF_CROSS_BLOCK_STEP`, `REF_FORWARD_STEP`, `STEP_REF_FACET_MISMATCH`, `REF_INVALID_FACET_REF_ATTRIBUTE`
+- **Reference resolution** — `REF_UNKNOWN_FACET`, `REF_AMBIGUOUS_FACET`, `REF_UNKNOWN_SCHEMA`, `REF_AMBIGUOUS_SCHEMA`, `REF_UNKNOWN_TYPE`, `REF_UNDEFINED_STEP`, `REF_INVALID_STEP_FORMAT`, `REF_INVALID_STEP_ATTRIBUTE`, `REF_INVALID_INPUT`, `REF_CROSS_BLOCK_STEP`, `REF_FORWARD_STEP`, `STEP_REF_FACET_MISMATCH`, `REF_INVALID_FACET_REF_ATTRIBUTE`, `REF_FACET_ASSUMED_EXTERNAL`
+- **Relative `$`-scoping** — `REF_DOLLAR_OVERFLOW`, `REF_CONTAINING_STEP_BY_NAME`
+- **`after` ordering** — `AFTER_UNKNOWN_STEP`, `AFTER_FORWARD_STEP`, `AFTER_SELF`, `AFTER_CROSS_BLOCK`, `AFTER_NOT_A_STEP`, `AFTER_REDUNDANT`
+- **`foreach … limit`** — `FOREACH_LIMIT_NOT_POSITIVE`, `FOREACH_LIMIT_NOT_INTEGER`
+- **Script environments** — `ENV_UNKNOWN`, `ENV_MISSING_LANGUAGE`, `ENV_LANGUAGE_SCRIPT_MISMATCH`, `ENV_AT_TOP_LEVEL`
 - **Naming/uniqueness** — `DUPLICATE_NAME`, `DUPLICATE_STEP_NAME`, `YIELD_DUPLICATE_TARGET`, `USE_UNKNOWN_NAMESPACE`, `MIXIN_ALIAS_NAME_CONFLICT`
-- **Yield** — `YIELD_INVALID_TARGET`, `YIELD_TARGET_AMBIGUOUS`
+- **Yield** — `YIELD_INVALID_TARGET`, `YIELD_TARGET_AMBIGUOUS`, `YIELD_FOREACH_OVERWRITES`, `YIELD_APPEND_OUTSIDE_YIELD`
 - **`when` blocks** — `WHEN_NO_CASES`, `WHEN_MULTIPLE_DEFAULTS`, `WHEN_MISSING_DEFAULT`, `WHEN_DEFAULT_NOT_LAST`, `WHEN_CONDITION_NOT_BOOLEAN`
 - **Prompt blocks** — `PROMPT_MISSING_TEMPLATE`, `PROMPT_INVALID_PLACEHOLDER`
 - **Script blocks** — `SCRIPT_EMPTY`, `SCRIPT_UNSUPPORTED_LANGUAGE`
@@ -50,7 +54,7 @@ The validator emits **47 distinct rule_ids** across these categories:
 
 ### Rule documentation (`docs/reference/rules/{rule_id}.md`)
 
-48 files (47 rules + `PARSE_ERROR`), one per emitted rule_id, all following the same template:
+65 files (64 rules + `PARSE_ERROR`), one per emitted rule_id, all following the same template:
 
 ```markdown
 # RULE_ID — One-line summary
@@ -87,7 +91,7 @@ assert emitted == documented, f"missing: {emitted - documented} extra: {document
 
 ### Canonical FFL examples (`examples/canonical/`)
 
-Seven small, validator-clean files demonstrating one feature each. Every workflow lives inside a namespace; every reference is `step.field` form; every example parses and validates without error.
+Twenty small, validator-clean files demonstrating one feature each (the full list, with descriptions, is in [`examples/canonical/README.md`](../../examples/canonical/README.md); the first seven are below). Every workflow lives inside a namespace; every reference is `step.field` form; every example parses and validates without error.
 
 | File | Pattern |
 |------|---------|
@@ -101,7 +105,7 @@ Seven small, validator-clean files demonstrating one feature each. Every workflo
 
 ### MCP layer (`facetwork/mcp/server.py`)
 
-12 tools, all with mini-spec descriptions (when to call, what's returned, relation to other tools). The split that matters for context engineering:
+19 tools, all with mini-spec descriptions (when to call, what's returned, relation to other tools). The split that matters for context engineering:
 
 - `fw_validate` — returns full structured diagnostics including `rule_id` and `docs_uri`. The single most important tool for any FFL-authoring task.
 - `fw_list_handlers` / `fw_describe_handler` — read-only handler registry tools, split out of `fw_manage_handlers` so Claude can discover what handlers exist before writing FFL that references them.

@@ -26,6 +26,15 @@ Each subdirectory contains a complete working example with FFL source and a Pyth
 | [hiv-drug-resistance](hiv-drug-resistance/) | HIV drug resistance genotyping — bioinformatics pipeline (`andThen when` QC, `catch` error recovery, `foreach` batch, prompt+script blocks) |
 | [noaa-weather](https://github.com/rlemke/fwh_noaa_weather) | NOAA GHCN-Daily climate analysis — catalog-first real-data pipeline (AWS S3, linear regression trends, OSM geocoding, `catch`/`foreach`, 25+ workflows). Standalone repo: install with `pip install -e ~/fw_handlers/fwh_noaa_weather`. |
 | [anthropic](https://github.com/rlemke/fwh_anthropic) | Multi-area home for Facetwork wrappers around [github.com/anthropics](https://github.com/anthropics) — Messages (6), Batch (4), Files (3), Agent SDK (1), Claude Code (1), Computer Use (1) — 16 facets across 6 areas, plus the cross-area `DocumentQA` composition workflow (Files-API RAG) and opt-in live tests against the real API. Standalone repo: install with `pip install -e ~/fw_handlers/fwh_anthropic`. |
+| [maven](maven/) | Maven artifact runner — the `MavenArtifactRunner` execution model (resolve a Maven artifact, launch a JVM subprocess) |
+| [osm-equity](osm-equity/) | Digital divide & OSM mapping equity — a 5-phase study at census-tract scale on real Census/Overpass data |
+| [ray-delegate](ray-delegate/) | Delegation adapter: one event facet whose handler submits a job to a Ray cluster and waits for it (see [external-engine-delegation.md](../docs/architecture/external-engine-delegation.md)) |
+| [snakemake-delegate](snakemake-delegate/) | Delegation adapter: runs an existing Snakefile to completion as ONE step (D2, blocking with heartbeat) |
+| [repro-giab](repro-giab/) | Reproduction study from built-in facets only: does a variant-caller validation against GIAB HG001 v3.3.2 still hold on v4.2.1? (`fw.compare`) |
+| [repro-normals](repro-normals/) | Recompute NOAA's 1991–2020 Climate Normals from GHCN-Daily — tests the METHOD, not just whether two files differ |
+| [repro-galaxyzoo](repro-galaxyzoo/) | Reproduce Galaxy Zoo 1's published classification from the rule its own documentation states |
+| [repro-asteroids](repro-asteroids/) | Hubble Asteroid Hunter: signal recoverability at a known trail position, as a function of brightness |
+| [doc-processing](doc-processing/), [site-analyzer](site-analyzer/) | Legacy `AgentPoller` examples (no README) |
 
 ## User Documentation
 
@@ -70,7 +79,7 @@ source .venv/bin/activate
 pip install -r examples/<name>/requirements.txt
 
 # Compile the FFL source (syntax check)
-python -m afl.cli examples/<name>/ffl/<file>.ffl --check
+fw ffl compile --check examples/<name>/ffl/<file>.ffl   # or: afl <file> --check
 
 # Run the agent (see each example's README for details)
 PYTHONPATH=. python examples/<name>/agent.py

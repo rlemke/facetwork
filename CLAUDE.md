@@ -33,8 +33,8 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**agent-image**/**scale**/**registry-setup**/**allow-restart**/**router**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
-terminate-workflow/cache-index/**purge-servers**/**dead-letters**/**unsatisfiable**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**nfl-update**/**sports-update**/**airisk-update**/**osm-extracts**/**osm-replicate**/**osm-watchdog**/**osm-admin-regen**) ·
-**`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
+terminate-workflow/cache-index/**purge-servers**/**dead-letters**/**unsatisfiable**/**workflow-stats**/task-liveness/backup-mongo/path-check) · **`svc`** (dashboard/mcp/grafana/maps/**selfcheck**/**osm-report**/**stocks-snapshot**/**nfl-update**/**sports-update**/**airisk-update**/**osm-extracts**/**osm-replicate**/**osm-watchdog**/**osm-admin-regen**) ·
+**`util`** (check-doc-links/**site-scan**/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
 Notes for working with `fw`:
@@ -407,7 +407,7 @@ Key constraints the rule docs cover (and the language enforces):
 - **Ordering comes from references — `after` is only for what the compiler can't see.** A step that consumes another's result is already ordered behind it; never write `after` for that (`AFTER_REDUNDANT`). Use `step = F(…) after a, b` **only** when the dependency is invisible — the producer wrote a shared cache/object store/scratch dir and no value flows — including fan-in after a `foreach`, where `after <fan-out step>` waits for every iteration. Same scoping as step references: same block, backward only (`AFTER_UNKNOWN_STEP`, `AFTER_FORWARD_STEP`, `AFTER_SELF`, `AFTER_CROSS_BLOCK`); targets are bare step names, never `step.field` (`AFTER_NOT_A_STEP`). The old workaround — passing an unread `dependency_signal` value — is **removed** (gone from all 7 domains and their docs); migrate legacy sources with `fw ffl migrate-after`. Start from [`examples/canonical/12-step-after.ffl`](examples/canonical/12-step-after.ffl). See [ffl-after-clause.md](docs/architecture/ffl-after-clause.md).
 - **Script environments** — `environment Name { language, requires }` (inside a namespace) + `in environment Name` on script-bearing declarations; absent = default env. `script { … }` braces take RAW code (a quoted string inside braces is a silent no-op). Rules: `ENV_UNKNOWN`, `ENV_MISSING_LANGUAGE`, `ENV_LANGUAGE_SCRIPT_MISMATCH`, `ENV_AT_TOP_LEVEL`. See [script-environments.md](docs/architecture/script-environments.md).
 
-When adding a new validator check, give it a `rule_id` AND write the matching `docs/reference/rules/{rule_id}.md` in the same change. Coverage is currently exact (all 61 emitted rule_ids documented); the script that diffs them lives in [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md).
+When adding a new validator check, give it a `rule_id` AND write the matching `docs/reference/rules/{rule_id}.md` in the same change. Coverage is currently exact (all 64 emitted rule_ids documented, plus `PARSE_ERROR`); the script that diffs them lives in [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md).
 
 ## Standalone domain packages
 
@@ -467,6 +467,8 @@ surface as `--domain <name>`:
 - [energy](https://github.com/rlemke/fwh_energy) — US energy trade + prices (EIA) → dashboard. Reads EIA's **bulk NDJSON zips** rather than the API, so it needs no API key
 - [uspanel](https://github.com/rlemke/fwh_uspanel) — US state × year multi-source data panel (Census ACS/PEP + BLS); 1,020 rows, 2005–2024. Needs `CENSUS_API_KEY`; PEP migration components exist only for 2010–2019
 - [gibraltar](https://github.com/rlemke/fwh_gibraltar) — *The Hollow Mountain*: measuring what OpenStreetMap **cannot** see. Gibraltar's and Jersey's tunnel networks, where OSM holds ~12% of 55 km of known galleries. ⚠️ Where no total is published it returns `None`, never `0.0` — an unmeasured quantity is not a measured zero
+- [road-safety](https://github.com/rlemke/fwh_road_safety) — US fatal-crash RATE by state: NHTSA FARS fatalities over FHWA VM-2 vehicle-miles travelled; reproduces NHTSA's published 1.26 per 100M VMT for 2023. ⚠️ Fatal crashes only — not a dangerous-roads measure
+- unimatch (`fwh_unimatch`, private repo) — applicant profile → universities whose PUBLISHED admission requirements it satisfies (IPEDS Admissions + Institutional Characteristics): evidence-backed likely/target/reach bands and the unmet requirements, never an admission probability
 - [peloton](https://github.com/rlemke/fwh_peloton) — group cycling photos → per-rider enhanced portraits (detect → crop → enhance; 16-bit TIFF, NEF→TIF)
 - [groupphoto](https://github.com/rlemke/fwh_groupphoto) — posed group photos: deblur + glare/highlight correction + optional background replacement, one output per input
 

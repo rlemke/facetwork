@@ -496,7 +496,7 @@ All scripts support `--help`.
 
 ## Examples
 
-See [examples/README.md](examples/README.md) for a complete overview of all 15+ examples with feature matrices.
+See [examples/README.md](examples/README.md) for a complete overview of all 15+ examples with feature matrices. The standalone domain packages (36 in [`domains.json`](domains.json); `fw install domain --list`) are described in [CLAUDE.md](CLAUDE.md#standalone-domain-packages) and the [domain catalog reference](docs/reference/domain-catalog.md).
 
 | Example | Highlights |
 |---------|-----------|

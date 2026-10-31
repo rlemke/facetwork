@@ -28,6 +28,7 @@ These files are also exposed via the MCP server at `fw://examples/canonical/`.
 | [`16-builtin-archive-facets.ffl`](16-builtin-archive-facets.ffl) | Built-in `fw.archive.*` — `Extract` / `List` / `ReadMember`; format detected from content, members that would land outside `dest` refused. Shows the **fetch → extract → fan out** chain with no Python written. |
 | [`17-builtin-exec-facets.ffl`](17-builtin-exec-facets.ffl) | Built-in `fw.exec.*` — running an external tool (Snakemake's `shell:`, argv-list only and **host-gated** by `FW_EXEC_ALLOW`). Shows `Which` as the pre-fan-out capability check and `allow_exit_codes` for tools whose non-zero exit isn't a failure. |
 | [`18-builtin-compare-facets.ffl`](18-builtin-compare-facets.ffl) | the built-in `fw.compare` facets — reproducing a published result as a LADDER (exists/schema/cardinality/keys/values/bytes) rather than a boolean; declared normalisations, and why a checksum is the wrong predicate |
+| [`19-builtin-provenance-facets.ffl`](19-builtin-provenance-facets.ffl) | Built-in `fw.provenance.*` — `Manifest` / `Verify`: the run-level record of what produced an output, from which inputs, with which software. An input with no recorded provenance is **reported** in `incomplete`, never omitted; `run_mode` is declared, never inferred. |
 
 ## Conventions worth noticing
 
