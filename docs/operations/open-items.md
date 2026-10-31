@@ -5,7 +5,7 @@ because the architectural roadmap in
 [lessons-learned.md](../architecture/lessons-learned.md) tracks *design* work,
 and most of what accumulates in practice is not design work.
 
-Ordered by consequence, not effort. Last reviewed **2026-09-16**.
+Ordered by consequence, not effort. Last reviewed **2026-10-31** (status checked against commit history only).
 
 ---
 
@@ -85,10 +85,12 @@ Verified against the BAKED code, no repo mount: the legacy host refuses
 (`numpy … RuntimeError: built with baseline optimizations (X86_V2)`), while
 the heavy Linux host, the database host and the laptop all report `core stack OK` — both architectures.
 
-**Remaining:** the legacy host still needs to be rejoined (one provisioning step). Until then it stays out — and note `systemctl
-disable` is not enough (a `restart` sweep starts the unit anyway); it needs `stop`
-plus a renamed unit file, which is how it is currently parked (`is-enabled`
-reports `not-found`).
+**Rejoined 2026-09-18** (`1deaf228`) as an `fw.*`-only host, which closes this
+item. Measured after the rejoin: **265 → 25** facets advertised, all of them
+`fw.*`, zero domain facets. A domain role will not run there until the image's
+numpy is built for a baseline below x86-64-v2. (While it was parked: `systemctl
+disable` is not enough — a `restart` sweep starts the unit anyway; parking needs
+`stop` plus a renamed unit file.)
 
 Tests: `tests/runtime/test_host_admission.py` (9 cases).
 
@@ -230,8 +232,8 @@ silent).
 
 | Item | Detail |
 |---|---|
-| **polkit rules predate the enable/disable clause** | Installed on all five Linux hosts during the 2026-09-18 15:28–15:33 sweep, i.e. the version covering only start/stop/restart/reload. Boot persistence is a separate polkit action, so parking or rejoining a host still needs sudo until `sudo fw fleet allow-restart` is re-run. Nothing is broken today — every agent is `enabled` — so this is hygiene, not a defect. |
-| **`country_width: 4` awaiting a real run** | Committed (`7b88e9d`) but the FFL is baked into the image, so it needs a rollout. Will show its effect on the first run with real work — a run with nothing to rebuild leaves the slots idle regardless. |
+| **polkit rules predate the enable/disable clause** | Installed on all five Linux hosts during the 2026-09-18 15:28–15:33 sweep, i.e. the version covering only start/stop/restart/reload (the legacy host, provisioned later that day, is the first carrying the enable/disable clause). Boot persistence is a separate polkit action, so parking or rejoining a host still needs sudo until `sudo fw fleet allow-restart` is re-run. Nothing is broken today — every agent is `enabled` — so this is hygiene, not a defect. |
+| **`country_width: 4` awaiting a real run** | Committed in `fwh_osm` (`7b88e9d`); the FFL is baked into the image, so it reached the fleet with the next rollout that baked `fwh_osm` at HEAD. No run with real work is recorded since. Will show its effect on the first run with real work — a run with nothing to rebuild leaves the slots idle regardless. |
 | **infra-host selfhost leftovers** | A 1 MB stand-in `master.osm.pbf` and assorted logs in `~/.facetwork/osm-selfhost/`, now that the role has moved. |
 
 ---
@@ -276,5 +278,5 @@ closely* it reproduced a published result.
 | Item | Status |
 |---|---|
 | infra-host link | ✅ **Resolved 2026-09-16** — cable. 34–55% loss under load → 0%; 124 → 261 MB/s, old switch kept. |
-| legacy host | Dropped from the fleet (2009 CPU, no SSE4.2/POPCNT). Repurposed as the **backup archive host** — a role needing only sshd and disk. |
-| light-tier host 2 | In the catalog, `joined: false`, never provisioned. |
+| legacy host | 2009 CPU, no SSE4.2/POPCNT. The **backup archive host** (a role needing only sshd and disk), and since 2026-09-18 (`1deaf228`) back in the fleet as an **`fw.*`-only** host — see 1.2. |
+| light-tier host 2 | ✅ Joined 2026-09-18 (`a6f15e96`) — see 1.5. |
