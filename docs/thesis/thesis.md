@@ -214,11 +214,15 @@ Chubby [Bur06] and ZooKeeper [HKJR10] popularised the idea of using a separately
 
 Lease-based failure detection dates to Gray and Cheriton [GC89] in the context of distributed file caches. The idea — hold a lease with a timeout, renew it by heartbeat, and allow anyone to reclaim an expired lease — is ubiquitous now. Facetwork's lease scheme is a straightforward application of the classical model with two small refinements: leases are per-task rather than per-worker, and heartbeats carry progress data so that the stuck-task watchdog can distinguish slow-but-alive from genuinely stuck.
 
+The language-level background is older still. Andrews's 1982 survey of distributed programming languages [And82] classifies how processes name each other: directly, through ports attached to a receiver, or through global mailboxes that any number of processes may send to and receive from. He notes that mailboxes are the most general form and the most costly to implement without special support. Facetwork's task collection is a mailbox in this sense, its name-filtered claim resembles SR's "receive the message that satisfies a condition", and the database's atomic single-document update is the support that makes the mailbox cheap. The same survey states the constraint that §15.10 returns to: a remote call can be given exactly-once semantics only if the service is idempotent or the call is an atomic transaction, as in Argus. Facetwork takes the first route, at-least-once delivery with an idempotency requirement on handlers.
+
 ### 3.2 Workflow languages and DSLs
 
 The BPEL/BPMN line of business-process languages [OMG11] is the most widely deployed workflow DSL family in industrial use. BPMN's graphical notation has made it an accepted interchange format for enterprise process modelling; its XML serialisation has made it universally verbose. BPEL, the executable form that preceded the BPMN 2.0 execution semantics, was explicitly designed for SOAP-era web services and inherits their ceremonious style.
 
 Scientific workflow DSLs — CWL [CWL20], Nextflow [DTP+17], Snakemake [KR12] — take a narrower focus, emphasising data-dependency inference from input-output declarations and execution across heterogeneous compute backends. They have pushed the idea that a DSL for workflows should expose computation as functions with typed inputs and outputs, a design Facetwork adopts and generalises.
+
+The grid-workflow literature had already worked through several questions FFL meets. Gwendia [MIG+09] is a data-driven language built on array programming: lists are first-class, a step fires once per element unless its input port takes the whole list, and results keep the index of their input whatever order the firings finish in, which is the guarantee FFL's `+=` gives. Two of its ideas FFL does not have. *Iteration strategies* say how several input lists combine (cross product, dot product by index, and match product by a user-defined key), whereas FFL's `foreach` binds a single variable, so a cross product needs nested blocks and a pairing by index or key needs a handler. And a failed element yields a *void* value that later steps pass on without running, so the rest of a fan-out completes and the gap remains visible in its result. Gwendia also separates constructs whose full DAG is known before a run (dot and cross products, fixed loops) from those known only during it (conditionals, while-loops, outputs of unknown length), a distinction that applies to FFL's `when` and `foreach` over computed lists.
 
 Musketeer [GSR+15], Dryad [IBY+07], Pig Latin [ORS+08], and Flume [CCH+10] lie on the borderline between workflow systems and data-processing frameworks. Each contributed to the idea that the user describes intent (a dataflow graph or relational algebra expression) while the system decides placement and scheduling — the same decoupling Facetwork enforces between domain-programmer FFL and service-provider handlers.
 
@@ -251,6 +255,8 @@ The Kubernetes ecosystem has normalised the expectation that pods come and go du
 **Workflow memory and drift.** Agent Workflow Memory induces reusable workflows from past trajectories [AWM24], and AFlow searches for them [AFlow25]. SKILL.nb addresses what follows reuse: stored workflows "may fail under environment drift", and it uses execution evidence to decide which steps become code and when to revise them [SKNB26]. The multi-agent literature adds a caution. MAST annotated more than 1,600 traces across seven frameworks and found that gains over single agents "are often minimal", with failures concentrated in specification, inter-agent misalignment and verification [MAST25].
 
 **Provenance for agentic science.** PROV-AGENT extends W3C PROV to record prompts, responses and agent decisions within the wider workflow, using MCP as its capture point [PROVA25]. A 2026 survey of "AI scientist" systems found that code release is now common but that "reproducibility-grade and claim-verification" artifacts are not, which it calls the *verification gap* [VG26].
+
+**Authoring help and step placement.** *Added 31 October 2026.* Two further results bear on the authoring loop and on placement. FlowPilot [EW26] suggests the next operator in a Nextflow workflow by retrieving similar paths, operators together with the data passed between them, from past workflows and ranking candidates with a Markov chain. It reaches 56–58% top-1 accuracy, against 1–9% for code LLMs used directly, and attributes their failure to scarce training data: there are fewer than 5,000 Nextflow repositories on GitHub. FFL has no public corpus at all, which is independent support for supplying the model with rule documents, examples, the capability index and the catalog rather than relying on its training. FFL's typed signatures would let such a system discard candidates whose inputs cannot accept the previous step's outputs. AdaFuse [LLZ+26] studies function fusion in serverless workflows, placing neighbouring functions in one container so they stop paying for remote calls, which were 62–79% of function latency in its benchmark; because a fused group must be provisioned for its most demanding path, it re-plans the fusion as traffic shifts and reports up to 49.4% less allocated resource. Facetwork has the opposite gap: it has no way to declare that steps must run on the same host at all (§15.15).
 
 **Where Facetwork stands.** It matches this work in four places, and in each case it reached the shape for authoring reasons rather than security or reproducibility ones.
 
@@ -2120,7 +2126,7 @@ The lesson generalises beyond FFL. A bulkhead converts a slow leak of capacity i
 - **Approval lives in the chat.** The two review gates of the authoring loop (workflow shown before it runs, handler shown before use) happen in the Claude session. If the session ends, the approval state is lost, and there is no durable record of who approved what. Comparable systems treat a human wait as a durable step.
 - **The composition claim is unmeasured.** §16.3 argues that composing from a catalog beats generating code. The controlled comparison that would test it — the same requests authored with the catalog, with the library alone, and as free code — has not been run. One worked example (§15.9) is not that test.
 
-Two smaller gaps sit beside these. Catalog search is keyword-ranked, and nothing re-validates a stored revision when the library under it changes, which is the drift that [SKNB26] identifies; `fw util ffl-audit` performs that check for domain repositories but not for catalog revisions. And values derived from untrusted input are not tracked, so the plan is fixed but its arguments are not (§3.5).
+Two smaller gaps sit beside these. Catalog search is keyword-ranked, and nothing re-validates a stored revision when the library under it changes, which is the drift that [SKNB26] identifies; `fw util ffl-audit` performs that check for domain repositories but not for catalog revisions. And values derived from untrusted input are not tracked, so the plan is fixed but its arguments are not (§3.5). Two gaps concern the language itself (§3.2, §3.5). There is no co-location primitive, so steps that hand over local files must be merged into one handler by hand; an unpinned publish step that ran on a host with an empty output directory reported success while a tier came back 36% refreshed. And `foreach` takes one list, so pairing two lists by index or key needs a handler, and a fan-out has no value that marks one element as missing.
 
 None of these changes the design argument. All of them bear on whether a team could adopt the system as it stands.
 
@@ -2188,6 +2194,8 @@ The extended treatment — with concrete feature proposals, detailed arguments a
 
 The first five are interface and safety work rather than design changes; items 6 and 7 are where the design argument is tested. Of the nine, the evaluation harness matters most to this thesis, because without it the composition claim in this section remains advocacy.
 
+Three language additions follow from the workflow-language work of §3.2 and §3.5: a co-location group, so steps that share local files run as one task on one host; `foreach` forms that pair two lists by index or by key, with an explicit value for an element that failed; and next-facet suggestions in the language server, ranked from the domain repositories and the catalog and filtered by type compatibility.
+
 Each of the five directions is an evolution within the thesis's design position, not a departure from it. Each preserves the DSL, the lock-free coordination, the state-recovery model, and the live updatability. Each extends the applicability of the whole.
 
 ### 16.4 Closing
@@ -2212,6 +2220,8 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 [AFlow25] AFlow: Automating agentic workflow generation. *ICLR*, 2025. arXiv:2410.10762.
 
 [Agh86] Agha, G. *Actors: A Model of Concurrent Computation in Distributed Systems*. MIT Press, 1986.
+
+[And82] Andrews, G.R. Distributed programming languages. *Proceedings of the ACM '82 Conference*, 1982, 113–117. doi:10.1145/800174.809772.
 
 [Ant25] Anthropic. How we built our multi-agent research system. Engineering blog, 13 June 2025. https://www.anthropic.com/engineering/multi-agent-research-system
 
@@ -2239,6 +2249,8 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 [DTP+17] Di Tommaso, P., Chatzou, M., Floden, E., Barja, P., Palumbo, E., Notredame, C. Nextflow enables reproducible computational workflows. *Nature Biotechnology*, 35(4), 2017.
 
+[EW26] Esmailoghli, M., Weidlich, M. FlowPilot: A suggestion system for designing scientific workflows. *Proceedings of the ACM on Management of Data* (SIGMOD), 4(1), Article 39, 2026. doi:10.1145/3786653.
+
 [FLP85] Fischer, M., Lynch, N., Paterson, M. Impossibility of distributed consensus with one faulty process. *Journal of the ACM*, 32(2), 1985.
 
 [GC89] Gray, C., Cheriton, D. Leases: An efficient fault-tolerant mechanism for distributed file cache consistency. *SOSP*, 1989.
@@ -2263,11 +2275,15 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 [LG25] LangChain. LangGraph 1.0 changelog announcement, 2025. https://changelog.langchain.com/announcements/ann_lxOZRCoFw2Qn9
 
+[LLZ+26] Lin, Z., Liao, J., Zhou, Z., Xu, H., Xu, F., Chen, X., Guo, D. AdaFuse: Adaptive function fusion for dynamic serverless workflows. *ACM Transactions on Architecture and Code Optimization*, 2026. doi:10.1145/3859287.
+
 [MAST25] Cemri, M. et al. Why do multi-agent LLM systems fail? *NeurIPS Datasets and Benchmarks*, 2025. arXiv:2503.13657.
 
 [MCP26] Model Context Protocol. Specification release 2026-07-28. https://blog.modelcontextprotocol.io/posts/2026-07-28/
 
 [MCPT] Model Context Protocol. Specification 2025-11-25: Tasks. https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks
+
+[MIG+09] Montagnat, J., Isnard, B., Glatard, T., Maheshwari, K., Blay-Fornarino, M. A data-driven workflow language for grids based on array programming principles. *Proceedings of the 4th Workshop on Workflows in Support of Large-Scale Science (WORKS)*, 2009. doi:10.1145/1645164.1645171.
 
 [OMG11] Object Management Group. Business Process Model and Notation (BPMN), Version 2.0. Specification, 2011.
 

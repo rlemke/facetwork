@@ -26,7 +26,9 @@ plan" rather than "let the model drive every step". Its gaps are in the
 - it has no evaluation harness for its central claim, that composing from a
   catalog beats generating.
 
-The ranked features in §5 close those gaps in order of risk.
+The ranked features in §5 close those gaps in order of risk. Three more, from the
+workflow-language papers in §2.7, address gaps in FFL itself: steps that must run
+on the same host, joining two lists in a `foreach`, and suggesting the next facet.
 
 ## 2. The landscape by theme
 
@@ -243,6 +245,78 @@ The ranked features in §5 close those gaps in order of risk.
 - **Community.** The AGENT4SC 2026 workshop at IEEE eScience lists provenance and
   reproducibility as core topics ([site](https://agent4sc.github.io/)).
 
+### 2.7 Workflow languages, authoring help and step placement (added 2026-10-31)
+
+These four ACM papers were supplied as PDFs after the first draft and were read
+in full (see §7). Two are current, two are older work that FFL descends from.
+
+- **FlowPilot** (Esmailoghli and Weidlich, PACMMOD/SIGMOD 2026,
+  [DOI 10.1145/3786653](https://doi.org/10.1145/3786653)) suggests the next
+  operator while someone writes a Nextflow workflow. It indexes past workflows by
+  paths of operators *and the data passed between them*, retrieves the nearest
+  ones, and ranks candidates with a Markov chain built from them. Top-1 accuracy is
+  56–58% on three corpora, against 1–9% for Code LLMs (CodeT5+, CodeLlama,
+  DeepSeek Coder, Llama 4) and at most 38% for the other baselines. Its motivation
+  is the point for Facetwork: Code LLMs do badly on workflow code because there is
+  so little of it (under 5,000 Nextflow repositories on GitHub). FFL has no public
+  corpus at all, so the paper is independent support for the approach Facetwork
+  already takes: give the model rule docs, canonical examples, `fw_capabilities`
+  and the catalog rather than rely on what it learned in training. FFL also has
+  something Nextflow lacks: typed facet signatures, so candidates whose inputs do
+  not accept the previous step's outputs can be ruled out before ranking. The
+  corpus here is far smaller (36 domain repos plus the catalog), so the paper's
+  accuracy should not be expected.
+- **Gwendia** (Montagnat, Isnard, Glatard, Maheshwari and Blay-Fornarino, WORKS
+  2009, [DOI 10.1145/1645164.1645171](https://doi.org/10.1145/1645164.1645171))
+  is a data-driven grid workflow language built on array programming. It is the
+  closest of these papers to FFL's own design, and it has four ideas FFL does not:
+  - *Iteration strategies* say how several input lists combine: **cross**
+    (every combination), **dot** (pair by index) and **match** (pair records
+    whose user-defined tags are equal). FFL's `foreach` binds one variable;
+    nesting gives a cross product, but pairing two lists by index or by key has
+    to be done in a handler.
+  - *A void value* Ø. A failed item produces Ø, and a step that receives Ø
+    passes it on without running, so the rest of the fan-out finishes and the
+    gap stays visible in the result. FFL has per-step `catch` but no value that
+    means "this item is missing".
+  - *Port depth*: an input that takes a whole list fires once (a reduction), an
+    output that yields a list increases the nesting. This is the general form of
+    FFL's `+=` aggregation.
+  - *Foreseeable vs unforeseeable* constructs: whether the full DAG of a run can
+    be built before it starts (dot, cross, fixed `for`) or only during it
+    (conditionals, `while`, outputs of unknown length).
+
+  It also already has what FFL has: results keep their input index whatever order
+  the iterations finish in, as FFL's `+=` follows iteration order, and control
+  links exist only for orderings with no data flowing, which is FFL's `after`.
+- **AdaFuse** (Lin, Liao, Zhou, Xu, Xu, Chen and Guo, ACM TACO 2026,
+  [DOI 10.1145/3859287](https://doi.org/10.1145/3859287)) is about *function
+  fusion*: placing neighbouring serverless functions in one container so they
+  stop paying for remote calls, which were 62–79% of function latency in their
+  Social Network benchmark. Fusing fixes one resource configuration for every
+  path through the fused group, so a fixed fusion over-provisions when traffic
+  moves between paths. AdaFuse re-plans the fusion as path probabilities change
+  (beam search plus per-instance sizing) and migrates gradually; it reports up to
+  49.4% less allocated resource at the same SLO attainment. For Facetwork the
+  relevant half is the first one, together with Quilt (§6): there is no way to say
+  that steps must run in the same place. That is open item 1.1
+  ([open-items.md](../operations/open-items.md)), where an unpinned publish step
+  ran on a host with an empty output directory and reported success. The ~2.6 s
+  per-step overhead ([delegating-to-ray.md](../guides/delegating-to-ray.md)) is
+  the cost side. The adaptive half (millisecond SLOs, autoscaling) does not carry
+  over to Facetwork's batch workloads.
+- **Distributed Programming Languages** (Andrews, ACM '82,
+  [DOI 10.1145/800174.809772](https://doi.org/10.1145/800174.809772)) classifies
+  how processes communicate: direct naming, ports, or global mailboxes with many
+  senders and many receivers. Facetwork's task collection is a mailbox, and its
+  name-filtered claim resembles SR's "receive the message that satisfies a
+  condition". Andrews notes mailboxes are costly without special support; a single
+  atomic `find_one_and_update` is that support here. His argument that a remote
+  call runs exactly once only if the service is idempotent or wrapped in an atomic
+  transaction (as Argus did) is the reasoning behind Facetwork's at-least-once
+  delivery with an idempotency requirement on handlers
+  ([execution-semantics.md](../reference/execution-semantics.md)).
+
 ## 3. Where Facetwork already matches or leads
 
 1. **Plans are programs, separate from data.**
@@ -452,6 +526,28 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
   case, and A2A matters only if peers that are agents, rather than tools, need to
   delegate to it.
 
+**Further candidates from §2.7 (added 2026-10-31, not ranked against 1–10).**
+
+- **11. A co-location group for steps. (M)** Declare that several steps run in
+  one task on one host, so local files pass between them safely. Today this is
+  done by merging steps into one handler, as `BuildAdminSet` does. *Why:* it is
+  open item 1.1, which has already produced a run that was 36% refreshed with
+  every step green, and it removes the per-step overhead inside the group
+  (AdaFuse, Quilt). *Risk of not doing it:* each domain keeps hand-merging, and
+  the next unpinned hand-off fails silently the same way.
+- **12. Zip and keyed-join `foreach`, and an explicit missing-item result. (M)**
+  Gwendia's dot and match products as `foreach` forms over two lists, plus a
+  value that marks an iteration as missing so the fan-out finishes and the gap is
+  reported. *Why:* pairing by index or key currently needs a handler, and a
+  fan-out is all-or-nothing unless every step carries a `catch`. It matches the
+  repo's rule that an unmeasured value is `None`, never `0.0`. *Risk of not doing
+  it:* domains keep writing join handlers and partial results stay implicit.
+- **13. Next-facet suggestions in `fw ffl lsp` and `fw_capabilities`. (S–M)**
+  Rank likely next facets from the domain repos and the catalog, filtered first
+  by type compatibility with the previous step's outputs (FlowPilot). *Why:* it
+  helps a person writing FFL as well as Claude. *Risk of not doing it:* low;
+  completion stays alphabetical.
+
 ## 6. Papers worth reading
 
 | Title | Venue, year | Link | Why |
@@ -476,6 +572,10 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
 | Efficient Fault Tolerance for Stateful Serverless Computing with Asymmetric Logging | ACM TOCS, 2025 | [DOI 10.1145/3725985](https://doi.org/10.1145/3725985) | Logging design for exactly-once workflows; relevant to the missing fencing token |
 | AI Agents for Enabling Autonomous Experiments at ORNL's HPC and Manufacturing User Facilities | SC'25 Workshops (ACM), 2025 | [DOI 10.1145/3731599.3767592](https://doi.org/10.1145/3731599.3767592) | Agents driving real facility workflows with provenance capture |
 | Verified Detection and Prevention of Concurrency Anomalies in Multi-Agent LLM Systems | arXiv, 2026 | [2606.17182](https://arxiv.org/abs/2606.17182) | TLA+ anomalies under durable-execution replay; check against Facetwork's at-least-once model |
+| FlowPilot: A Suggestion System for Designing Scientific Workflows | PACMMOD (SIGMOD), 2026 | [DOI 10.1145/3786653](https://doi.org/10.1145/3786653) | Next-operator suggestion from past workflows; 58% vs ≤9% for Code LLMs (feature 13) |
+| A data-driven workflow language for grids based on array programming principles (Gwendia) | WORKS, 2009 | [DOI 10.1145/1645164.1645171](https://doi.org/10.1145/1645164.1645171) | Cross/dot/match iteration and a void value for failed items (feature 12) |
+| AdaFuse: Adaptive Function Fusion for Dynamic Serverless Workflows | ACM TACO, 2026 | [DOI 10.1145/3859287](https://doi.org/10.1145/3859287) | When co-locating steps pays and when it over-provisions (feature 11) |
+| Distributed Programming Languages (Andrews) | ACM '82, 1982 | [DOI 10.1145/800174.809772](https://doi.org/10.1145/800174.809772) | Mailbox naming and exactly-once vs idempotency; background for the task collection |
 
 ## 7. Note on ACM access
 
@@ -506,3 +606,7 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
 - **Implication.** An agent-driven literature review can *find* ACM work through
   Crossref but can only *read* it through arXiv mirrors. Statements above about
   ACM-only papers rest on titles and metadata, not full text.
+- **Papers downloaded by hand do work.** The four papers in §2.7 were
+  downloaded by hand from the ACM Digital Library and read in full from the PDFs.
+  Their DOIs and authors were checked against Crossref. For an ACM-only paper,
+  that is the practical route.
