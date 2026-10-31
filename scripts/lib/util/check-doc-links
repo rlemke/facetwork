@@ -53,7 +53,7 @@ while IFS= read -r file; do
       BROKEN=$((BROKEN + 1))
     fi
   done < <(grep -oEn '\[[^]]*\]\([^)]+\)' "$file" 2>/dev/null || true)
-done < <(find "$ROOT" -name '*.md' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/target/*' | sort)
+done < <(find "$ROOT" -name '*.md' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv/*' -not -path '*/target/*' | sort)
 
 RC=0
 if [[ $BROKEN -gt 0 ]]; then
