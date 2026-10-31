@@ -82,15 +82,20 @@ IS_SELF="$("$PY" -c "
 from facetwork.servers import catalog
 print('yes' if catalog.is_self('$MONGO_HOST') else 'no')
 " 2>/dev/null)"
+# ⚠️ Every ssh/scp gets a connect timeout and keepalives. Without them an
+# unresolvable or unreachable host does not FAIL, it HANGS: measured 2026-10-31,
+# a run from a host whose .local lookups were broken sat 29 min with a 0-byte
+# dump and no error. A hung backup is worse than a failed one -- nothing reports it.
+SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=4"
 if [ "$IS_SELF" = "yes" ]; then
     _mongo_sh() { sh -c "$1"; }
     MONGO_WHERE="local"
 else
-    _mongo_sh() { ssh -o BatchMode=yes "$MONGO_HOST" "$1"; }
+    _mongo_sh() { ssh $SSH_OPTS "$MONGO_HOST" "$1"; }
     MONGO_WHERE="via ssh"
 fi
 
-_remote_dir() { ssh -o BatchMode=yes "$ARCHIVE_HOST" "eval echo $ARCHIVE_DIR"; }
+_remote_dir() { ssh $SSH_OPTS "$ARCHIVE_HOST" "eval echo $ARCHIVE_DIR"; }
 
 case "$ACTION" in
 status|check)
@@ -99,17 +104,17 @@ status|check)
         echo "backup-mongo: archive host $ARCHIVE_HOST unreachable — cannot verify" >&2
         exit 2
     fi
-    LATEST="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "ls -1t $RD/mongo-*.archive.gz 2>/dev/null | head -1")"
+    LATEST="$(ssh $SSH_OPTS "$ARCHIVE_HOST" "ls -1t $RD/mongo-*.archive.gz 2>/dev/null | head -1")"
     if [ -z "$LATEST" ]; then
         echo "backup-mongo: NO BACKUP FOUND on $ARCHIVE_HOST:$RD" >&2
         exit 1
     fi
     # Same portability rule as above: byte count from wc, mtime from a python
     # one-liner, because neither stat dialect can be relied on across this fleet.
-    SIZE="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "wc -c < '$LATEST'" | tr -d ' ')"
-    MTIME="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "python3 -c \"import os,sys;print(int(os.path.getmtime(sys.argv[1])))\" '$LATEST'")"
+    SIZE="$(ssh $SSH_OPTS "$ARCHIVE_HOST" "wc -c < '$LATEST'" | tr -d ' ')"
+    MTIME="$(ssh $SSH_OPTS "$ARCHIVE_HOST" "python3 -c \"import os,sys;print(int(os.path.getmtime(sys.argv[1])))\" '$LATEST'")"
     AGE_H=$(( ( $(date +%s) - MTIME ) / 3600 ))
-    COUNT="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "ls -1 $RD/mongo-*.archive.gz 2>/dev/null | wc -l" | tr -d ' ')"
+    COUNT="$(ssh $SSH_OPTS "$ARCHIVE_HOST" "ls -1 $RD/mongo-*.archive.gz 2>/dev/null | wc -l" | tr -d ' ')"
     echo "  archive host: $ARCHIVE_HOST:$RD"
     echo "  latest:       $(basename "$LATEST")  ${SIZE} bytes  ${AGE_H}h old"
     echo "  retained:     $COUNT backup(s), keep=$KEEP"
@@ -222,23 +227,23 @@ run)
     echo "  verified: valid gzip, expected collections present"
 
     RD="$(_remote_dir)" || { echo "backup-mongo: archive host $ARCHIVE_HOST unreachable" >&2; exit 2; }
-    ssh -o BatchMode=yes "$ARCHIVE_HOST" "mkdir -p $RD" || exit 2
-    if ! scp -q -o BatchMode=yes "$LOCAL" "$ARCHIVE_HOST:$RD/$NAME"; then
+    ssh $SSH_OPTS "$ARCHIVE_HOST" "mkdir -p $RD" || exit 2
+    if ! scp -q $SSH_OPTS "$LOCAL" "$ARCHIVE_HOST:$RD/$NAME"; then
         echo "backup-mongo: transfer to $ARCHIVE_HOST failed" >&2; exit 1
     fi
 
     # ⚠️ Confirm what ARRIVED. scp exiting 0 says the command returned.
-    RSIZE="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "wc -c < '$RD/$NAME'" | tr -d ' ')"
+    RSIZE="$(ssh $SSH_OPTS "$ARCHIVE_HOST" "wc -c < '$RD/$NAME'" | tr -d ' ')"
     if [ "$RSIZE" != "$SIZE" ]; then
         echo "backup-mongo: SIZE MISMATCH — sent $SIZE, arrived ${RSIZE:-nothing}" >&2; exit 1
     fi
-    if ! ssh -o BatchMode=yes "$ARCHIVE_HOST" "gzip -t '$RD/$NAME'" 2>/dev/null; then
+    if ! ssh $SSH_OPTS "$ARCHIVE_HOST" "gzip -t '$RD/$NAME'" 2>/dev/null; then
         echo "backup-mongo: the arrived copy is not valid gzip" >&2; exit 1
     fi
     echo "  archived: $ARCHIVE_HOST:$RD/$NAME ($RSIZE bytes, gzip verified at rest)"
 
     # Prune ON THE ARCHIVE HOST, oldest first, keeping KEEP.
-    PRUNED="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" \
+    PRUNED="$(ssh $SSH_OPTS "$ARCHIVE_HOST" \
         "ls -1t $RD/mongo-*.archive.gz 2>/dev/null | tail -n +$((KEEP+1)) | tee /dev/stderr | xargs -r rm -f" 2>&1 >/dev/null | wc -l | tr -d ' ')"
     [ "${PRUNED:-0}" -gt 0 ] && echo "  pruned:   $PRUNED old backup(s), keeping $KEEP"
     echo "  OK"
