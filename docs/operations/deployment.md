@@ -90,7 +90,7 @@ top of MongoDB + PostGIS + Jenkins + the dashboard, use the
 **full-stack compose**:
 
 ```bash
-fw install example --all     # clone + pip install every fwh_* repo
+fw install domain --all     # clone + pip install every fwh_* repo
 fw single full-stack up             # boots all 13 services
 open http://localhost:8080
 ```

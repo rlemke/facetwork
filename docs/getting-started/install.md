@@ -75,8 +75,8 @@ own repos** (so they version independently); you install the one(s) you want
 later with a helper — you do **not** clone them by hand:
 
 ```bash
-fw install example --list          # see what's available
-fw install example sentinel2-landchange   # clone + install one
+fw install domain --list          # see what's available
+fw install domain sentinel2-landchange   # clone + install one
 ```
 
 (`fwh_sentinel2`, `fwh_osm`, `fwh_noaa_weather`, … — the helper clones them into
@@ -119,7 +119,7 @@ Stop everything with `docker compose down` (add `-v` to also wipe the local
 data volumes).
 
 > Want to run real example workflows (e.g. Sentinel-2 maps)? Install one with
-> `fw install example sentinel2-landchange`, then start a runner for it —
+> `fw install domain sentinel2-landchange`, then start a runner for it —
 > see the example's own README, and [beginners-guide.md](beginners-guide.md).
 
 That's the whole setup for one machine. The scenarios below only add **other
@@ -286,7 +286,7 @@ owner to add a package if you need one it doesn't have.
 
 If a run sits **pending** forever, it usually means **no runner has a handler for
 that workflow** — install/start the matching example
-(`fw install example <name>` + `fw runner start --example <name>`).
+(`fw install domain <name>` + `fw runner start --example <name>`).
 
 ## Where to go next
 

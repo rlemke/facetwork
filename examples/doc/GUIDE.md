@@ -77,9 +77,9 @@ Start simple and build up to more complex patterns:
 > below. Install one (or all) with the registry-driven helper:
 >
 > ```bash
-> fw install example --list              # see what's registered
-> fw install example anthropic --check   # clone + pip install + verify
-> fw install example --all               # install everything
+> fw install domain --list              # see what's registered
+> fw install domain anthropic --check   # clone + pip install + verify
+> fw install domain --all               # install everything
 > fw install anthropic --all --check     # convenience wrapper for the
 >                                             # anthropic package (handles
 >                                             # agent_sdk/mcp extras and

@@ -34,7 +34,8 @@ cd agents/scala/fw-agent && sbt package  # package JAR
 ```
 
 ### Convenience scripts
-All scripts are in `scripts/` and are self-contained:
+Every operational command goes through `fw <group> <command>`; each is a file under
+`scripts/lib/<group>/` (shared helpers live in `scripts/lib/_helpers/`):
 ```bash
 scripts/lib/_helpers/_env.sh                                # shared env loader (sourced by other scripts)
 scripts/lib/_helpers/_remote.sh                             # shared SSH/MongoDB helpers for remote management
@@ -62,6 +63,177 @@ fw runner list                           # tree view: servers → runners → ha
 fw runner list --state running           # filter by state
 fw runner list --json                    # machine-readable output
 ```
+
+### Command index (`fw`)
+
+Every command `fw` dispatches to, with its `# fw-summary:` blurb (`fw <group>` prints the same
+list on the command line; run a command with `--help` for its options).
+
+**db**
+
+| Command | What it does |
+|---|---|
+| `fw db check` | Check connectivity to the three databases Facetwork depends on (MongoDB, PostGIS, the object store). |
+| `fw db drop-collections` | Empty all collections in the afl MongoDB database. |
+| `fw db import-pg` | Start a disposable Docker-based PostgreSQL/PostGIS instance for OSM import staging. |
+| `fw db mongo-start` | Start a local mongod (outside Docker); stop it with `fw db mongo-stop`. |
+| `fw db mongo-stop` | Stop the local mongod process started by `fw db mongo-start`. |
+| `fw db pg-start` | Start a local PostgreSQL/PostGIS server (outside Docker). |
+| `fw db postgis drop-tables` | Drop OSM import tables from PostGIS (osm_nodes, osm_ways, osm_import_log). |
+| `fw db postgis kill-vacuum` | Kill running autovacuum processes on PostGIS OSM tables. |
+| `fw db postgis tune` | Tune PostgreSQL for bulk OSM imports on a 32GB machine. |
+| `fw db postgis vacuum` | Run VACUUM ANALYZE on PostGIS OSM tables. |
+| `fw db postgis vacuum-status` | Check if a vacuum or analyze is currently running on PostGIS tables. |
+| `fw db stats` | Display Facetwork database statistics. |
+
+**ffl**
+
+| Command | What it does |
+|---|---|
+| `fw ffl bake-envs` | sweep FFL for `environment` decls and materialize their venvs (FW_ENV_ROOT) |
+| `fw ffl catalog` | Claude workflow catalog: backup / restore / import. |
+| `fw ffl catalog-import-all` | Import EVERY discoverable example package's FFL into the Claude workflow catalog. |
+| `fw ffl compile` | Compile FFL source files to JSON workflow definitions. |
+| `fw ffl lsp` | Start the FFL language server (LSP) on stdio, for editors. |
+| `fw ffl migrate-after` | rewrite the dependency_signal idiom to the `after` ordering clause |
+| `fw ffl migrate-scoping` | migrate legacy FFL to the relative $-scoping model (dry-run/--write) |
+| `fw ffl publish` | Compile an FFL file and publish it to MongoDB. |
+| `fw ffl run` | ffl-run — FFL-first workflow submission. |
+| `fw ffl run-workflow` | Run a workflow stored in MongoDB. |
+| `fw ffl scaffold` | Scaffold a new handler (FFL facet + Python handler + test stubs) for review. |
+| `fw ffl seed` | Compile all example FFL files and push the flow + workflow definitions to MongoDB. |
+
+**fleet**
+
+| Command | What it does |
+|---|---|
+| `fw fleet advertise` | advertise Mongo+MinIO over mDNS for zero-config fleet discovery |
+| `fw fleet agent` | per-server daemon: reconcile this host to fleet_config (apply/watch) |
+| `fw fleet agent-cmd` | send a command (status/recreate/restart) to a host's fleet-agent |
+| `fw fleet agent-image` | build+push a polyglot agent's OWN image multi-arch (gh-router), verify every fleet arch, pin its role |
+| `fw fleet agent-liveness` | external liveness watchdog — kickstart a FROZEN fleet-agent (its log went stale) |
+| `fw fleet allow-restart` | let this host's owner restart the fleet-agent without sudo (polkit) |
+| `fw fleet config` | manage central fleet_config — set/get/status/secret |
+| `fw fleet env-migrate` | fleet-env-migrate — split this server's .env.fleet into the shared base |
+| `fw fleet get` | get the central fleet_config (forwards to the fleet config admin) |
+| `fw fleet registry-setup` | add the fleet's HTTP registry to a host's docker insecure-registries (+restart) |
+| `fw fleet rolling-deploy` | Rolling deploy: zero-downtime serial restart of remote AFL runners. |
+| `fw fleet rollout` | build+push the runner image at HEAD, point fleet_config at it, wait for converge |
+| `fw fleet router` | per-region GraphHopper routers: add/remove/list/wait (placed by fleet-agents) |
+| `fw fleet scale` | set the central osm-geocoder replica count (fleet_config); agents reconcile |
+| `fw fleet secret` | manage encrypted MinIO creds in fleet_config (gen-key/set/show) |
+| `fw fleet servers` | server catalog (servers.json) — list machines + live-resolved IPs; --env/--infra-name/--resolve/--service-host/--container-ip; --push distributes it |
+| `fw fleet set` | set the central fleet_config (forwards to the fleet config admin) |
+| `fw fleet simulate` | simulate-fleet — verify the multi-server fleet controller END-TO-END on one box. |
+| `fw fleet status` | status the central fleet_config (forwards to the fleet config admin) |
+| `fw fleet unregistered` | name the runner containers on this host that have no server record |
+| `fw fleet verify-domain-parity` | verify every architecture of an image contains the SAME domain commits |
+
+**install**
+
+| Command | What it does |
+|---|---|
+| `fw install anthropic` | Convenience wrapper: clone + install fwh_anthropic with per-area extras. |
+| `fw install check` | analyze missing test/example dependencies on this host (optionally --install them) |
+| `fw install clone-handlers` | git clone every catalog domain repo into ~/fw_handlers (skip existing) |
+| `fw install domain` | Clone + install a standalone Facetwork domain package. |
+| `fw install pull-handlers` | git pull every catalog domain repo in ~/fw_handlers (no pip reinstall) |
+| `fw install rebuild` | AgentFlow Docker Rebuild Script |
+| `fw install repair-venv` | Repair a virtualenv whose console-script shebangs / activate scripts point at a moved path. |
+| `fw install repo` | Bootstrap a local Python development environment for Facetwork. |
+| `fw install setup` | AgentFlow Docker Bootstrap Script |
+| `fw install teardown` | AgentFlow Docker Teardown Script |
+| `fw install tools` | Install all system-level tools required for Facetwork development via Homebrew. |
+
+**maint**
+
+| Command | What it does |
+|---|---|
+| `fw maint backup-mongo` | dump the control-plane database to the archive host, and verify it |
+| `fw maint cache-index` | render the durable-cache landing-page index.html |
+| `fw maint dead-letters` | report tasks that exhausted their retries and were then forgotten |
+| `fw maint disk-guard` | Docker VM disk guard — keep the Docker Desktop VM's disk from filling up. |
+| `fw maint disk-recover` | recover the stack after the external data disk dropped and returned |
+| `fw maint migrate-seed-prefix` | migrate seeded domain flows from the example: prefix to domain: (default dry-run) |
+| `fw maint migrate-task-index` | widen the running-task unique index to exclude stepless tasks |
+| `fw maint path-check` | find absolute paths in configs that do not resolve on this host |
+| `fw maint purge-servers` | delete stale shutdown-state server docs from Mongo (default: dry-run count) |
+| `fw maint repair-workflow` | Diagnose and repair a stuck AFL workflow. |
+| `fw maint task-liveness` | show whether RUNNING tasks are actually alive (heartbeat, not last-update) |
+| `fw maint terminate-workflow` | Terminate a stuck/abandoned workflow by marking its runner, steps, and tasks terminal. |
+| `fw maint unsatisfiable` | find pending tasks whose resource requirements no runner can ever meet |
+| `fw maint workflow-stats` | per-server statistics for a finished (or running) workflow run |
+
+**mode**
+
+| Command | What it does |
+|---|---|
+| `fw mode cluster` | rejoin the shared fleet — infra lives on the infra host; recreate runners (Model B) |
+| `fw mode join` | (re)start THIS host as a cluster runner after a `leave` (Model A; no infra change) |
+| `fw mode leave` | stop THIS host contributing to the cluster as a runner (Model A; no infra change) |
+| `fw mode local` | run the WHOLE stack on this machine (own Mongo/MinIO/registry); recreate runners (Model B) |
+| `fw mode status` | show the active mode (local/cluster) + where infra resolves + runner state |
+
+**runner**
+
+| Command | What it does |
+|---|---|
+| `fw runner add-local` | add a couple of local handler runners (no dashboard), convenience shorthand |
+| `fw runner drain` | Gracefully drain AFL runners: stop processes and reset running tasks to pending. |
+| `fw runner exec` | Start the AFL distributed runner service. |
+| `fw runner list` | List servers, runners, and handlers in a tree view. |
+| `fw runner scale` | scale a per-domain runner service on THIS host (docker compose --scale) |
+| `fw runner server` | Start the AFL agent runner server. |
+| `fw runner start` | Register handlers for examples, then start the runner and dashboard. |
+| `fw runner start-all` | Start the full fleet on THIS host: dashboard + the ffl-runner orchestration tier + the catalog domain runners. |
+| `fw runner stop` | Stop all running AFL runner and dashboard processes. |
+| `fw runner sys` | send a system command (status/pause/resume) to specific runners |
+
+**single**
+
+| Command | What it does |
+|---|---|
+| `fw single docker-dev` | Start the ephemeral dev stack: MongoDB + PostGIS in Docker. |
+| `fw single full-stack` | Manage the full-stack development environment defined by `docker-compose.full-stack.yml`. |
+| `fw single reboot` | Reboot the AgentFlow dev environment: stop everything, clear MongoDB, start again. |
+| `fw single rebuild-runners` | Rebuild the local per-example runner ("worker") images for the fleet stack. |
+| `fw single restart` | Pull latest code + handlers, then rebuild and cleanly recreate the fleet's runners. |
+| `fw single up` | Easy one-command pipeline: teardown, rebuild, setup, seed, run. |
+| `fw single up-local` | Easy one-command pipeline for LOCAL runners (no Docker required). |
+
+**svc**
+
+| Command | What it does |
+|---|---|
+| `fw svc airisk-update` | refresh the AI Risk Clock (pace of AI-risk drivers + the self-updating paper) and republish it; --install adds the daily timer |
+| `fw svc dashboard` | Start the Facetwork web dashboard. |
+| `fw svc dashboard-stop` | Stop the AFL dashboard process. |
+| `fw svc grafana` | Start Grafana for AgentFlow operational monitoring. |
+| `fw svc maps` | local maps gallery — browse the maps sitting in MinIO (no git repo) |
+| `fw svc maps-install` | install/uninstall a launchd unit that keeps `fw svc maps` always up |
+| `fw svc mcp` | Start the AFL MCP server. |
+| `fw svc nfl-update` | refresh NFL data, ratings, predictions and odds, then republish the static site; --install adds the timer |
+| `fw svc osm-admin-regen` | regenerate admin-level OSM sub-region extracts; --install adds the weekly launchd timer |
+| `fw svc osm-extracts` | serve the self-hosted OSM extracts + replication diffs (our Geofabrik) |
+| `fw svc osm-replicate` | publish new per-region OSM replication diffs; --install adds the nightly timer |
+| `fw svc osm-report` | status report on the OSM extract stores (sizes, ages, missing regions) |
+| `fw svc osm-watchdog` | independent watchdog that alarms if OSM replication or its indexes stall |
+| `fw svc selfcheck` | periodic sweep of the checks that catch SILENT failures, alarming only on a real one |
+| `fw svc sports-update` | refresh NBA/WNBA/MLB/MLS/NWSL data, ratings, predictions and odds, then republish the five league sites; --install adds the timer |
+| `fw svc stocks-snapshot` | mark open paper-trading groups to market; --install adds the weekday launchd timer |
+
+**util**
+
+| Command | What it does |
+|---|---|
+| `fw util check-doc-links` | Validate internal markdown cross-references. |
+| `fw util ffl-audit` | validate every domain repo's FFL + handler contracts against the current runtime |
+| `fw util gen-compose` | sync per-domain compose ENV from the catalog into docker-compose.full-stack.yml |
+| `fw util memory-sync` | commit + push this project's Claude memory repo (~/.claude/.../memory) |
+| `fw util serve-map` | serve PMTiles/HTML maps over range-capable HTTP |
+| `fw util site-scan` | find host names, IPs, home paths and personal emails in the repo (and --domains: every fwh_* repo) |
+| `fw util thesis-pdf` | Re-render the thesis Markdown sources as PDFs. |
+
 
 ### Docker stack
 The `docker-compose.yml` defines the full development stack:

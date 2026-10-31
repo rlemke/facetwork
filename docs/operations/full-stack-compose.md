@@ -63,7 +63,7 @@ every runner.) See [runtime-impl.md §17.1.1](../reference/runtime-impl.md).
   repos with the install helper:
 
   ```bash
-  fw install example --all
+  fw install domain --all
   ```
 
   Each fwh_* repo can be in any state (clean clone, dirty edits, etc.).
@@ -86,7 +86,7 @@ every runner.) See [runtime-impl.md §17.1.1](../reference/runtime-impl.md).
 
 ```bash
 # 1. Clone + install every example
-fw install example --all
+fw install domain --all
 
 # 2. (Optional) Copy the env template and edit for secrets
 cp .env.full-stack.example .env.full-stack
@@ -310,18 +310,18 @@ DASHBOARD_PORT=9000 ANTHROPIC_API_KEY=sk-ant-... \
 The full stack needs the 8 standalone `fwh_*` repos cloned under
 `$FWH_HANDLERS_ROOT`. Two helpers handle this:
 
-### fw install example
+### fw install domain
 
 Registry-driven; knows all 8 example repos.
 
 ```bash
-fw install example --list              # see the registry
-fw install example anthropic --check   # clone, pip install -e, verify
-fw install example --all               # clone+install every example
-fw install example osm-geocoder noaa-weather   # one or more by name
-fw install example anthropic --extras agent_sdk,mcp
-fw install example --pull-only anthropic       # just clone/git-pull
-fw install example --skip-pull anthropic       # pip install existing clone only
+fw install domain --list              # see the registry
+fw install domain anthropic --check   # clone, pip install -e, verify
+fw install domain --all               # clone+install every example
+fw install domain osm-geocoder noaa-weather   # one or more by name
+fw install domain anthropic --extras agent_sdk,mcp
+fw install domain --pull-only anthropic       # just clone/git-pull
+fw install domain --skip-pull anthropic       # pip install existing clone only
 ```
 
 Defaults clone into `~/fw_handlers/` and pip-install into the local
@@ -561,7 +561,7 @@ fw single full-stack logs runner-anthropic | tail -50
 
 Common causes:
 1. `~/fw_handlers/fwh_<name>/` doesn't exist (run
-   `fw install example <name>`).
+   `fw install domain <name>`).
 2. The bind-mount source path is wrong (check `FWH_HANDLERS_ROOT`).
 3. Pip install failed — usually network issue or a syntax error in
    the example's source. Fix on the host, then
@@ -596,5 +596,5 @@ fw single full-stack up dashboard runner runner-anthropic
 
 - [`docs/operations/deployment.md`](deployment.md) — non-Docker / multi-host deployment
 - [`docs/getting-started/beginners-guide.md`](../getting-started/beginners-guide.md) — workflow basics
-- [`fw install example`](../../scripts/lib/install/domain) — registry of standalone example repos
+- [`fw install domain`](../../scripts/lib/install/domain) — registry of standalone example repos
 - [`docker-compose.full-stack.yml`](../../docker-compose.full-stack.yml) — the source of truth

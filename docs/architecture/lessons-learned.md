@@ -100,7 +100,7 @@ Each was built in response to a production incident.
 **Upfront requirement**:
 - Default bind address: `0.0.0.0` for all services (MongoDB, PostgreSQL, dashboard, runner health endpoints).
 - Document `/etc/hosts` entries needed on each server.
-- Provide a `scripts/check-connectivity` script that verifies all services are reachable from the current host.
+- Provide a connectivity check that verifies all services are reachable from the current host (shipped as `fw db check`).
 - Connection errors should be classified as **transient** and automatically retried.
 
 ---
