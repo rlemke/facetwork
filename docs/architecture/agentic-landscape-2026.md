@@ -29,6 +29,9 @@ plan" rather than "let the model drive every step". Its gaps are in the
 The ranked features in §5 close those gaps in order of risk. Three more, from the
 workflow-language papers in §2.7, address gaps in FFL itself: steps that must run
 on the same host, joining two lists in a `foreach`, and suggesting the next facet.
+A fourth, from the exactly-once papers in §2.8, closes the gap in the runtime
+that execution-semantics.md calls "no fencing token": stamping each claim with
+an attempt number and writing outputs under it.
 
 ## 2. The landscape by theme
 
@@ -317,6 +320,187 @@ in full (see §7). Two are current, two are older work that FFL descends from.
   delivery with an idempotency requirement on handlers
   ([execution-semantics.md](../reference/execution-semantics.md)).
 
+### 2.8 Exactly-once without replay, step merging, and agent safety (added 2026-10-31)
+
+Eleven more ACM papers were downloaded by hand once §7 showed they could not be
+fetched automatically, and were read in full. Three pages of the OSR paper are
+scanned images with no text layer and were read as images. They fall into four
+groups.
+
+**Exactly-once over a store that is not transactional.** Three serverless papers
+make a duplicate execution harmless in the same way. The control store commits a
+step's result only if it is still in the state the worker read, and the data
+store accepts a write only if it carries a per-step sequence number newer than
+the one it holds. Facetwork has the first half and not the second.
+
+- **Durable Functions** (Burckhardt, Gillum, Justo, Kallas, McMahon and
+  Meiklejohn, PACMPL 5 OOPSLA, Art. 133, 2021,
+  [DOI 10.1145/3485510](https://doi.org/10.1145/3485510)) formalises Azure's
+  orchestrations, activities and entities in three models. The *compute-storage*
+  model has volatile workers that commit a work item's result atomically, and
+  only if the input queue and state are unchanged, so "only one worker can
+  commit it". It is proved to simulate the fault-free, exactly-once model. The
+  *replay* model, the one that requires deterministic orchestration code, is
+  proved equivalent to it. The paper says plainly that several workers may run
+  the same item at once, because failure cannot be detected reliably. It leaves
+  external calls out of the proof because their duplication is observable. For
+  Facetwork this is the formal version of
+  [execution-semantics.md](../reference/execution-semantics.md) §1.2. Facetwork
+  is the compute-storage model without the replay layer, which is why it has no
+  determinism requirement (thesis ch. 7). Its `save_task_if_owned` is the
+  conditional commit, though keyed by the runner's `server_id` rather than by an
+  attempt. Its object-store writes fall into the category that the proof
+  excludes. There are no measurements; this is a semantics paper.
+- **Boki** (Jia and Witchel, SOSP 2021,
+  [DOI 10.1145/3477132.3483541](https://doi.org/10.1145/3477132.3483541)) gives
+  serverless functions a shared log ordered by a metalog. Its workflow library
+  honours only the first log record for a step, and makes a database write
+  idempotent with the condition `Version < seqnum`, where the sequence number
+  comes from the step's log record. That is a data write fenced by the control
+  log. It reaches 1.16 M appends/s at 6.42 ms p99. Its workflow library is 4.3–4.7×
+  faster than Beldi, and exactly-once with transactions costs 1.8–3.0× median
+  latency over an unsafe baseline. The workflow library is measured only without
+  failures.
+- **Halfmoon / asymmetric logging** (Qi, Feng, Liu and Jin, ACM TOCS 43(1–2),
+  Art. 3, 2025, [DOI 10.1145/3725985](https://doi.org/10.1145/3725985)) shows
+  exactly-once needs only one side logged: reads or writes, not both. It proves
+  that this is the minimum. Against Boki it cuts median end-to-end latency by
+  20–40%, overhead above the unsafe baseline by 1.5–4×, and log storage by
+  1.2–3.4×. Its §4 names Facetwork's reaper case exactly: an instance the runtime
+  believes has crashed but which is still running. It resolves it with a
+  conditional append that succeeds only at the expected position. The
+  millisecond savings do not matter at Facetwork's ~2.6 s per step, and it needs
+  deterministic functions, which handlers are not. Two of its design points do
+  carry over:
+  - Its read-optimised variant writes new versions and commits by logging a
+    pointer. Applied to Facetwork, an output written under
+    `…/<step_id>/<attempt>/` and published by the conditional completion
+    update leaves a superseded runner's files unreferenced rather than
+    overwriting the winner's.
+  - At 1–2.5 ms per log operation on its store, journaling each LLM call
+    (feature 3) costs little next to the call.
+- **Argus** (Liskov and Scheifler, "Guardians and Actions", TOPLAS 5(3), 1983,
+  [DOI 10.1145/2166.357215](https://doi.org/10.1145/2166.357215)) is the
+  transaction route that Andrews (§2.7) sets against idempotency. Guardians keep
+  stable state, and their handlers run as subactions that roll back and are
+  at-most-once. Facetwork is the reverse on every axis. Its runners are
+  stateless and its handlers at-least-once. A failed step undoes nothing, and no
+  atomic object spans Mongo and the object store. Argus concedes the point that
+  matters here: effects outside the system cannot be undone. Its advice is to
+  split work into two top-level actions and defer external effects to the
+  second. That is the shape of feature 5, where `external` steps run only after
+  an approval step.
+
+**Merging steps.** **Quilt** (Zhang and Angel, SOSP 2025,
+[DOI 10.1145/3731569.3764830](https://doi.org/10.1145/3731569.3764830)) merges
+functions of one tenant's workflow into one process at the LLVM IR level. It
+profiles the call graph, then cuts the fewest frequency-weighted call edges such
+that every merged group fits a container's CPU and memory limit. Median latency
+falls 45.6–71.0% on 9 of 11 DeathStarBench workflows, and throughput on
+compose-post rises 11.2–12.9×. Merging *everything* into one container is worse:
+on a CPU-heavy workflow it gains 42% latency but loses 11.6% throughput to
+throttling, where the best two-way split gains 50.8%. For feature 11 it supplies
+three things:
+- *A grouping rule.* Only connected subgraphs entered through one step are
+  merged.
+- *A budget rule.* CPU adds up across the group. Memory adds up only for calls
+  that run concurrently, because a synchronous callee releases its memory. In
+  FFL terms, a group's floor is the sum of its members' `Requires(memory_gb)`,
+  with a `foreach … limit N` counting N times. It can be checked at compile time.
+- *A warning.* Merged, "any function crash becomes a workflow crash", and the
+  authors leave failure isolation open.
+
+  So a Facetwork co-location group should pin placement and keep per-step task
+  records and retries rather than fuse handlers. Quilt merges to save call
+  latency. Facetwork's stronger reason is shared local files, which Quilt does
+  not model. It evaluates Rust only, with faked databases.
+
+**Agent workloads as serverless stages.** "Agentic Workflows are Serverless
+Applications, so deploy them that way!" (Dougherty, Lambert, Wang, Xu, Achermann
+and Fedorova, SIGOPS OSR 60(1), 2026,
+[DOI 10.1145/3830422.3830426](https://doi.org/10.1145/3830422.3830426)) is a
+position paper with a short characterisation of three agents. In one example
+only 4.3 s of 37.3 s is inference; the rest is model load and engine start. A
+RAG agent spends 65% of its 3 s in inference. A coding agent splits 44 s about
+evenly between inference and tools, with one 26 s tool call. A research agent
+makes 14 inference calls in 128 s, and some components sit idle for up to 30 s.
+It proposes that each stage be deployed and scaled separately, annotated by how
+much state it keeps: none, files, or files plus live processes. FFL already is
+the stage graph it asks for, and a D3 delegation already releases the
+orchestrator while it waits. The useful addition is that state annotation. A
+facet that keeps files between calls is precisely one that must be co-located
+(feature 11), so the annotation would say when co-location is required rather
+than merely faster.
+
+**Enforcing effects and tracking provenance.**
+- **Typed tool mediation** (Zhou and Jia, ASE 2026, pp. 3567–3571,
+  [DOI 10.1145/3832783.3834637](https://doi.org/10.1145/3832783.3834637)) turns
+  every tool request into schema-validated JSON and passes it to one reference
+  monitor. The monitor classifies the paths, database objects and network sinks
+  itself, and an unknown one is denied. It does not trust the model's account of
+  what a call does. It answers *allow*, *approval required* or *deny*, and a
+  separate judge scores each run from file-system snapshots, database diffs and
+  network captures, never from the model's report. On 48 adversarial tasks it
+  blocked 48/48 with both models tested, against 32–38 for a prompt-only defence
+  and 23–26 undefended. Benign completion was unchanged at 21/24 and 17/24. The
+  suite is the authors' own, the attacker is not adaptive, and arbitrary shell
+  and SQL are outside its boundary. For feature 5 the lesson is that an
+  `Effect(kind=…)` declared by the facet's author is exactly the input this
+  monitor refuses to trust. The runtime can derive an effect class from what it
+  can see: namespace, `fw.exec`/`fw.http` use, storage URIs and the credentials
+  in `requires_env`. It should add *approval required* as a third outcome at
+  dispatch.
+- **TraceCaps** (Catarino, Mamede, Melo and Abreu, ICSE-NIER 2026, pp. 166–170,
+  [DOI 10.1145/3786582.3786832](https://doi.org/10.1145/3786582.3786832)) wraps
+  each agent event in a signed capsule hash-linked to the previous one. It
+  carries a risk score that can only rise, so later harmless steps cannot dilute
+  an earlier risky one. It has no quantitative evaluation, one illustrative trace,
+  and its risk score is a statistical heuristic, not information flow. Two ideas
+  carry over:
+  - labels that can only be added (feature 6), propagated along FFL's step graph,
+    which supplies the parent–child structure the paper says it lacks for
+    concurrent branches;
+  - a hash chain over a run's step records, which would make an
+    `fw.provenance` manifest tamper-evident.
+
+**Generating and suggesting workflows.**
+- **Evaluating LLMs for serverless workflow generation** (Ristov, Gritsch,
+  Unterhofer and Breu, DEBS 2026, pp. 5–10,
+  [DOI 10.1145/3809481.3816480](https://doi.org/10.1145/3809481.3816480)) plans
+  a chain of cloud services from a typed service catalogue, then has the model
+  write Python, feeding each run's error back until it works or 10 iterations
+  pass. Claude 3.5 Sonnet was the most reliable of four models. GPT-4o succeeded
+  in about half the Google Cloud runs and Mistral in about 5%, mostly because of
+  deprecated APIs. Five senior engineers judged none of the code production-ready.
+  For feature 7 its method is a useful start and its gaps are the lesson:
+  - success means "ran", with no check of the output;
+  - trial counts are not given;
+  - failures were classified by hand.
+
+  Facetwork's harness can classify failures automatically by `rule_id` and judge
+  output with `fw.compare` against a reference run. The deprecated-API failures
+  are an argument for typed facets over generated SDK code.
+- **Search, adapt, and reuse** (Cohen-Boulakia and Leser, SIGMOD Record 40(2),
+  2011, [DOI 10.1145/2034863.2034865](https://doi.org/10.1145/2034863.2034865))
+  argues that domain scientists do not want to write workflows. They want to find
+  one, supply data and run it, so research should turn to repositories with
+  search, similarity, adaptation and comparison of runs. That is the catalog and
+  `fw_catalog_match`. It also names what the catalog lacks:
+  - matching on input and output types and on graph shape, not only intent text;
+  - saying which part of a request matched.
+
+  It notes that graph matching is NP-complete in general but polynomial for
+  series-parallel graphs, which most `andThen`/`foreach` graphs are.
+- **Auto-Suggest** (Yan and He, SIGMOD 2020,
+  [DOI 10.1145/3318464.3389738](https://doi.org/10.1145/3318464.3389738)), a
+  FlowPilot baseline, replays GitHub notebooks to log pandas calls with their
+  input and output tables. It learns the next operator from the sequence *and*
+  the current data: precision@1 is 0.72, against 0.56 for the sequence model
+  alone and 0.32 for data features alone. That is over only 7 operators, far
+  easier than ranking hundreds of facets. For feature 13, Facetwork already logs
+  executed step sequences and typed returns, which are its equivalent of that
+  training log.
+
 ## 3. Where Facetwork already matches or leads
 
 1. **Plans are programs, separate from data.**
@@ -470,7 +654,10 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
 - *Why:* The CaMeL and design-patterns results (§2.4) show the plan/data
   separation is only a defence when consequential actions are gated. MCP tool
   descriptions are a measured injection vector (Log-To-Leak, 62–100% attack
-  success).
+  success). The ASE 2026 mediation paper (§2.8) blocked 48 of 48 adversarial
+  tasks by deriving each call's effect itself rather than trusting a
+  declaration. Facetwork should do the same, from namespace, storage URIs and
+  credentials, and use the author's `Effect` only as a lower bound.
 - *Risk of not doing it:* Facetwork lets an LLM write and run programs against a
   database with no credentials. One injected instruction in a fetched document
   then reaches the whole fleet.
@@ -482,7 +669,8 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
   values into a mutating facet's sensitive parameters (destination, recipient,
   command) unless the run has an approval.
 - *Why:* This is CaMeL's capability tracking expressed in Facetwork's existing
-  dataflow, and the compiler already knows the edges.
+  dataflow, and the compiler already knows the edges. Labels should only ever be
+  added, never removed (TraceCaps, §2.8).
 - *Risk of not doing it:* The control flow is safe but the data flow is not. An
   injected URL or path still reaches `fw.exec` or a publisher.
 
@@ -491,7 +679,9 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
   authored (a) with `fw_capabilities` plus the catalog, (b) with the library but
   no catalog, and (c) as free Python. Measure validity, success, tokens and
   reviewer edits. Keep it as a regression suite for `fw_catalog_match` verdicts,
-  and label failures with MAST categories.
+  and label failures with MAST categories. Judge success by comparing output
+  with a reference run (`fw.compare`), not by "it ran", and report trial
+  counts. The DEBS 2026 study (§2.8) did neither.
 - *Why:* MAST shows that unmeasured agent architectures often deliver "minimal"
   gains (§2.3). Facetwork's moat claim currently rests on one worked example.
 - *Risk of not doing it:* The core thesis stays an assertion, and there is no
@@ -526,15 +716,20 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
   case, and A2A matters only if peers that are agents, rather than tools, need to
   delegate to it.
 
-**Further candidates from §2.7 (added 2026-10-31, not ranked against 1–10).**
+**Further candidates from §2.7 and §2.8 (added 2026-10-31, not ranked against 1–10).**
 
 - **11. A co-location group for steps. (M)** Declare that several steps run in
   one task on one host, so local files pass between them safely. Today this is
   done by merging steps into one handler, as `BuildAdminSet` does. *Why:* it is
   open item 1.1, which has already produced a run that was 36% refreshed with
   every step green, and it removes the per-step overhead inside the group
-  (AdaFuse, Quilt). *Risk of not doing it:* each domain keeps hand-merging, and
-  the next unpinned hand-off fails silently the same way.
+  (AdaFuse, Quilt). Quilt (§2.8) supplies the compile-time check: a group must
+  be entered through one step, and its memory floor is the sum of its members'
+  `Requires`, counting a `foreach … limit N` N times. It also gives the warning:
+  fusing handlers into one process loses failure isolation. So the group should
+  pin placement and keep per-step tasks. *Risk of not doing it:* each domain
+  keeps hand-merging, and the next unpinned hand-off fails silently the same
+  way.
 - **12. Zip and keyed-join `foreach`, and an explicit missing-item result. (M)**
   Gwendia's dot and match products as `foreach` forms over two lists, plus a
   value that marks an iteration as missing so the fan-out finishes and the gap is
@@ -544,9 +739,24 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
   it:* domains keep writing join handlers and partial results stay implicit.
 - **13. Next-facet suggestions in `fw ffl lsp` and `fw_capabilities`. (S–M)**
   Rank likely next facets from the domain repos and the catalog, filtered first
-  by type compatibility with the previous step's outputs (FlowPilot). *Why:* it
+  by type compatibility with the previous step's outputs (FlowPilot). Combine
+  the sequence with the current data's types, which in Auto-Suggest beat either
+  alone (0.72 vs 0.56 and 0.32, §2.8). *Why:* it
   helps a person writing FFL as well as Claude. *Risk of not doing it:* low;
   completion stays alphabetical.
+- **14. Attempt-fenced step outputs. (S–M)** Give every claim a
+  monotonically increasing `attempt` on the task. Condition the completion
+  update on it as well as on `server_id`. Have built-in storage facets write
+  under `…/<step_id>/<attempt>/`, so a step's result points at one attempt's
+  files. *Why:* Durable Functions, Boki and Halfmoon (§2.8) all make a
+  duplicate execution harmless this way: a conditional commit in the control
+  store plus a per-step number on the data side. Facetwork has the first
+  (`save_task_if_owned`) and lacks the second, which is the "no fencing token"
+  of execution-semantics.md §1.2. Keying the commit by `server_id` alone also
+  cannot tell two claims by the same runner apart. *Risk of not doing it:* a
+  runner the reaper declared dead can still overwrite the winner's artifacts,
+  and idempotency stays a burden on every handler author rather than a property
+  of the platform.
 
 ## 6. Papers worth reading
 
@@ -564,18 +774,23 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
 | Model Context Protocol: Landscape, Security Threats, and Future Research Directions | ACM TOSEM, 2026 | [DOI 10.1145/3796519](https://doi.org/10.1145/3796519), [arXiv 2503.23278](https://arxiv.org/abs/2503.23278) | Threat model for exposing Facetwork over MCP |
 | Log-To-Leak: Prompt Injection … via the Model Context Protocol | ACM workshop (agent security), 2026 | [DOI 10.1145/3847320.3847399](https://doi.org/10.1145/3847320.3847399), [arXiv 2610.36108](https://arxiv.org/abs/2610.36108) | Measured tool-metadata injection rates |
 | VeriPlan: Integrating Formal Verification and LLMs into End-User Planning | ACM CHI, 2025 | [DOI 10.1145/3706598.3714113](https://doi.org/10.1145/3706598.3714113), [arXiv 2502.17898](https://arxiv.org/abs/2502.17898) | Model-check-then-repair loop for generated plans; analogue of the validator loop |
-| TraceCaps: Inline Provenance and Risk Enforcement for Agentic Software Engineering | ICSE NIER, 2026 | [DOI 10.1145/3786582.3786832](https://doi.org/10.1145/3786582.3786832) | Provenance-carrying capabilities enforced at action time (feature 6) |
-| Introducing Safe LLM-Agent Execution via Typed Tool Mediation and World-Effect Evaluation | IEEE/ACM ASE, 2026 | [DOI 10.1145/3832783.3834637](https://doi.org/10.1145/3832783.3834637) | Typed tools plus effect evaluation; close to `Effect(kind=…)` as policy |
-| Evaluating LLMs for Automated Serverless Workflow Generation | ACM DEBS, 2026 | [DOI 10.1145/3809481.3816480](https://doi.org/10.1145/3809481.3816480) | Direct comparison point for NL → workflow |
-| Agentic Workflows are Serverless Applications, so deploy them that way! | ACM SIGOPS OSR, 2026 | [DOI 10.1145/3830422.3830426](https://doi.org/10.1145/3830422.3830426) | Position paper on deployment model; no open-access copy found |
-| Quilt: Resource-aware Merging of Serverless Workflows | ACM SOSP, 2025 | [DOI 10.1145/3731569.3764830](https://doi.org/10.1145/3731569.3764830) | Step-fusion idea relevant to Facetwork's ~2.6 s per-step overhead |
-| Efficient Fault Tolerance for Stateful Serverless Computing with Asymmetric Logging | ACM TOCS, 2025 | [DOI 10.1145/3725985](https://doi.org/10.1145/3725985) | Logging design for exactly-once workflows; relevant to the missing fencing token |
+| TraceCaps: Inline Provenance and Risk Enforcement for Agentic Software Engineering | ICSE NIER, 2026 | [DOI 10.1145/3786582.3786832](https://doi.org/10.1145/3786582.3786832) | Hash-chained event capsules with a risk score that only rises; no evaluation (feature 6) |
+| Introducing Safe LLM-Agent Execution via Typed Tool Mediation and World-Effect Evaluation | IEEE/ACM ASE, 2026 | [DOI 10.1145/3832783.3834637](https://doi.org/10.1145/3832783.3834637) | A reference monitor derives each call's effect itself; 48/48 adversarial tasks blocked (feature 5) |
+| Evaluating LLMs for Automated Serverless Workflow Generation | ACM DEBS, 2026 | [DOI 10.1145/3809481.3816480](https://doi.org/10.1145/3809481.3816480) | NL → serverless workflow with error feedback; success means "ran" (feature 7) |
+| Agentic Workflows are Serverless Applications, so deploy them that way! | ACM SIGOPS OSR, 2026 | [DOI 10.1145/3830422.3830426](https://doi.org/10.1145/3830422.3830426) | Agent stages deployed separately and annotated by statefulness (feature 11) |
+| Quilt: Resource-aware Merging of Serverless Workflows | ACM SOSP, 2025 | [DOI 10.1145/3731569.3764830](https://doi.org/10.1145/3731569.3764830) | Graph-cut merging under a CPU/memory budget; merged crashes are not isolated (feature 11) |
+| Efficient Fault Tolerance for Stateful Serverless Computing with Asymmetric Logging | ACM TOCS, 2025 | [DOI 10.1145/3725985](https://doi.org/10.1145/3725985) | Exactly-once needs only reads or writes logged; names the alive-but-presumed-dead peer (feature 14) |
 | AI Agents for Enabling Autonomous Experiments at ORNL's HPC and Manufacturing User Facilities | SC'25 Workshops (ACM), 2025 | [DOI 10.1145/3731599.3767592](https://doi.org/10.1145/3731599.3767592) | Agents driving real facility workflows with provenance capture |
 | Verified Detection and Prevention of Concurrency Anomalies in Multi-Agent LLM Systems | arXiv, 2026 | [2606.17182](https://arxiv.org/abs/2606.17182) | TLA+ anomalies under durable-execution replay; check against Facetwork's at-least-once model |
 | FlowPilot: A Suggestion System for Designing Scientific Workflows | PACMMOD (SIGMOD), 2026 | [DOI 10.1145/3786653](https://doi.org/10.1145/3786653) | Next-operator suggestion from past workflows; 58% vs ≤9% for Code LLMs (feature 13) |
 | A data-driven workflow language for grids based on array programming principles (Gwendia) | WORKS, 2009 | [DOI 10.1145/1645164.1645171](https://doi.org/10.1145/1645164.1645171) | Cross/dot/match iteration and a void value for failed items (feature 12) |
 | AdaFuse: Adaptive Function Fusion for Dynamic Serverless Workflows | ACM TACO, 2026 | [DOI 10.1145/3859287](https://doi.org/10.1145/3859287) | When co-locating steps pays and when it over-provisions (feature 11) |
 | Distributed Programming Languages (Andrews) | ACM '82, 1982 | [DOI 10.1145/800174.809772](https://doi.org/10.1145/800174.809772) | Mailbox naming and exactly-once vs idempotency; background for the task collection |
+| Durable Functions: Semantics for Stateful Serverless | PACMPL (OOPSLA), 2021 | [DOI 10.1145/3485510](https://doi.org/10.1145/3485510) | Proves a compute-storage model with conditional commit equivalent to replay; Facetwork without the replay (feature 14) |
+| Boki: Stateful Serverless Computing with Shared Logs | ACM SOSP, 2021 | [DOI 10.1145/3477132.3483541](https://doi.org/10.1145/3477132.3483541) | Data writes fenced by a control-log sequence number (feature 14) |
+| Guardians and Actions: Linguistic Support for Robust, Distributed Programs (Argus) | ACM TOPLAS, 1983 | [DOI 10.1145/2166.357215](https://doi.org/10.1145/2166.357215) | The transaction route to exactly-once; defer external effects to a second action (feature 5) |
+| Search, Adapt, and Reuse: The Future of Scientific Workflows | SIGMOD Record, 2011 | [DOI 10.1145/2034863.2034865](https://doi.org/10.1145/2034863.2034865) | The case for the catalog; matching by types and graph shape (feature 8) |
+| Auto-Suggest: Learning-to-Recommend Data Preparation Steps Using Data Science Notebooks | ACM SIGMOD, 2020 | [DOI 10.1145/3318464.3389738](https://doi.org/10.1145/3318464.3389738) | Next step from sequence plus data, 0.72 vs 0.56 sequence-only (feature 13) |
 
 ## 7. Note on ACM access
 
@@ -602,11 +817,15 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
 - **ACM papers with no retrievable full text from here:** "Agentic Workflows are
   Serverless Applications" (OSR), Quilt (SOSP), the ORNL SC'25 paper, TraceCaps,
   the ASE 2026 typed-mediation paper, and the DEBS 2026 workflow-generation paper.
-  A human with a browser can probably open the CC-licensed ones.
+  All except the ORNL paper were later downloaded by hand and read (§2.8).
 - **Implication.** An agent-driven literature review can *find* ACM work through
   Crossref but can only *read* it through arXiv mirrors. Statements above about
   ACM-only papers rest on titles and metadata, not full text.
 - **Papers downloaded by hand do work.** The four papers in §2.7 were
   downloaded by hand from the ACM Digital Library and read in full from the PDFs.
   Their DOIs and authors were checked against Crossref. For an ACM-only paper,
-  that is the practical route.
+  that is the practical route. The eleven in §2.8 followed the same route. One
+  had scanned pages with no text layer, which a text extractor silently returns
+  as empty, so those pages were rendered and read as images. A summary built
+  from the extracted text alone would have missed all of that paper's
+  measurements.

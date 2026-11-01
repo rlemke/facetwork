@@ -216,6 +216,8 @@ Lease-based failure detection dates to Gray and Cheriton [GC89] in the context o
 
 The language-level background is older still. Andrews's 1982 survey of distributed programming languages [And82] classifies how processes name each other: directly, through ports attached to a receiver, or through global mailboxes that any number of processes may send to and receive from. He notes that mailboxes are the most general form and the most costly to implement without special support. Facetwork's task collection is a mailbox in this sense, its name-filtered claim resembles SR's "receive the message that satisfies a condition", and the database's atomic single-document update is the support that makes the mailbox cheap. The same survey states the constraint that §15.10 returns to: a remote call can be given exactly-once semantics only if the service is idempotent or the call is an atomic transaction, as in Argus. Facetwork takes the first route, at-least-once delivery with an idempotency requirement on handlers.
 
+Argus [LS83] is the second route, and it is instructive because Facetwork reverses it on every axis. Its guardians hold stable state and recover it after a crash. Their handlers run as nested atomic subactions: at-most-once, serialisable, rolled back if the enclosing action aborts. Facetwork's runners are stateless, its handlers at-least-once, a failed step undoes nothing, and no atomic object spans the coordination store and the object store. Argus also concedes the limit of its own route: effects outside the system cannot be rolled back, so it advises splitting work into two top-level actions and deferring external effects to the second. The same advice, applied to Facetwork, puts an approval step before any facet whose effect is external (§16.3).
+
 ### 3.2 Workflow languages and DSLs
 
 The BPEL/BPMN line of business-process languages [OMG11] is the most widely deployed workflow DSL family in industrial use. BPMN's graphical notation has made it an accepted interchange format for enterprise process modelling; its XML serialisation has made it universally verbose. BPEL, the executable form that preceded the BPMN 2.0 execution semantics, was explicitly designed for SOAP-era web services and inherits their ceremonious style.
@@ -248,7 +250,7 @@ The Kubernetes ecosystem has normalised the expectation that pods come and go du
 
 **Protocols.** The Model Context Protocol was donated to a Linux Foundation fund in December 2025. Its 2025-11-25 revision added experimental *Tasks*, a call-now, fetch-later form for long-running requests [MCPT]. The 2026-07-28 revision made the core stateless, moved Tasks into an extension with a poll-based `tasks/get`, replaced server-initiated elicitation with multi-round-trip requests, and hardened authorization; sampling and the legacy HTTP+SSE transport are deprecated with a twelve-month runway [MCP26]. The Agent2Agent protocol (A2A) reached a stable 1.0 for agent-to-agent delegation and reports more than 150 supporting organisations [A2A].
 
-**Plan-then-execute as a security property.** CaMeL extracts control and data flow from the trusted user query, so that untrusted tool output cannot change program flow, and enforces capability policies at tool calls. It solves 77% of AgentDojo tasks with provable security, against 84% undefended [CaMeL25]. A companion paper generalises this into six design patterns built on one rule: once an agent has ingested untrusted input, that input must not be able to trigger consequential actions [DP25]. Tool metadata is itself an attack surface; one study reports attack success rates of 62.64–100% across 18 model-server pairs for instructions injected through MCP tool descriptions [L2L26].
+**Plan-then-execute as a security property.** CaMeL extracts control and data flow from the trusted user query, so that untrusted tool output cannot change program flow, and enforces capability policies at tool calls. It solves 77% of AgentDojo tasks with provable security, against 84% undefended [CaMeL25]. A companion paper generalises this into six design patterns built on one rule: once an agent has ingested untrusted input, that input must not be able to trigger consequential actions [DP25]. Tool metadata is itself an attack surface; one study reports attack success rates of 62.64–100% across 18 model-server pairs for instructions injected through MCP tool descriptions [L2L26]. Typed tool mediation [ZJ26] passes every tool request, as schema-validated JSON, to one reference monitor. The monitor classifies paths, database objects and network sinks itself, denies an unknown one, and answers allow, approval-required or deny. It does not trust a declaration of what the call does. On the authors' 48 adversarial tasks it blocked all 48 with both models tested, against 32–38 for a prompt-only defence, with benign completion unchanged; the suite is the authors' own and the attacker not adaptive. TraceCaps [CMM+26] hash-chains agent events into signed capsules and carries a risk score that can only rise, so a later harmless step cannot dilute an earlier risky one; it is a new-ideas paper with no quantitative evaluation.
 
 **Typed tool mediation and reproducibility.** A 2026 study ran the same scientific analysis on four platforms, four times each, comparing model-written code with a typed tool the model only parameterises. The typed tool gave identical results; regenerated code did not [TM26]. This is the closest published measurement to the claim of §16.3 that a fixed, typed scaffold gives "procedural consistency with leaf-level variability".
 
@@ -257,6 +259,8 @@ The Kubernetes ecosystem has normalised the expectation that pods come and go du
 **Provenance for agentic science.** PROV-AGENT extends W3C PROV to record prompts, responses and agent decisions within the wider workflow, using MCP as its capture point [PROVA25]. A 2026 survey of "AI scientist" systems found that code release is now common but that "reproducibility-grade and claim-verification" artifacts are not, which it calls the *verification gap* [VG26].
 
 **Authoring help and step placement.** *Added 31 October 2026.* Two further results bear on the authoring loop and on placement. FlowPilot [EW26] suggests the next operator in a Nextflow workflow by retrieving similar paths, operators together with the data passed between them, from past workflows and ranking candidates with a Markov chain. It reaches 56–58% top-1 accuracy, against 1–9% for code LLMs used directly, and attributes their failure to scarce training data: there are fewer than 5,000 Nextflow repositories on GitHub. FFL has no public corpus at all, which is independent support for supplying the model with rule documents, examples, the capability index and the catalog rather than relying on its training. FFL's typed signatures would let such a system discard candidates whose inputs cannot accept the previous step's outputs. AdaFuse [LLZ+26] studies function fusion in serverless workflows, placing neighbouring functions in one container so they stop paying for remote calls, which were 62–79% of function latency in its benchmark; because a fused group must be provisioned for its most demanding path, it re-plans the fusion as traffic shifts and reports up to 49.4% less allocated resource. Facetwork has the opposite gap: it has no way to declare that steps must run on the same host at all (§15.15).
+
+Five more papers, read for this revision, sharpen these points. Quilt [ZA25] merges a tenant's serverless functions into one process by cutting the fewest frequency-weighted call edges so that each group fits a container's CPU and memory limit. Median latency falls 45.6–71.0% on 9 of 11 benchmark workflows. Merging everything is worse than merging well: on a CPU-heavy workflow it costs 11.6% of throughput, where the best two-way split gains 50.8%. Its budget rule transfers directly: CPU adds up across a group, but memory adds up only for members that run concurrently. So does its warning that a merged process loses failure isolation, which argues for a Facetwork co-location group that pins placement while keeping per-step tasks and retries. Dougherty et al. [DLW+26] characterise agent workloads as graphs of inference and tool stages with long idle periods, and propose annotating each stage by how much state it keeps; a stage that keeps files between calls is exactly one that must be co-located. On the authoring side, Cohen-Boulakia and Leser [CL11] argued in 2011 that domain scientists want to find, adapt and run workflows rather than write them, which is the catalog's premise; they also ask for matching on input and output types and graph shape, which the catalog does not yet do. Auto-Suggest [YH20], one of FlowPilot's baselines, predicts the next pandas operator from the sequence so far together with the current table, and the combination beats either alone (precision@1 0.72, against 0.56 for the sequence and 0.32 for the data); its candidate set is 7 operators, far easier than ranking a facet library. Ristov et al. [RGU+26] evaluate four LLMs generating serverless workflows with error feedback over up to ten iterations. Claude 3.5 Sonnet was the most reliable, and reviewers judged none of the code production-ready, but success was defined as "ran" and trial counts are not reported. That is the measurement a composition harness for Facetwork must improve on (§15.15).
 
 **Where Facetwork stands.** It matches this work in four places, and in each case it reached the shape for authoring reasons rather than security or reproducibility ones.
 
@@ -1245,6 +1249,8 @@ There are two ways to recover a distributed workflow after failure, and the choi
 
 **State.** The canonical recovery mechanism in Camunda, Airflow, and Facetwork. The current state of each step (pending, running, completed, errored) is written to the database on every transition. When a worker resumes, it reads the state and decides what to do next. There is no replay, no history reconstruction, no determinism constraint. The price is that the workflow description must be explicit about what state needs to survive — essentially, every piece of data that informs a future decision must flow through a facet's typed return value.
 
+The two traditions are closer than they look. Burckhardt et al. [BGJ+21] formalise Azure Durable Functions in both. In a *compute-storage* model, volatile workers commit each work item's result atomically and only if the stored state is still what they read. A *replay* model rebuilds orchestration state from a message history. They prove the replay model bisimilar to the compute-storage one, and the compute-storage one a simulation of a fault-free, exactly-once specification. Replay is therefore an implementation of the state model, chosen so that orchestration can be written as ordinary code, and determinism is the price of that choice rather than of durability. Facetwork is the compute-storage model without the replay layer: FFL, not general-purpose code, describes the orchestration, so nothing needs to be replayed.
+
 Facetwork is firmly in the state-recovery tradition. The design argument for this position is threefold.
 
 ### 7.2 Why state wins for long-running work
@@ -2054,6 +2060,8 @@ The abstract and §5.3 originally claimed more than the system does, and this no
 
 The lease path of §5.5 is guarded by an ordering invariant: the lease is held above the execution timeout, so the owning runner's watchdog acts before another runner's reclaim. The real window is the dead-server reaper. A runner whose heartbeat stops for two minutes is declared dead and its tasks are re-queued. "Stopped pinging" is not "stopped running". A paused, partitioned or hibernating host keeps executing, and nothing stops its writes to the object store. `save_task_if_owned` (§5.5) protects the *task document* from the superseded executor, but not the artifacts that executor writes. The informal fleet makes this routine rather than theoretical: one county-atlas host hibernated for 7.4 hours mid-run, which from the database is indistinguishable from death.
 
+The serverless literature shows what is missing. Durable Functions [BGJ+21], Boki [JW21] and Halfmoon [QFL+25] all make a duplicate execution harmless with two pieces. The first is a commit in the control store that succeeds only if the step is still in the state the worker read. The second is a per-step sequence number that the data store checks before accepting a write: Boki's workflow library writes only when the stored version is older than the step's log position. Halfmoon names Facetwork's case exactly, an instance the runtime presumes crashed that is still running, and proves that exactly-once needs only one side of the operations logged. Facetwork has the first piece: `save_task_if_owned` is a conditional commit, though keyed by runner rather than by attempt. It lacks the second, so the object store cannot tell the superseded execution's writes from the winner's. An attempt number stamped on every claim, required by the completion update and used in output paths, would supply it (§16.3). Halfmoon's millisecond savings do not matter at Facetwork's step granularity, and both Boki and Halfmoon assume deterministic functions, which Facetwork handlers are not; the fencing does not depend on that assumption.
+
 A second path was found in October 2026. In 11 of 666 event tasks, all inside capped fan-outs, a second task was created for a step 15–162 ms after the first had completed, sometimes by another server. The handlers were idempotent, so the only cost was a re-run. The commit path now refuses a stale event task before writing. I could not pin down the precise stale-read sequence, because the logs were lost to container recreation; the guard closes the window without explaining it, and I record it as such.
 
 The coordination store also deserves a plainer statement than the thesis gave it. "No coordinator" (§5.7) is true of the runners and false of the deployment. The evaluated fleet coordinates through one standalone MongoDB node: no replica set, no authentication, no TLS. Every runner is replaceable; the database is not. Measured episodes since §14 include relocating the database to another host (the subject of [`paper-moving-state.md`](paper-moving-state.md)) and a live index migration that took the fleet down because older images validated indexes at start-up. A single bad write to shared state once took the fleet from 108 runners to 23. None of this contradicts the claim protocol, which assumes a linearisable store and gets one. It does bound what "leaderless" buys: the design has no master *process* to lose, but it has a master *store*. A replicated, authenticated store is the first thing a production deployment would need, and the evaluated one has neither ([`comparison-to-production-platforms.md`](../operations/comparison-to-production-platforms.md)).
@@ -2126,7 +2134,7 @@ The lesson generalises beyond FFL. A bulkhead converts a slow leak of capacity i
 - **Approval lives in the chat.** The two review gates of the authoring loop (workflow shown before it runs, handler shown before use) happen in the Claude session. If the session ends, the approval state is lost, and there is no durable record of who approved what. Comparable systems treat a human wait as a durable step.
 - **The composition claim is unmeasured.** §16.3 argues that composing from a catalog beats generating code. The controlled comparison that would test it — the same requests authored with the catalog, with the library alone, and as free code — has not been run. One worked example (§15.9) is not that test.
 
-Two smaller gaps sit beside these. Catalog search is keyword-ranked, and nothing re-validates a stored revision when the library under it changes, which is the drift that [SKNB26] identifies; `fw util ffl-audit` performs that check for domain repositories but not for catalog revisions. And values derived from untrusted input are not tracked, so the plan is fixed but its arguments are not (§3.5). Two gaps concern the language itself (§3.2, §3.5). There is no co-location primitive, so steps that hand over local files must be merged into one handler by hand; an unpinned publish step that ran on a host with an empty output directory reported success while a tier came back 36% refreshed. And `foreach` takes one list, so pairing two lists by index or key needs a handler, and a fan-out has no value that marks one element as missing.
+Two smaller gaps sit beside these. Catalog search is keyword-ranked, and nothing re-validates a stored revision when the library under it changes, which is the drift that [SKNB26] identifies; `fw util ffl-audit` performs that check for domain repositories but not for catalog revisions. And values derived from untrusted input are not tracked, so the plan is fixed but its arguments are not (§3.5). Two gaps concern the language itself (§3.2, §3.5). There is no co-location primitive, so steps that hand over local files must be merged into one handler by hand; an unpinned publish step that ran on a host with an empty output directory reported success while a tier came back 36% refreshed. Merging by hand also gives up the per-step retry and visibility that Quilt [ZA25] identifies as the open cost of merging. And `foreach` takes one list, so pairing two lists by index or key needs a handler, and a fan-out has no value that marks one element as missing.
 
 None of these changes the design argument. All of them bear on whether a team could adopt the system as it stands.
 
@@ -2194,7 +2202,7 @@ The extended treatment — with concrete feature proposals, detailed arguments a
 
 The first five are interface and safety work rather than design changes; items 6 and 7 are where the design argument is tested. Of the nine, the evaluation harness matters most to this thesis, because without it the composition claim in this section remains advocacy.
 
-Three language additions follow from the workflow-language work of §3.2 and §3.5: a co-location group, so steps that share local files run as one task on one host; `foreach` forms that pair two lists by index or by key, with an explicit value for an element that failed; and next-facet suggestions in the language server, ranked from the domain repositories and the catalog and filtered by type compatibility.
+Three language additions follow from the workflow-language work of §3.2 and §3.5: a co-location group, so steps that share local files run as one task on one host; `foreach` forms that pair two lists by index or by key, with an explicit value for an element that failed; and next-facet suggestions in the language server, ranked from the domain repositories and the catalog and filtered by type compatibility. A fourth addition belongs to the runtime rather than the language: an attempt number on every claim, required by the completion update and used in output paths, which is the data-side fence that Durable Functions, Boki and Halfmoon pair with a conditional commit (§15.10). With it, idempotency becomes partly a property of the platform rather than wholly an obligation on each handler author, which is also the first step toward the typed idempotence above.
 
 Each of the five directions is an evolution within the thesis's design position, not a departure from it. Each preserves the DSL, the lock-free coordination, the state-recovery model, and the live updatability. Each extends the applicability of the whole.
 
@@ -2231,6 +2239,8 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 [AWM24] Agent Workflow Memory. arXiv:2409.07429, 2024.
 
+[BGJ+21] Burckhardt, S., Gillum, C., Justo, D., Kallas, K., McMahon, C., Meiklejohn, C.S. Durable functions: Semantics for stateful serverless. *Proceedings of the ACM on Programming Languages* 5(OOPSLA), Article 133, 2021. doi:10.1145/3485510.
+
 [Bur06] Burrows, M. The Chubby lock service for loosely-coupled distributed systems. *OSDI*, 2006.
 
 [Cad] Cadence Workflow. https://cadenceworkflow.io/
@@ -2239,11 +2249,17 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 [CCH+10] Chambers, C., Raniwala, A., Perry, F., Adams, S., Henry, R., Bradshaw, R., Weizenbaum, N. FlumeJava: Easy, efficient data-parallel pipelines. *PLDI*, 2010.
 
+[CL11] Cohen-Boulakia, S., Leser, U. Search, adapt, and reuse: The future of scientific workflows. *SIGMOD Record* 40(2), 2011, 6–16. doi:10.1145/2034863.2034865.
+
+[CMM+26] Catarino, A., Mamede, C., Melo, R., Abreu, R. TraceCaps: Inline provenance and risk enforcement for agentic software engineering. *ICSE New Ideas and Emerging Results (ICSE-NIER)*, 2026, 166–170. doi:10.1145/3786582.3786832.
+
 [CWL20] Crusoe, M.R. et al. Methods included: Standardizing computational reuse and portability with the Common Workflow Language. *Communications of the ACM*, 65(6), 2022.
 
 [DBOS] DBOS plugin for Google ADK. https://adk.dev/integrations/dbos/ ; Pydantic AI and DBOS, https://pydantic.dev/articles/pydantic-ai-dbos.md (vendor documentation).
 
 [DLS88] Dwork, C., Lynch, N., Stockmeyer, L. Consensus in the presence of partial synchrony. *Journal of the ACM*, 35(2), 1988.
+
+[DLW+26] Dougherty, I., Lambert, N., Wang, J., Xu, E., Achermann, R., Fedorova, A. Agentic workflows are serverless applications, so deploy them that way! *ACM SIGOPS Operating Systems Review* 60(1), 2026, 30–40. doi:10.1145/3830422.3830426.
 
 [DP25] Design patterns for securing LLM agents against prompt injections. arXiv:2506.08837, 2025.
 
@@ -2265,6 +2281,8 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 [IBY+07] Isard, M., Budiu, M., Yu, Y., Birrell, A., Fetterly, D. Dryad: Distributed data-parallel programs from sequential building blocks. *EuroSys*, 2007.
 
+[JW21] Jia, Z., Witchel, E. Boki: Stateful serverless computing with shared logs. *SOSP*, 2021, 691–707. doi:10.1145/3477132.3483541.
+
 [KR12] Köster, J., Rahmann, S. Snakemake — a scalable bioinformatics workflow engine. *Bioinformatics*, 28(19), 2012.
 
 [Kub] Kubernetes Jobs. https://kubernetes.io/docs/concepts/workloads/controllers/job/
@@ -2276,6 +2294,8 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 [LG25] LangChain. LangGraph 1.0 changelog announcement, 2025. https://changelog.langchain.com/announcements/ann_lxOZRCoFw2Qn9
 
 [LLZ+26] Lin, Z., Liao, J., Zhou, Z., Xu, H., Xu, F., Chen, X., Guo, D. AdaFuse: Adaptive function fusion for dynamic serverless workflows. *ACM Transactions on Architecture and Code Optimization*, 2026. doi:10.1145/3859287.
+
+[LS83] Liskov, B., Scheifler, R. Guardians and actions: Linguistic support for robust, distributed programs. *ACM Transactions on Programming Languages and Systems* 5(3), 1983, 381–404. doi:10.1145/2166.357215.
 
 [MAST25] Cemri, M. et al. Why do multi-agent LLM systems fail? *NeurIPS Datasets and Benchmarks*, 2025. arXiv:2503.13657.
 
@@ -2295,6 +2315,10 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 [PROVA25] PROV-AGENT: Unified provenance for … agentic workflows. arXiv:2508.02866, 2025.
 
+[QFL+25] Qi, S., Feng, H., Liu, X., Jin, X. Efficient fault tolerance for stateful serverless computing with asymmetric logging. *ACM Transactions on Computer Systems* 43(1–2), Article 3, 2025. doi:10.1145/3725985.
+
+[RGU+26] Ristov, S., Gritsch, P., Unterhofer, F., Breu, R. Evaluating large language models for automated serverless workflow generation. *DEBS*, 2026, 5–10. doi:10.1145/3809481.3816480.
+
 [SKNB26] SKILL.nb: Selective formalization and gated execution for durable agent workflows. arXiv:2606.08049, 2026.
 
 [Sol21] Solem, A. Celery distributed task queue. https://docs.celeryq.dev/
@@ -2306,6 +2330,12 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 [TM26] It's not the language model, it's the tool. arXiv:2605.13245, 2026.
 
 [VG26] Autonomous research agents: … the verification gap. Survey, arXiv:2608.05179, 2026.
+
+[YH20] Yan, C., He, Y. Auto-Suggest: Learning-to-recommend data preparation steps using data science notebooks. *SIGMOD*, 2020, 1539–1554. doi:10.1145/3318464.3389738.
+
+[ZA25] Zhang, Y., Angel, S. Quilt: Resource-aware merging of serverless workflows. *SOSP*, 2025, 907–927. doi:10.1145/3731569.3764830.
+
+[ZJ26] Zhou, J., Jia, T. Introducing safe LLM-agent execution via typed tool mediation and world-effect evaluation. *ASE*, 2026, 3567–3571. doi:10.1145/3832783.3834637.
 
 ---
 
