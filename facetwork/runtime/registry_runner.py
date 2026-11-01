@@ -871,7 +871,7 @@ class RegistryRunner(BaseRunner):
             # reclaim that turned us into a zombie. Cached, so a handler may
             # check it as often as it likes.
             payload["_cancellation_check"] = lambda: self._persistence.task_cancellation_reason(
-                task.uuid, self._server_id
+                task.uuid, self._server_id, getattr(task, "attempt", 0) or 0
             )
 
             payload["_task_uuid"] = task.uuid
@@ -886,6 +886,9 @@ class RegistryRunner(BaseRunner):
             retry_count = getattr(task, "retry_count", 0) or 0
             payload["_retry_count"] = retry_count
             payload["_is_retry"] = retry_count > 0
+            # Fencing token for this execution (execution-semantics.md §1.2):
+            # handlers key mutable outputs by it via HandlerContext.attempt_path.
+            payload["_attempt"] = getattr(task, "attempt", 0) or 0
 
             # Look up handler timeout — task-level (from FFL Timeout mixin)
             # takes priority over registration-level default

@@ -23,6 +23,9 @@ An external agent processes an event step by:
    if the task was canceled, already terminal, or reclaimed by another server.
 5. **Write return attributes** to the step document.
 6. **Mark the task `completed`** — gated on `server_id` (`complete_task`).
+   The Python runtime also gates on the task's `attempt` claim counter. These
+   libraries do not bump or check it yet. Update task documents with `$set`,
+   never a whole-document replace, so the counter survives an agent's writes.
 7. **Insert an `fw:resume` task**, only if step 6 matched a document.
 
 On a handler error, apply `fail_task`: back to `pending` with exponential

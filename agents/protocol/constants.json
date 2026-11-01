@@ -108,6 +108,7 @@
     "lease_expires": "int — ms; a running task whose lease is in the past may be reclaimed by another server",
     "task_heartbeat": "int — ms; last handler-level heartbeat",
     "retry_count": "int — attempts that failed so far",
+    "attempt": "int — claim counter: the Python runtime $incs it on every claim and gates its terminal write on it (the fencing token, execution-semantics.md §1.2). Agent libraries do not bump it yet; absent/0 = fenced by server_id alone. Never reset it.",
     "max_retries": "int — dead-letter once retry_count reaches this (0 = unlimited; absent = 5)",
     "next_retry_after": "int — ms; a pending task is not claimable before this (0/absent = now)",
     "timeout_ms": "int — optional per-task execution timeout",

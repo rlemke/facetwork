@@ -697,7 +697,9 @@ class RunnerService(BaseRunner):
         # watchdog that already failed the task, or a reclaim that made us a
         # zombie). Cached, so handlers may check it in a loop.
         def _cancellation_check() -> str | None:
-            return self._persistence.task_cancellation_reason(task.uuid, self._server_id)
+            return self._persistence.task_cancellation_reason(
+                task.uuid, self._server_id, getattr(task, "attempt", 0) or 0
+            )
 
         retry_count = getattr(task, "retry_count", 0) or 0
         payload.update(
@@ -719,6 +721,8 @@ class RunnerService(BaseRunner):
                 "_workflow_id": task.workflow_id,
                 "_retry_count": retry_count,
                 "_is_retry": retry_count > 0,
+                # Fencing token (execution-semantics.md §1.2).
+                "_attempt": getattr(task, "attempt", 0) or 0,
             }
         )
         return payload

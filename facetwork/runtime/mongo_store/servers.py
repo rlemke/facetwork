@@ -146,9 +146,7 @@ class ServerMixin(_MixinBase):
         """Update server ping time."""
         self._db.servers.update_one({"uuid": server_id}, {"$set": {"ping_time": ping_time}})
 
-    def heartbeat_server(
-        self, server_id: str, ping_time: int, free: dict | None = None
-    ) -> bool:
+    def heartbeat_server(self, server_id: str, ping_time: int, free: dict | None = None) -> bool:
         """Update ping time iff the record is live; report whether it was.
 
         A single filtered ``update_one`` so the check-and-ping is atomic: it
@@ -180,13 +178,17 @@ class ServerMixin(_MixinBase):
             {"$set": {"handled": [asdict(h) for h in handled]}},
         )
 
-    def task_cancellation_reason(self, task_id: str, server_id: str = "") -> str | None:
+    def task_cancellation_reason(
+        self, task_id: str, server_id: str = "", attempt: int = 0
+    ) -> str | None:
         """Why an in-flight execution should stop, or None. See PersistenceAPI.
 
         One projected lookup on the ``uuid`` index — this is polled by every
         concurrent handler on every runner, so it must not grow.
         """
-        doc = self._db.tasks.find_one({"uuid": task_id}, {"state": 1, "server_id": 1, "_id": 0})
+        doc = self._db.tasks.find_one(
+            {"uuid": task_id}, {"state": 1, "server_id": 1, "attempt": 1, "_id": 0}
+        )
         if doc is None:
             return "task record no longer exists"
         state = doc.get("state") or ""
@@ -198,6 +200,11 @@ class ServerMixin(_MixinBase):
             return f"task already terminal ({state})"
         if server_id and (doc.get("server_id") or "") != server_id:
             return "task was reclaimed by another runner"
+        if attempt and (doc.get("attempt") or 0) != attempt:
+            # Same runner id, newer claim: this execution was reaped and the task
+            # re-claimed (possibly by this very runner). Only the newest attempt's
+            # result can land.
+            return "task was reclaimed (a newer attempt holds it)"
         return None
 
     def update_task_heartbeat(

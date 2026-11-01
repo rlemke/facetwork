@@ -134,11 +134,15 @@ class TaskMixin(_MixinBase):
         if expected_server_id == "":
             self._upsert_by_uuid(self._db.tasks, doc)
             return True
-        result = self._db.tasks.replace_one(
-            {"uuid": task.uuid, "server_id": expected_server_id},
-            doc,
-            upsert=False,
-        )
+        query: dict[str, Any] = {"uuid": task.uuid, "server_id": expected_server_id}
+        # The attempt fence. server_id alone cannot tell two claims by the SAME
+        # runner apart: a runner the reaper declared dead re-registers under its
+        # old id, re-claims the reset task, and the first execution's late write
+        # would match. A task claimed before the counter existed (attempt 0) is
+        # fenced by server_id only, as before.
+        if task.attempt > 0:
+            query["attempt"] = task.attempt
+        result = self._db.tasks.replace_one(query, doc, upsert=False)
         return result.matched_count > 0
 
     def claim_task(
@@ -276,7 +280,7 @@ class TaskMixin(_MixinBase):
 
         doc = self._db.tasks.find_one_and_update(
             pending_branches[0] if len(pending_branches) == 1 else {"$or": pending_branches},
-            {"$set": update},
+            {"$set": update, "$inc": {"attempt": 1}},
             return_document=ReturnDocument.AFTER,
         )
         if doc:
@@ -319,7 +323,7 @@ class TaskMixin(_MixinBase):
         ]
         doc = self._db.tasks.find_one_and_update(
             reclaim_branches[0] if len(reclaim_branches) == 1 else {"$or": reclaim_branches},
-            {"$set": update, "$inc": {"retry_count": 1}},
+            {"$set": update, "$inc": {"retry_count": 1, "attempt": 1}},
             return_document=ReturnDocument.AFTER,
         )
         return self._doc_to_task(doc) if doc else None
@@ -759,7 +763,7 @@ class TaskMixin(_MixinBase):
                     res_ok,
                 ],
             },
-            {"$set": update},
+            {"$set": update, "$inc": {"attempt": 1}},
             return_document=ReturnDocument.AFTER,
         )
         return self._doc_to_task(doc) if doc else None
@@ -931,6 +935,7 @@ class TaskMixin(_MixinBase):
             "server_id": task.server_id,
             "timeout_ms": task.timeout_ms,
             "retry_count": task.retry_count,
+            "attempt": task.attempt,
             "max_retries": task.max_retries,
             "next_retry_after": task.next_retry_after,
             "stage_budget_expires": task.stage_budget_expires,
@@ -980,6 +985,7 @@ class TaskMixin(_MixinBase):
             server_id=doc.get("server_id", ""),
             timeout_ms=doc.get("timeout_ms", 0),
             retry_count=doc.get("retry_count", 0),
+            attempt=doc.get("attempt") or 0,
             max_retries=doc.get("max_retries", 5),
             next_retry_after=doc.get("next_retry_after", 0),
             stage_budget_expires=doc.get("stage_budget_expires", 0),

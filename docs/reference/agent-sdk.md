@@ -1105,6 +1105,7 @@ metadata — never return them in results.
 | `_task_uuid` | `str` | Task UUID |
 | `_retry_count` | `int` | Number of prior attempts (0 on first execution) |
 | `_is_retry` | `bool` | `True` if this is a reclaimed/retried task |
+| `_attempt` | `int` | This execution's claim number, the fencing token (1 on first claim, +1 per re-claim; 0 = claimed by a pre-counter runner). `HandlerContext.attempt`. Python runners only |
 | `_handler_metadata` | `dict` | From `HandlerRegistration.metadata` (if present) |
 | `_fetch_step` | `callable(ref)` | Materialise a FacetRef parameter to a whole-step snapshot dict (see [9.15a FacetRef Parameters](#915a-facetref-parameters)) |
 
@@ -1295,6 +1296,27 @@ this for:
 - **Defensive cleanup** — delete partial state from a prior crashed
   attempt before restarting (e.g., `DELETE FROM table WHERE region =
   $region` before re-importing).
+
+**A retry may run CONCURRENTLY with the attempt it replaces.** The dead-server
+reaper re-queues a task when its runner stops pinging, and a paused or
+partitioned runner keeps executing
+([execution-semantics.md §1.2](execution-semantics.md)). The runtime ensures
+only the newest attempt's *result* completes the step. It cannot stop the older
+one's *file writes*. So write mutable outputs to a directory no other attempt
+uses, and return that path:
+
+```python
+def handle(payload: dict) -> dict:
+    ctx = HandlerContext.from_payload(payload)
+    out = ctx.attempt_path(f"s3://afl-cache/mydomain/{payload['region']}")
+    # out == "s3://afl-cache/mydomain/<region>/<step_id>/<attempt>"
+    write_tiles(out)
+    ctx.raise_if_cancelled()   # a newer attempt took over? stop, don't publish
+    return {"tiles": out}      # only the winning attempt's value reaches the step
+```
+
+Content-addressed or cache paths, which every attempt fills with the same
+bytes, do not need this.
 
 **Best practices for retry-safe handlers:**
 

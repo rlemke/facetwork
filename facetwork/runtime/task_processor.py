@@ -137,6 +137,8 @@ class TaskProcessor:
         retry_count = getattr(task, "retry_count", 0) or 0
         payload["_retry_count"] = retry_count
         payload["_is_retry"] = retry_count > 0
+        # Fencing token (execution-semantics.md §1.2).
+        payload["_attempt"] = getattr(task, "attempt", 0) or 0
 
         return payload
 

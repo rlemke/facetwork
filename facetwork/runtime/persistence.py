@@ -720,7 +720,9 @@ class PersistenceAPI(Protocol):
         """
         return None
 
-    def task_cancellation_reason(self, task_id: str, server_id: str = "") -> str | None:
+    def task_cancellation_reason(
+        self, task_id: str, server_id: str = "", attempt: int = 0
+    ) -> str | None:
         """Why an in-flight execution of ``task_id`` should stop, or None.
 
         Answers one question for a running handler: *would anything I produce
@@ -736,7 +738,10 @@ class PersistenceAPI(Protocol):
         * ``server_id`` is given and no longer matches the row — the orphan
           reaper reset the task and another runner re-claimed it, so this
           execution is a zombie doing duplicate work whose terminal write will
-          be refused anyway.
+          be refused anyway;
+        * ``attempt`` is given and no longer matches the row's claim counter —
+          the same, but re-claimed by the SAME runner id, which ``server_id``
+          alone cannot see.
 
         Returns None while the execution is still the live owner. Implementations
         must keep this to a single cheap, projected lookup: it is polled by every

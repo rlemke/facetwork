@@ -744,7 +744,9 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
   alone (0.72 vs 0.56 and 0.32, §2.8). *Why:* it
   helps a person writing FFL as well as Claude. *Risk of not doing it:* low;
   completion stays alphabetical.
-- **14. Attempt-fenced step outputs. (S–M)** Give every claim a
+- **14. Attempt-fenced step outputs. (S–M)** *Implemented 2026-10-31 for
+  Python runners (`tests/runtime/test_attempt_fence.py`); see
+  execution-semantics.md §1.2 for what it does and does not cover.* Give every claim a
   monotonically increasing `attempt` on the task. Condition the completion
   update on it as well as on `server_id`. Have built-in storage facets write
   under `…/<step_id>/<attempt>/`, so a step's result points at one attempt's
@@ -756,7 +758,12 @@ Sizes: S ≈ days, M ≈ 1–3 weeks, L ≈ a month or more.
   cannot tell two claims by the same runner apart. *Risk of not doing it:* a
   runner the reaper declared dead can still overwrite the winner's artifacts,
   and idempotency stays a burden on every handler author rather than a property
-  of the platform.
+  of the platform. *As built:* the counter, the gated completion and the
+  cancellation check landed in the runtime. Built-in storage facets were **not**
+  changed, because they write to paths the FFL author names, and silently moving
+  those would break every workflow that reads them. Handlers opt in with
+  `HandlerContext.attempt_path(base)`. Still open: the polyglot agent libraries
+  do not bump the counter, and nothing collects a losing attempt's directory.
 
 ## 6. Papers worth reading
 

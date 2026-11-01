@@ -836,7 +836,7 @@ class AgentPoller:
             # Cooperative cancellation (lessons-learned §16) — same contract as
             # RegistryRunner, so a handler behaves identically on either runner.
             payload["_cancellation_check"] = lambda: self._persistence.task_cancellation_reason(
-                task.uuid, self._server_id
+                task.uuid, self._server_id, getattr(task, "attempt", 0) or 0
             )
 
             payload["_task_uuid"] = task.uuid
@@ -850,6 +850,9 @@ class AgentPoller:
             retry_count = getattr(task, "retry_count", 0) or 0
             payload["_retry_count"] = retry_count
             payload["_is_retry"] = retry_count > 0
+            # Fencing token for this execution (execution-semantics.md §1.2):
+            # handlers key mutable outputs by it via HandlerContext.attempt_path.
+            payload["_attempt"] = getattr(task, "attempt", 0) or 0
 
             # Look up timeout — task-level (from FFL Timeout mixin)
             timeout_ms = getattr(task, "timeout_ms", 0) or 0

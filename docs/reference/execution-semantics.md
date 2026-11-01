@@ -5,10 +5,12 @@ engine" implies things Facetwork does not do. Every claim here was checked
 against the code on 2026-09-03; the reproduction command is given wherever a
 number appears.
 
-> **In one line:** task delivery is **at-least-once**, there is **no fencing
-> token**, and the control plane (MongoDB) and the data plane (object store) are
-> **separate systems with no transaction between them**. Handler idempotency is
-> therefore a requirement, not an optimisation.
+> **In one line:** task delivery is **at-least-once**. Workflow state is fenced
+> by a per-claim **`attempt`** counter, but the data plane (object store) is not
+> fenced unless the handler writes under `ctx.attempt_path(...)`. The control
+> plane (MongoDB) and the data plane are **separate systems with no transaction
+> between them**. Handler idempotency is therefore a requirement, not an
+> optimisation.
 
 ---
 
@@ -49,9 +51,37 @@ first on its own wedged task.
 ⚠️ **"Has not pinged" is not the same as "is not running."** A runner that is
 alive but partitioned from MongoDB, or paused, or whose host suspended, stops
 pinging while its handler keeps working. The reaper then hands the task to
-another runner, and **nothing stops the first one's writes** — there is no
-fencing token, no epoch, no generation number on handler output. Both
-executions are equally entitled to write.
+another runner, and **the first one keeps running and writing**.
+
+**What is fenced (since 2026-10-31).** Every claim increments the task's
+`attempt` (pending claim, lease reclaim and script claim alike; it is never
+reset). The terminal write that completes a step is accepted only while the
+stored `server_id` **and** `attempt` still match the ones this execution claimed
+with, and workflow state advances only after that write lands. A superseded
+execution's result therefore never reaches the step, even when the **same**
+runner re-claimed the task. That happens when a paused runner wakes,
+re-registers under its old id and claims the reset task again; `server_id`
+alone could not see it. `ctx.is_cancelled` reports the same condition ("a newer
+attempt holds it"), so a long handler can stop early.
+
+**What is not fenced.** Writes a handler makes *outside* the task document:
+object-store files, PostGIS rows, external APIs. Both executions still perform
+them. For files the remedy is `ctx.attempt_path(base)`, which returns
+`<base>/<step_id>/<attempt>`. Write mutable outputs there and return the path:
+only the winning attempt's return value reaches the step, so downstream steps
+read the winner's files, and the loser's are left unreferenced instead of
+overwriting them. This is the pattern Durable Functions, Boki and Halfmoon use,
+a conditional commit plus a per-step sequence number on the data side
+([agentic-landscape-2026.md](../architecture/agentic-landscape-2026.md) §2.8).
+Content-addressed and cache paths do not need it, because every attempt writes
+the same bytes.
+
+Limits:
+- A task claimed by code that predates the counter has `attempt` 0, and is
+  fenced by `server_id` alone, as before.
+- The polyglot agent libraries do not increment it yet, so tasks they claim stay
+  at 0.
+- Nothing yet garbage-collects a losing attempt's directory.
 
 This is not hypothetical: a host hibernated for 7.4 h mid-run during a
 county-atlas fan-out, and from MongoDB that is indistinguishable from death.
@@ -101,7 +131,7 @@ actions, but they land on the same handler with the same guarantees.
 | Not guaranteed | What that means for you |
 |---|---|
 | Exactly-once execution | Make handlers idempotent. See §4. |
-| Fencing of a superseded executor | Two executions can write concurrently. Prefer content-addressed or step-id-derived output paths over "latest wins". |
+| Fencing of a superseded executor's *data* writes | Its result cannot complete the step (the `attempt` fence, §1.2), but its files, rows and API calls still happen. Write mutable outputs under `ctx.attempt_path(base)`, or use content-addressed paths; never "latest wins". |
 | Atomicity across MongoDB and the object store | A task can complete in Mongo after its data write, or die between them. Write data first, then record completion; treat a recorded completion as the only source of truth. |
 | Ordering between steps that share only storage | Use `after`. |
 | That a task will ever be claimed | A requirement no runner meets strands it silently. `fw maint unsatisfiable`. |

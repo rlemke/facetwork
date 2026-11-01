@@ -42,6 +42,14 @@ class TaskDefinition:
     progress_pct: int | None = None  # Last handler-reported progress (0-100)
     progress_message: str | None = None  # Last handler-reported progress text
     retry_count: int = 0  # Number of times this task has been retried
+    # Claim counter: incremented atomically by EVERY claim (pending or lease
+    # reclaim), never reset. It is the fencing token for this task. A terminal
+    # write is accepted only while the stored value still equals the one this
+    # execution claimed with, so a runner the reaper declared dead cannot land
+    # a result after the task was claimed again, even by the same server. 0 =
+    # claimed by code that predates the counter; the fence then falls back to
+    # server_id alone. See execution-semantics.md §1.2.
+    attempt: int = 0
     max_retries: int = 5  # Max retries before dead-lettering (0 = infinite)
     next_retry_after: int = 0  # Epoch ms; task not claimable until this time
     stage_budget_expires: int = 0  # Epoch ms; extends watchdog deadline for the current stage

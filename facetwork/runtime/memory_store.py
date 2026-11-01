@@ -396,7 +396,9 @@ class MemoryStore(PersistenceAPI):
         """Save a task."""
         self._tasks[task.uuid] = task
 
-    def task_cancellation_reason(self, task_id: str, server_id: str = "") -> str | None:
+    def task_cancellation_reason(
+        self, task_id: str, server_id: str = "", attempt: int = 0
+    ) -> str | None:
         """Why an in-flight execution should stop, or None.
 
         Mirrors ``MongoStore.task_cancellation_reason`` (parity — a runner
@@ -412,6 +414,8 @@ class MemoryStore(PersistenceAPI):
             return f"task already terminal ({state})"
         if server_id and (getattr(task, "server_id", "") or "") != server_id:
             return "task was reclaimed by another runner"
+        if attempt and (getattr(task, "attempt", 0) or 0) != attempt:
+            return "task was reclaimed (a newer attempt holds it)"
         return None
 
     def save_task_if_owned(self, task: "TaskDefinition", expected_server_id: str) -> bool:
@@ -425,6 +429,11 @@ class MemoryStore(PersistenceAPI):
             return True
         existing = self._tasks.get(task.uuid)
         if existing is None or getattr(existing, "server_id", "") != expected_server_id:
+            return False
+        # The attempt fence (see MongoStore.save_task_if_owned). This store hands
+        # out the stored object itself, so it only bites when the caller holds a
+        # copy, as every MongoStore caller does.
+        if task.attempt > 0 and (getattr(existing, "attempt", 0) or 0) != task.attempt:
             return False
         self._tasks[task.uuid] = task
         return True
@@ -521,6 +530,7 @@ class MemoryStore(PersistenceAPI):
                 ):
                     task.state = "running"
                     task.updated = _current_time_ms()
+                    task.attempt = (getattr(task, "attempt", 0) or 0) + 1
                     if server_id:
                         task.server_id = server_id
                     return task
@@ -587,6 +597,7 @@ class MemoryStore(PersistenceAPI):
                 ):
                     task.state = "running"
                     task.updated = now
+                    task.attempt = (getattr(task, "attempt", 0) or 0) + 1
                     if server_id:
                         task.server_id = server_id
                     return task
@@ -732,9 +743,7 @@ class MemoryStore(PersistenceAPI):
         if server_id in self._servers:
             self._servers[server_id].ping_time = ping_time
 
-    def heartbeat_server(
-        self, server_id: str, ping_time: int, free: dict | None = None
-    ) -> bool:
+    def heartbeat_server(self, server_id: str, ping_time: int, free: dict | None = None) -> bool:
         """Update ping time iff the record is live; report whether it was.
 
         Mirrors ``MongoStore.heartbeat_server``: False means the record is

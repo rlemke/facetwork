@@ -124,6 +124,10 @@ class HandlerContext:
         task_uuid: Unique task identifier.
         retry_count: Number of prior attempts (0 on first execution).
         is_retry: ``True`` when reclaiming a previously-attempted task.
+        attempt: This execution's claim number (1 on the first claim, +1 on every
+            re-claim, never reset). It is the fencing token: only the execution
+            holding the newest attempt can complete the step. 0 means the task was
+            claimed by code that predates the counter.
         step_log: Callback to emit a step log visible in the dashboard.
             Signature: ``(message: str, level: str = "info", details: dict | None = None) -> None``
         heartbeat: Callback to signal liveness and avoid timeout reaping.
@@ -138,6 +142,7 @@ class HandlerContext:
     task_uuid: str = ""
     retry_count: int = 0
     is_retry: bool = False
+    attempt: int = 0
     step_log: Callable[..., None] = field(default=lambda *a, **kw: None, repr=False)
     heartbeat: Callable[..., None] = field(default=lambda *a, **kw: None, repr=False)
     _set_stage_budget: Callable[[int, str], None] = field(default=_noop_stage_budget, repr=False)
@@ -167,6 +172,28 @@ class HandlerContext:
         its cancelled state and is not retried.
         """
         self.cancellation.raise_if_cancelled()
+
+    def attempt_path(self, base: str) -> str:
+        """``<base>/<step_id>/<attempt>``: a directory no other execution writes.
+
+        The data-side half of the attempt fence. Under at-least-once delivery
+        two executions of a step can run at once (a runner the reaper declared
+        dead keeps going), and the store only refuses the loser's terminal
+        WRITE. Files it wrote to a shared path would still overwrite the
+        winner's. Write mutable outputs here and return the path: only the
+        winning execution's result reaches the step, so downstream steps read
+        the winner's files, and a loser's are left unreferenced for cleanup.
+
+        Do not use it for content-addressed or cache paths that every attempt
+        is meant to share; those are idempotent already. Works for local paths
+        and for ``s3://`` / ``hdfs://`` URIs alike (plain string join).
+        """
+        if not self.step_id:
+            raise RuntimeError(
+                "attempt_path needs the step id, which the runner did not inject "
+                "(_step_id). Are you running inside a real handler dispatch?"
+            )
+        return f"{base.rstrip('/')}/{self.step_id}/{self.attempt}"
 
     def fetch_step(self, ref: object) -> dict:
         """Fetch a referenced step's data by StepReference.
@@ -235,9 +262,11 @@ class HandlerContext:
             return ctx
         return cls(
             facet_name=payload.get("_facet_name", ""),
+            step_id=payload.get("_step_id", ""),
             task_uuid=payload.get("_task_uuid", ""),
             retry_count=payload.get("_retry_count", 0),
             is_retry=payload.get("_is_retry", False),
+            attempt=payload.get("_attempt", 0),
             step_log=payload.get("_step_log", lambda *a, **kw: None),
             heartbeat=payload.get("_task_heartbeat", lambda *a, **kw: None),
             _set_stage_budget=payload.get("_set_stage_budget", _noop_stage_budget),
@@ -254,6 +283,7 @@ class HandlerContext:
             "_task_uuid": self.task_uuid,
             "_retry_count": self.retry_count,
             "_is_retry": self.is_retry,
+            "_attempt": self.attempt,
             "_step_log": self.step_log,
             "_task_heartbeat": self.heartbeat,
             "_set_stage_budget": self._set_stage_budget,
