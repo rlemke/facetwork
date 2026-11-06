@@ -338,7 +338,10 @@ def _build_worker_script(
         "    def __setattr__(self, name, value):",
         "        raise AttributeError('modules are read-only in script blocks')",
         "    def __repr__(self):",
-        "        return f'<module {object.__getattribute__(self, '_m').__name__!r}>'",
+        # Inner double quotes: nesting the same quote in an f-string is
+        # Python 3.12+ (PEP 701), and on 3.11 the whole prelude fails to
+        # compile, so every script block errors.
+        "        return f'<module {object.__getattribute__(self, \"_m\").__name__!r}>'",
         "def _restricted_import(name, *a, **kw):",
         "    if not _allowed(name):",
         "        raise ImportError(f'import of {name!r} is not allowed in script blocks')",

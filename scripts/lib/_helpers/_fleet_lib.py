@@ -634,8 +634,7 @@ def _container_env(name: str) -> dict:
         return {}
 
 
-_DEFAULT_PORTS = {"mongodb": 27017, "http": 80, "https": 443, "postgresql": 5432,
-                  "postgres": 5432}
+_DEFAULT_PORTS = {"mongodb": 27017, "http": 80, "https": 443, "postgresql": 5432, "postgres": 5432}
 _answer_cache: dict[tuple[str, int], tuple[float, bool]] = {}
 
 
@@ -729,8 +728,10 @@ def stale_env_containers(ip_or_map, *, log=None) -> list[tuple[str, str, str]]:
                 want = _want(var)
                 if want and found != want:
                     if answers(val, found):
-                        say(f"{c} {var} pins {found} (lookup says {want}) but it answers "
-                            f"-- left alone")
+                        say(
+                            f"{c} {var} pins {found} (lookup says {want}) but it answers "
+                            f"-- left alone"
+                        )
                         continue
                     out.append((c, var, found))
                     say(
@@ -968,14 +969,24 @@ def remove_service_containers(service: str) -> list[str]:
     otherwise delete every region router it holds, every cycle."""
     try:
         rows = subprocess.run(
-            ["docker", "ps", "-a", "--filter", f"label=com.docker.compose.service={service}",
-             "--format", '{{.ID}}\t{{.Label "com.docker.compose.project"}}'],
+            [
+                "docker",
+                "ps",
+                "-a",
+                "--filter",
+                f"label=com.docker.compose.service={service}",
+                "--format",
+                '{{.ID}}\t{{.Label "com.docker.compose.project"}}',
+            ],
             capture_output=True,
             text=True,
             timeout=30,
         ).stdout.splitlines()
-        ids = [r.split("\t", 1)[0] for r in rows
-               if r.strip() and not r.split("\t", 1)[-1].startswith("fw-gh-")]
+        ids = [
+            r.split("\t", 1)[0]
+            for r in rows
+            if r.strip() and not r.split("\t", 1)[-1].startswith("fw-gh-")
+        ]
         if ids:
             subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, timeout=60)
         return ids

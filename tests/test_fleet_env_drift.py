@@ -18,9 +18,9 @@ tests pin the second.
 """
 
 import importlib.util
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 from tests import _site
 
@@ -170,8 +170,15 @@ MONGO_HOST = _site.ip("database-host")
 
 
 def test_a_service_missing_from_the_map_is_not_judged(monkeypatch):
-    _with_env(monkeypatch, {"runner-a": {"FW_MONGODB_URL": f"mongodb://{MONGO_HOST}:27017",
-                                         "FW_S3_ENDPOINT": f"http://{INFRA}:9000"}})
+    _with_env(
+        monkeypatch,
+        {
+            "runner-a": {
+                "FW_MONGODB_URL": f"mongodb://{MONGO_HOST}:27017",
+                "FW_S3_ENDPOINT": f"http://{INFRA}:9000",
+            }
+        },
+    )
     # afl-mongodb did not resolve, so it is absent; MinIO is on the infra host.
     assert fl.stale_env_containers({"afl-minio": INFRA}) == []
 
@@ -231,9 +238,9 @@ def test_the_agent_recreates_only_on_two_agreeing_polls():
     assert "confirmed = set(stale) & prev_stale" in src
 
 
-
 # 2026-10-15: the Mongo host gained a second address and its name resolved to
 # either; every flip recreated all 24 runners on a host, killing a build.
+
 
 def test_a_pinned_address_that_still_answers_is_not_drift(monkeypatch):
     other = _site.ip("database-host-second-address")

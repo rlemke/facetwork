@@ -24,12 +24,8 @@ ESCAPES = {
     "subclass walk": "result['x'] = str(().__class__.__base__.__subclasses__())",
     "getattr by string": "result['x'] = str(getattr((), '__class__'))",
     "hasattr by string": "result['x'] = hasattr((), '__class__')",
-    "generator frame": (
-        "g = (i for i in [1])\nresult['x'] = str(g.gi_frame.f_back.f_globals)"
-    ),
-    "frame via getattr": (
-        "g = (i for i in [1])\nresult['x'] = str(getattr(g, 'gi_frame'))"
-    ),
+    "generator frame": ("g = (i for i in [1])\nresult['x'] = str(g.gi_frame.f_back.f_globals)"),
+    "frame via getattr": ("g = (i for i in [1])\nresult['x'] = str(getattr(g, 'gi_frame'))"),
     "str.format attribute path": "result['x'] = '{0.__class__}'.format(1)",
     "builtins name": "result['x'] = str(__builtins__)",
     "dunder import": "result['x'] = str(__import__('os'))",

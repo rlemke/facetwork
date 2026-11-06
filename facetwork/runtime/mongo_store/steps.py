@@ -237,9 +237,7 @@ class StepMixin(_MixinBase):
             sid = task.step_id
             if not sid or sid in out:
                 continue
-            cur = self._db.steps.find_one(
-                {"uuid": sid}, {"state": 1, "last_modified": 1}, **kwargs
-            )
+            cur = self._db.steps.find_one({"uuid": sid}, {"state": 1, "last_modified": 1}, **kwargs)
             if cur is None:
                 continue
             prior = [

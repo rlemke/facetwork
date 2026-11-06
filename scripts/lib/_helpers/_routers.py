@@ -79,9 +79,18 @@ class Docker:
 
 
 class RouterReconciler:
-    def __init__(self, db, host: str, group: str, address: str, docker: Docker,
-                 max_here: int = DEFAULT_MAX_PER_HOST, default_groups: list | None = None,
-                 log: Callable[[str], None] = print, now: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self,
+        db,
+        host: str,
+        group: str,
+        address: str,
+        docker: Docker,
+        max_here: int = DEFAULT_MAX_PER_HOST,
+        default_groups: list | None = None,
+        log: Callable[[str], None] = print,
+        now: Callable[[], float] = time.time,
+    ) -> None:
         self.db = db
         self.host = host
         self.group = group
@@ -109,12 +118,17 @@ class RouterReconciler:
             key = desired_key(s["region"], s["profile"])
             spec = specs.get(key)
             proj = slug(s["region"], s["profile"])
-            if (spec is None or s["replica"] >= int(spec.get("replicas", 1))
-                    or not self._in_group(spec)):
+            if (
+                spec is None
+                or s["replica"] >= int(spec.get("replicas", 1))
+                or not self._in_group(spec)
+            ):
                 self.docker.stop(proj)
                 slots.delete_one({"_id": s["_id"], "host": self.host})
                 summary["stopped"].append(proj)
-                self.log(f"router {key}: released ({'removed' if spec is None else 'not wanted here'})")
+                self.log(
+                    f"router {key}: released ({'removed' if spec is None else 'not wanted here'})"
+                )
                 continue
             kept.append((s, spec, proj))
 
@@ -125,16 +139,24 @@ class RouterReconciler:
             if st not in ("running", "restarting"):
                 if st is not None:
                     self.docker.stop(proj)
-                ok = self.docker.start(proj, s["region"], s["profile"], s["port"],
-                                       spec.get("heap") or DEFAULT_HEAP)
+                ok = self.docker.start(
+                    proj, s["region"], s["profile"], s["port"], spec.get("heap") or DEFAULT_HEAP
+                )
                 summary["started"].append(proj)
                 st = "running" if ok else "start-failed"
             info = self.docker.probe(s["port"]) if st == "running" else None
             # restarting = the entrypoint keeps exiting (e.g. no graph built)
-            state = "ready" if info else ("failed" if st in ("restarting", "start-failed")
-                                          else "starting")
-            upd = {"lease_expires": now + LEASE_S, "updated": now, "state": state,
-                   "url": f"http://{self.address}:{s['port']}"}
+            state = (
+                "ready"
+                if info
+                else ("failed" if st in ("restarting", "start-failed") else "starting")
+            )
+            upd = {
+                "lease_expires": now + LEASE_S,
+                "updated": now,
+                "state": state,
+                "url": f"http://{self.address}:{s['port']}",
+            }
             if info and info.get("bbox"):
                 upd["bbox"] = info["bbox"]
             if state != s.get("state"):
@@ -158,8 +180,9 @@ class RouterReconciler:
             self.log(f"router project {proj}: stray container (no slot held) -- stopped")
 
         if len(summary["held"]) < self.max_here:
-            summary["claimed"] = self._claim_one(specs, {s["region"] + "|" + s["profile"]
-                                                         for s, _, _ in kept}, now)
+            summary["claimed"] = self._claim_one(
+                specs, {s["region"] + "|" + s["profile"] for s, _, _ in kept}, now
+            )
         return summary
 
     def _free_port(self) -> int:
@@ -171,23 +194,39 @@ class RouterReconciler:
 
     def _claim_one(self, specs: dict, holding: set, now: float) -> str | None:
         slots = self.db[SLOTS]
+
         # Fewest ready replicas first, so a region with none is served before a
         # second replica of one that already works.
         def ready_count(key):
-            return slots.count_documents({"_id": {"$regex": "^" + re.escape(key) + r"\|"},
-                                          "state": "ready", "lease_expires": {"$gt": now}})
+            return slots.count_documents(
+                {
+                    "_id": {"$regex": "^" + re.escape(key) + r"\|"},
+                    "state": "ready",
+                    "lease_expires": {"$gt": now},
+                }
+            )
+
         for key in sorted(specs, key=ready_count):
             spec = specs[key]
             if key in holding or not self._in_group(spec):
                 continue  # one replica of a region per host: a second adds no fault tolerance
             for i in range(int(spec.get("replicas", 1))):
                 sid = f"{key}|{i}"
-                doc = {"region": spec["region"], "profile": spec["profile"], "replica": i,
-                       "host": self.host, "port": self._free_port(), "state": "starting",
-                       "url": None, "lease_expires": now + LEASE_S, "updated": now,
-                       "claimed": now}
+                doc = {
+                    "region": spec["region"],
+                    "profile": spec["profile"],
+                    "replica": i,
+                    "host": self.host,
+                    "port": self._free_port(),
+                    "state": "starting",
+                    "url": None,
+                    "lease_expires": now + LEASE_S,
+                    "updated": now,
+                    "claimed": now,
+                }
                 got = slots.find_one_and_update(
-                    {"_id": sid, "lease_expires": {"$lt": now}}, {"$set": doc})
+                    {"_id": sid, "lease_expires": {"$lt": now}}, {"$set": doc}
+                )
                 if got is None:
                     try:
                         slots.insert_one({"_id": sid, **doc})
@@ -196,10 +235,17 @@ class RouterReconciler:
                             raise
                         continue
                 prev = (got or {}).get("host")
-                self.log(f"router {sid}: claimed on port {doc['port']}"
-                         + (f" (lease of {prev} expired)" if prev and prev != self.host else ""))
+                self.log(
+                    f"router {sid}: claimed on port {doc['port']}"
+                    + (f" (lease of {prev} expired)" if prev and prev != self.host else "")
+                )
                 proj = slug(spec["region"], spec["profile"])
-                self.docker.start(proj, spec["region"], spec["profile"], doc["port"],
-                                  spec.get("heap") or DEFAULT_HEAP)
+                self.docker.start(
+                    proj,
+                    spec["region"],
+                    spec["profile"],
+                    doc["port"],
+                    spec.get("heap") or DEFAULT_HEAP,
+                )
                 return sid
         return None

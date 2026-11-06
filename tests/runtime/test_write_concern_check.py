@@ -88,7 +88,9 @@ def test_replica_set_at_majority_passes(w):
 
 
 def test_replica_set_reads_the_servers_implicit_default_when_the_client_sets_none():
-    db = _DB(RS3, {}, {"defaultWriteConcern": {"w": "majority"}, "defaultWriteConcernSource": "implicit"})
+    db = _DB(
+        RS3, {}, {"defaultWriteConcern": {"w": "majority"}, "defaultWriteConcernSource": "implicit"}
+    )
     r = check_write_concern(db)
     assert (r.verdict, r.source) == ("ok", "implicit")
 

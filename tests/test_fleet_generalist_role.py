@@ -224,7 +224,7 @@ def test_a_role_outside_the_host_group_has_its_containers_removed():
     """
     src = (REPO / "scripts/lib/fleet/agent").read_text()
     i = src.index("for _n in skipped:")
-    assert "_fleet_lib.remove_service_containers(_svc)" in src[i:i + 400]
+    assert "_fleet_lib.remove_service_containers(_svc)" in src[i : i + 400]
     # ...on a real apply only (after the dry-run return), before any compose up.
     assert src.index("would SKIP (host group") < i < src.index("fd, envf = tempfile.mkstemp")
     assert '"generalist": ["runner-generalist"]' in src

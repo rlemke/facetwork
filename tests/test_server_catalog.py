@@ -247,8 +247,7 @@ def test_resolve_url_leaves_resolvable_and_foreign_hosts_alone(cat, monkeypatch)
 def test_a_name_with_two_addresses_resolves_the_same_one_every_time(cat, monkeypatch):
     """2026-10-15: the database host held two addresses, lookups returned them
     in varying order, and each flip recreated every runner on a host."""
-    a, b = sorted([_site.ip("first-address"), _site.ip("second-address")],
-                  key=catalog._ip_key)
+    a, b = sorted([_site.ip("first-address"), _site.ip("second-address")], key=catalog._ip_key)
     monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: b)
     for order in ([a, b], [b, a]):
         monkeypatch.setattr(catalog.socket, "gethostbyname_ex", lambda n, o=order: (n, [], o))

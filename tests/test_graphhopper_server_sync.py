@@ -21,7 +21,7 @@ def _sync_code() -> str:
     return m.group(1)
 
 
-FAKE_BOTO = textwrap.dedent('''
+FAKE_BOTO = textwrap.dedent("""
     import json, os, shutil
     STORE = os.environ["FAKE_STORE"]
     def _objs():
@@ -34,7 +34,7 @@ FAKE_BOTO = textwrap.dedent('''
         def download_file(self, bucket, key, path):
             shutil.copy(os.path.join(STORE, key.replace("/", "_")), path)
     def client(*a, **k): return _Client()
-''')
+""")
 
 
 def _store(tmp: Path, build: str, files: dict) -> Path:
@@ -57,10 +57,16 @@ def _run(tmp: Path, store: Path, dest: Path) -> str:
     (mods / "boto3" / "__init__.py").write_text(FAKE_BOTO)
     (mods / "botocore").mkdir(exist_ok=True)
     (mods / "botocore" / "__init__.py").write_text("")
-    (mods / "botocore" / "config.py").write_text("class Config:\n    def __init__(self, **k): pass\n")
+    (mods / "botocore" / "config.py").write_text(
+        "class Config:\n    def __init__(self, **k): pass\n"
+    )
     env = {**os.environ, "PYTHONPATH": str(mods), "FAKE_STORE": str(store)}
-    r = subprocess.run([sys.executable, "-c", _sync_code(), "b", "p/", str(dest)],
-                       env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-c", _sync_code(), "b", "p/", str(dest)],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stderr
     return r.stdout
 
@@ -68,11 +74,17 @@ def _run(tmp: Path, store: Path, dest: Path) -> str:
 def test_a_rebuilt_graph_replaces_same_size_files_and_local_ch(tmp_path):
     dest = tmp_path / "graph"
     dest.mkdir()
-    _run(tmp_path, _store(tmp_path, "old", {"nodes": "N1", "properties": "P1",
-                                            "location_index": "OLD"}), dest)
+    _run(
+        tmp_path,
+        _store(tmp_path, "old", {"nodes": "N1", "properties": "P1", "location_index": "OLD"}),
+        dest,
+    )
     (dest / "ch_car").mkdir()  # prepared on load, never uploaded
-    out = _run(tmp_path, _store(tmp_path, "new", {"nodes": "N2", "properties": "P2",
-                                                  "location_index": "NEW"}), dest)
+    out = _run(
+        tmp_path,
+        _store(tmp_path, "new", {"nodes": "N2", "properties": "P2", "location_index": "NEW"}),
+        dest,
+    )
     assert (dest / "location_index").read_text() == "NEW"
     assert not (dest / "ch_car").exists()
     assert "3 fetched" in out

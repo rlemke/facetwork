@@ -1311,8 +1311,8 @@ def handle(payload: dict) -> dict:
     out = ctx.attempt_path(f"s3://afl-cache/mydomain/{payload['region']}")
     # out == "s3://afl-cache/mydomain/<region>/<step_id>/<attempt>"
     write_tiles(out)
-    ctx.raise_if_cancelled()   # a newer attempt took over? stop, don't publish
-    return {"tiles": out}      # only the winning attempt's value reaches the step
+    ctx.raise_if_cancelled()  # a newer attempt took over? stop, don't publish
+    return {"tiles": out}  # only the winning attempt's value reaches the step
 ```
 
 Content-addressed or cache paths, which every attempt fills with the same

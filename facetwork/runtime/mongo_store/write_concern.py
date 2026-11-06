@@ -127,7 +127,9 @@ def assess_write_concern(db: Any, collection: str = "tasks") -> WriteConcernRepo
             res = client.admin.command("getDefaultRWConcern")
             wc = dict(res.get("defaultWriteConcern") or {})
             source = (
-                "implicit" if res.get("defaultWriteConcernSource") == "implicit" else "server-default"
+                "implicit"
+                if res.get("defaultWriteConcernSource") == "implicit"
+                else "server-default"
             )
         except Exception as exc:  # noqa: BLE001 — old server or no privilege
             return WriteConcernReport(
@@ -167,8 +169,7 @@ def check_write_concern(db: Any, collection: str = "tasks") -> WriteConcernRepor
     """
     report = assess_write_concern(db, collection)
     fix = (
-        " Fix the connection string (e.g. w=majority) or the server default "
-        "(setDefaultRWConcern)."
+        " Fix the connection string (e.g. w=majority) or the server default (setDefaultRWConcern)."
     )
     if report.verdict == "unsafe":
         raise UnsafeWriteConcernError(

@@ -22,11 +22,11 @@ from facetwork.runtime import (
     ToolRegistry,
 )
 from facetwork.runtime.dispatcher import (
-    registration_env_missing,
     CompositeDispatcher,
     InMemoryDispatcher,
     RegistryDispatcher,
     ToolRegistryDispatcher,
+    registration_env_missing,
 )
 
 # =========================================================================

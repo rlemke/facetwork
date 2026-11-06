@@ -11,11 +11,13 @@ Runners publish live availability on each heartbeat as ``free_resources``
 (``{"memory_gb": x, "at": ping_ms}``). This module only READS those records; it
 is pure so it can be tested without Mongo.
 """
+
 from __future__ import annotations
 
 
-def host_free_memory(live_servers: list[dict], now_ms: float,
-                     max_age_ms: float) -> dict[str, float]:
+def host_free_memory(
+    live_servers: list[dict], now_ms: float, max_age_ms: float
+) -> dict[str, float]:
     """Best fresh free-memory reading per host.
 
     Every runner on a host reports (nearly) the same host number, capped by its
@@ -36,8 +38,7 @@ def host_free_memory(live_servers: list[dict], now_ms: float,
     return out
 
 
-def starved(want_gb: float, free_by_host: dict[str, float],
-            capable_hosts: set[str]) -> bool | None:
+def starved(want_gb: float, free_by_host: dict[str, float], capable_hosts: set[str]) -> bool | None:
     """Is a floor of ``want_gb`` currently unclaimable for lack of FREE memory?
 
     Only hosts whose CAPACITY fits are considered (the capacity dimension is

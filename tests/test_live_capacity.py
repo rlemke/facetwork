@@ -5,12 +5,15 @@ runners claim against min(capacity, free-now). Measured 2026-10-16: a 13 GB
 zoom build waited 111 min with zero tasks running while the capacity-only
 check reported OK.
 """
+
 from __future__ import annotations
 
 import pathlib
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts" / "lib" / "_helpers"))
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts" / "lib" / "_helpers")
+)
 from _live_capacity import host_free_memory, starved  # noqa: E402
 
 NOW = 10_000_000
@@ -27,8 +30,7 @@ def test_host_reading_is_best_runner_on_that_host():
 
 
 def test_stale_and_missing_readings_are_unknown_not_zero():
-    free = host_free_memory(
-        [_srv("a", 20.0, at=NOW - FRESH - 1), {"server_name": "b"}], NOW, FRESH)
+    free = host_free_memory([_srv("a", 20.0, at=NOW - FRESH - 1), {"server_name": "b"}], NOW, FRESH)
     assert free == {}
 
 

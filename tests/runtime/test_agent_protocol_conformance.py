@@ -109,9 +109,12 @@ def test_spec_timing_matches_the_runtime():
 
     timing = json.loads((_CONF.parent / "constants.json").read_text())["timing"]
     assert _compute_next_retry_after(1, 0) == 10000
-    assert timing["default_max_retries"] == TaskDefinition(
-        uuid="", name="", runner_id="", workflow_id="", flow_id="", step_id=""
-    ).max_retries
+    assert (
+        timing["default_max_retries"]
+        == TaskDefinition(
+            uuid="", name="", runner_id="", workflow_id="", flow_id="", step_id=""
+        ).max_retries
+    )
     from facetwork.runtime.base_runner import BaseRunner
 
     assert timing["claim_proxy_retry_ms"] == BaseRunner._PROXY_RETRY_S * 1000

@@ -37,8 +37,13 @@ class FakeDocker:
         self.starts: list[str] = []
 
     def ops(self):
-        return rt.Docker(start=self.start, state=self.state, probe=self.probe,
-                         stop=self.stop, projects=lambda: set(self.running))
+        return rt.Docker(
+            start=self.start,
+            state=self.state,
+            probe=self.probe,
+            stop=self.stop,
+            projects=lambda: set(self.running),
+        )
 
     def start(self, proj, region, profile, port, heap):
         self.running[proj] = port
@@ -72,19 +77,28 @@ def db():
 
 def _host(db, name, clock, group="heavy", max_here=2, docker=None):
     d = docker or FakeDocker()
-    r = rt.RouterReconciler(db, name, group, f"addr-{name}", d.ops(), max_here=max_here,
-                            log=lambda m: None, now=clock)
+    r = rt.RouterReconciler(
+        db, name, group, f"addr-{name}", d.ops(), max_here=max_here, log=lambda m: None, now=clock
+    )
     return r, d
 
 
 def _want(db, region, replicas=1, groups=None):
-    db[rt.DESIRED].insert_one({"_id": rt.desired_key(region, "car"), "region": region,
-                               "profile": "car", "replicas": replicas,
-                               "server_groups": groups or []})
+    db[rt.DESIRED].insert_one(
+        {
+            "_id": rt.desired_key(region, "car"),
+            "region": region,
+            "profile": "car",
+            "replicas": replicas,
+            "server_groups": groups or [],
+        }
+    )
 
 
 def test_slug_is_a_valid_compose_project_name():
-    assert rt.slug("north-america/us-major-roads", "car") == "fw-gh-north-america-us-major-roads-car"
+    assert (
+        rt.slug("north-america/us-major-roads", "car") == "fw-gh-north-america-us-major-roads-car"
+    )
 
 
 def test_one_claim_per_cycle_spreads_regions_across_hosts(db):
@@ -151,8 +165,9 @@ def test_role_level_groups_apply_when_a_region_names_none(db):
     clock = Clock()
     _want(db, "europe/a")
     d = FakeDocker()
-    light = rt.RouterReconciler(db, "L", "runner", "addr", d.ops(), default_groups=["heavy"],
-                                log=lambda m: None, now=clock)
+    light = rt.RouterReconciler(
+        db, "L", "runner", "addr", d.ops(), default_groups=["heavy"], log=lambda m: None, now=clock
+    )
     assert light.reconcile()["claimed"] is None
 
 
