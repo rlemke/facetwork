@@ -394,6 +394,11 @@
       "extras": [],
       "description": "US fatal-crash RATE by state — NHTSA FARS fatalities over FHWA VM-2 vehicle-miles travelled. Reproduces NHTSA's published 1.26 per 100M VMT for 2023. Fatal crashes only, not a dangerous-roads measure."
     },
+    "tess": {
+      "repo": "fwh_tess",
+      "extras": [],
+      "description": "Independent BLS transit re-search of TESS 2-minute light curves (MAST public S3, anonymous), scored against SPOC's single-sector TCEs and the TOI catalogue. Sectors 1-13: 682 of 707 planets SPOC detected in the same sector found again. Network only, no API key."
+    },
     "unimatch": {
       "repo": "fwh_unimatch",
       "extras": [],
