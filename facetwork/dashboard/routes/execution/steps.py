@@ -921,53 +921,31 @@ def _reset_container_resume_state(ancestor, child) -> str:
     (errored at the parent's statement-block phase)."""
     from facetwork.runtime.states import StepState
 
+    # The walk advances by ``block_id or container_id`` and so passes through
+    # andThen BLOCK steps. A block must resume at its own continue state: the
+    # block state machine has no exit from the statement one, and the changer
+    # spins on it forever (see _reset_errored_ancestors).
+    if ancestor.is_block:
+        return StepState.BLOCK_EXECUTION_CONTINUE
     if _is_mixin_sub_step(child):
         return StepState.MIXIN_BLOCKS_CONTINUE
     return StepState.STATEMENT_BLOCKS_CONTINUE
 
 
 def _reset_errored_ancestors(step, store) -> None:
-    """Reset errored ancestor blocks/containers so execution can resume."""
-    from facetwork.runtime.states import StepState
+    """Reset errored ancestor blocks/containers so execution can resume.
 
-    seen: set[str] = set()
+    Delegates to the evaluator's walk so there is ONE implementation. This
+    copy had drifted: its container walk passes through andThen BLOCK steps
+    (it advances by ``block_id or container_id``) and reset them to the
+    statement state ``STATEMENT_BLOCKS_CONTINUE``. The block state machine has
+    no transition out of that state, so the block's changer looped forever in
+    memory, re-querying its sub-blocks on every pass: on 2026-11-11 a hand
+    reset of a failed sports run put every runner in the fleet into that loop
+    (~30,000 Mongo queries/s, nothing logged) until the runners were restarted.
+    The evaluator's copy had already been fixed (it resumes blocks at
+    ``BLOCK_EXECUTION_CONTINUE``); this one never was.
+    """
+    from facetwork.runtime.evaluator import Evaluator
 
-    # Walk up block_id chain (andThen blocks)
-    current_id = step.block_id
-    while current_id and current_id not in seen:
-        seen.add(current_id)
-        ancestor = store.get_step(current_id)
-        if ancestor is None:
-            break
-        if ancestor.state == StepState.STATEMENT_ERROR:
-            ancestor.state = StepState.BLOCK_EXECUTION_CONTINUE
-            ancestor.transition.current_state = StepState.BLOCK_EXECUTION_CONTINUE
-            ancestor.transition.clear_error()
-            ancestor.transition.request_transition = False
-            ancestor.transition.changed = True
-            store.save_step(ancestor)
-        current_id = ancestor.block_id
-
-    # Walk up container_id chain (statement containers).  When the
-    # immediate descendant being restarted is a mixin sub-step, the
-    # container errored at its mixin phase (MIXIN_BLOCKS_CONTINUE) —
-    # not at its statement phase — so we resume the container there
-    # instead, otherwise it would skip waiting on the mixin entirely.
-    current_id = step.container_id
-    immediate_child = step
-    while current_id and current_id not in seen:
-        seen.add(current_id)
-        ancestor = store.get_step(current_id)
-        if ancestor is None:
-            break
-        if ancestor.state == StepState.STATEMENT_ERROR:
-            resume_state = _reset_container_resume_state(ancestor, immediate_child)
-            ancestor.state = resume_state
-            ancestor.transition.current_state = resume_state
-            ancestor.transition.clear_error()
-            ancestor.transition.request_transition = False
-            ancestor.transition.changed = True
-            store.save_step(ancestor)
-        next_id = ancestor.block_id or ancestor.container_id
-        immediate_child = ancestor
-        current_id = next_id
+    Evaluator(persistence=store)._reset_errored_ancestors(step)

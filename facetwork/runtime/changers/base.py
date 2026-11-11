@@ -47,6 +47,10 @@ class StateChanger(ABC):
     4. Repeat until step is complete or blocked
     """
 
+    # A requested transition with no next state, this many passes in a row,
+    # means the step is in a state its machine has no exit from (see process).
+    MAX_STALLED_PASSES = 10
+
     def __init__(self, step: StepDefinition, context: "ExecutionContext"):
         """Initialize state changer.
 
@@ -79,11 +83,30 @@ class StateChanger(ABC):
         )
 
         try:
+            # Passes in a row where the handler asked to move on and this
+            # changer had nowhere to send it. Re-running the same handler at
+            # the same state cannot change that, so the loop would never exit:
+            # a silent, in-memory spin that re-issues the handler's queries on
+            # every pass (2026-11-11: an andThen block reset to a STATEMENT
+            # state had every runner in the fleet at ~30,000 Mongo queries/s).
+            # Fail the step instead — loud, attributable, and recoverable.
+            stalled_passes = 0
             while True:
                 # Check if requesting state change
                 if self.step.is_requesting_state_change:
                     # Select and change to next state
                     next_state = self.select_state()
+                    if not next_state or next_state == self.step.current_state:
+                        stalled_passes += 1
+                        if stalled_passes > self.MAX_STALLED_PASSES:
+                            raise RuntimeError(
+                                f"no transition out of state {self.step.current_state!r} "
+                                f"for {self.step.object_type} step {self.step.id} "
+                                f"({self.step.facet_name or self.step.statement_name or 'block'}); "
+                                f"the step is in a state its state machine does not have"
+                            )
+                    else:
+                        stalled_passes = 0
                     if next_state and next_state != self.step.current_state:
                         logger.debug(
                             "State transition: step_id=%s from=%s to=%s",

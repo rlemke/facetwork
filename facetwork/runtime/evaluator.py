@@ -1255,11 +1255,23 @@ class Evaluator:
                 status=ExecutionStatus.ERROR,
             )
         else:
+            # The root is neither complete nor errored: the run is NOT done.
+            # This branch used to leave ``status`` at the dataclass default,
+            # COMPLETED, and the runners act on status — so a run whose root
+            # was still waiting got its runner marked completed whenever no
+            # task happened to be pending (measured 2026-11-11 after a reset of
+            # errored ancestors left the chain at its Continue states).
+            status = (
+                ExecutionStatus.TIMEOUT
+                if iteration >= self.max_iterations
+                else ExecutionStatus.PAUSED
+            )
             return ExecutionResult(
                 success=False,
                 workflow_id=wf_id,
                 error=Exception("Workflow did not complete"),
                 iterations=iteration,
+                status=status,
             )
 
     def _has_event_blocked_steps(self, context: ExecutionContext) -> bool:
