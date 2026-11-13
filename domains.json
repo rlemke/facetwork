@@ -367,6 +367,11 @@
       "extras": [],
       "description": "US energy trade + prices (EIA) -> dashboard. Ingests EIA's bulk NDJSON zips rather than the API, so it needs no API key."
     },
+    "euclid": {
+      "repo": "fwh_euclid",
+      "extras": [],
+      "description": "ESA Euclid DR1 on the sky: the public archive counts its own 888M-row catalogue per tile (anonymous TAP, nothing bulk-downloaded), rendered as HiPS layers over real sky imagery in Aladin Lite, plus a check of Euclid's photometric and spectroscopic labels on 6,715 spectroscopically confirmed quasars (Milliquas). Network only, no API key."
+    },
     "gibraltar": {
       "repo": "fwh_gibraltar",
       "extras": [],
