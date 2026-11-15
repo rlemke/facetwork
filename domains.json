@@ -402,7 +402,7 @@
     "tess": {
       "repo": "fwh_tess",
       "extras": [],
-      "description": "Independent BLS transit re-search of TESS 2-minute light curves (MAST public S3, anonymous), scored against SPOC's single-sector TCEs and the TOI catalogue. Sectors 1-13: 682 of 707 planets SPOC detected in the same sector found again. Network only, no API key."
+      "description": "Independent BLS transit re-search of TESS 2-minute light curves (MAST public S3, anonymous), scored against SPOC's single-sector TCEs and the TOI catalogue. Sectors 1-39 searched (682/707, 670/696 and 1,341/1,383 planets SPOC detected found again per year); two years stitched at SDE 18 find 22/22 planets in range at a 4.6% upside-down false-alarm rate. Stitched samples run on the fleet via tess.workflows.StitchedSample (generalist runner). Network only, no API key."
     },
     "unimatch": {
       "repo": "fwh_unimatch",
