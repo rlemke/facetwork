@@ -107,9 +107,17 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
     # so loading them all listed every ad-hoc workflow hundreds of times and
     # the page timed out (>120 s). They are added back below, ONE per workflow
     # (the newest submission), and only for workflows no seeded flow provides.
+    #
+    # ONE entry per qualified name. The same workflow is routinely seeded under
+    # several sources (cli:seed + domain:<x>, catalog versions claude:<x>:v1/v2,
+    # docker:seed + example:<x>): 270 of 385 names had copies, 612 extra rows on
+    # 2026-11-16. Keep the newest flow (current code), preferring a copy that
+    # can actually be run (has a workflow record, so a Run link).
+    best: dict[str, tuple[tuple[bool, int], dict[str, Any]]] = {}
     for flow in store.get_all_flows(exclude_path="cli:submit"):
         if not flow.compiled_ast:
             continue
+        created = int(getattr(flow, "created_at", 0) or 0)
         wf_records = store.get_workflows_by_flow(flow.uuid)
         name_to_uuid = {wr.name: wr.uuid for wr in wf_records}
         entries: list[dict] = []
@@ -125,7 +133,11 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
                 "afl_source": _build_afl_snippet(ns, wf),
                 "run_url": f"/v3/flows/{flow.uuid}/run/{wf_uuid}" if wf_uuid else "",
             }
-            ns_map.setdefault(item["ns"], []).append(item)
+            rank = (bool(wf_uuid), created)
+            if qualified not in best or rank > best[qualified][0]:
+                best[qualified] = (rank, item)
+    for _rank, item in best.values():
+        ns_map.setdefault(item["ns"], []).append(item)
 
     _add_cli_only_workflows(store, ns_map)
 

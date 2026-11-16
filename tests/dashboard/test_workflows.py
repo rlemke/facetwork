@@ -66,8 +66,13 @@ def _make_flow(uuid, name, compiled_ast):
     )
 
 
-def _seed_workflows(store, flow_id, compiled_ast):
-    """Seed WorkflowDefinition records matching the compiled_ast workflows."""
+def _seed_workflows(store, flow_id, compiled_ast, unique_per_flow=False):
+    """Seed WorkflowDefinition records matching the compiled_ast workflows.
+
+    ``unique_per_flow`` puts the flow id in each record's uuid, as real seeds
+    have; without it, seeding several flows overwrites the same records.
+    """
+    prefix = f"{flow_id}-" if unique_per_flow else ""
     from facetwork.dashboard.routes.execution.workflows import _collect_workflows_with_ns
     from facetwork.runtime.entities import WorkflowDefinition
 
@@ -79,7 +84,7 @@ def _seed_workflows(store, flow_id, compiled_ast):
         qualified = f"{ns}.{wf['name']}" if ns else wf["name"]
         store.save_workflow(
             WorkflowDefinition(
-                uuid=f"wf-{qualified}",
+                uuid=f"wf-{prefix}{qualified}",
                 name=qualified,
                 namespace_id=ns or "top",
                 facet_id=f"facet-{qualified}",
@@ -179,6 +184,38 @@ class TestWorkflowNew:
         assert "BicycleRoutes" in resp.text
         assert "HikingTrails" in resp.text
         assert "StateBoundaries" in resp.text
+
+    def test_new_page_one_entry_per_workflow_newest_seed_wins(self, client):
+        """A workflow seeded under several sources (cli:seed + domain:x, catalog
+        v1/v2 ...) is listed ONCE, from the most recently created flow."""
+        tc, store = client
+        for uuid, created in (("seed-old", 1000), ("seed-new", 5000), ("seed-mid", 3000)):
+            flow = _make_flow(uuid, "Dup", NAMESPACED_AST)
+            flow.created_at = created
+            store.save_flow(flow)
+            _seed_workflows(store, uuid, NAMESPACED_AST, unique_per_flow=True)
+
+        resp = tc.get("/v3/workflows/new")
+        assert resp.status_code == 200
+        assert resp.text.count('data-name="geo.routes.bicycleroutes"') == 1
+        assert resp.text.count('data-name="geo.boundaries.stateboundaries"') == 1
+        assert "/v3/flows/seed-new/run/" in resp.text
+        assert "/v3/flows/seed-old/run/" not in resp.text
+
+    def test_new_page_prefers_runnable_copy(self, client):
+        """A newer copy with no workflow record (no Run link) loses to a runnable one."""
+        tc, store = client
+        old = _make_flow("seed-runnable", "Dup", NAMESPACED_AST)
+        old.created_at = 1000
+        store.save_flow(old)
+        _seed_workflows(store, "seed-runnable", NAMESPACED_AST, unique_per_flow=True)
+        new = _make_flow("seed-norecord", "Dup", NAMESPACED_AST)
+        new.created_at = 9000
+        store.save_flow(new)
+
+        resp = tc.get("/v3/workflows/new")
+        assert resp.text.count('data-name="geo.routes.bicycleroutes"') == 1
+        assert "/v3/flows/seed-runnable/run/" in resp.text
 
     def _cli_submission(self, store, flow_uuid, qualified, date):
         """One `fw ffl run` submission: a cli:submit flow + its workflow record."""
