@@ -180,6 +180,22 @@ class TestWorkflowNew:
         assert "HikingTrails" in resp.text
         assert "StateBoundaries" in resp.text
 
+    def test_new_page_skips_cli_submissions(self, client):
+        """cli:submit flows (one per `fw ffl run`) are not listed.
+
+        They were ~97% of flows in production; listing them repeated every
+        ad-hoc workflow per submission and the page timed out.
+        """
+        tc, store = client
+        flow = _make_flow("flow-cli", "Submitted", NAMESPACED_AST)
+        flow.name.path = "cli:submit"
+        store.save_flow(flow)
+
+        resp = tc.get("/v3/workflows/new")
+        assert resp.status_code == 200
+        assert "BicycleRoutes" not in resp.text
+        assert "No workflows available" in resp.text
+
     def test_new_page_groups_by_namespace(self, client):
         """Workflows are grouped under per-namespace sections."""
         tc, store = client

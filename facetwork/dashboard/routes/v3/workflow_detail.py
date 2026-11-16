@@ -102,7 +102,11 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
     from ..execution.workflows import _build_afl_snippet, _collect_workflows_with_ns
 
     ns_map: dict[str, list[dict[str, Any]]] = {}
-    for flow in store.get_all_flows():
+    # Seeded/authored flows only, as on the Flows page. `fw ffl run` saves one
+    # cli:submit flow per submission (3,833 of 3,948 on 2026-11-16, each with
+    # its whole program), so including them listed every ad-hoc workflow
+    # hundreds of times and the page timed out (>120 s) before rendering any.
+    for flow in store.get_all_flows(exclude_path="cli:submit"):
         if not flow.compiled_ast:
             continue
         wf_records = store.get_workflows_by_flow(flow.uuid)

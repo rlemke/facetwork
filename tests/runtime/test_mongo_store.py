@@ -816,6 +816,21 @@ class TestNewQueryMethods:
         flows = mongo_store.get_all_flows()
         assert len(flows) == 2
 
+    def test_get_all_flows_exclude_path(self, mongo_store):
+        """exclude_path drops matching flows in the query (cli:submit is ~97% of them)."""
+        for uuid, path in (
+            ("flow-a", "/seeded"),
+            ("flow-b", "cli:submit"),
+            ("flow-c", "cli:submit"),
+        ):
+            mongo_store.save_flow(
+                FlowDefinition(uuid=uuid, name=FlowIdentity(name=uuid, path=path, uuid=uuid))
+            )
+
+        assert len(mongo_store.get_all_flows()) == 3
+        kept = mongo_store.get_all_flows(exclude_path="cli:submit")
+        assert [f.uuid for f in kept] == ["flow-a"]
+
     def test_get_all_tasks(self, mongo_store):
         """Test getting all tasks."""
         t1 = TaskDefinition(

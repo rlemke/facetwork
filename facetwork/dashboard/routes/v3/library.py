@@ -251,9 +251,9 @@ def flows_v3(request: Request, q: str = "", store=Depends(get_store)):
     """Redesigned Flows — compiled FFL programs (namespaces/facets/workflows)."""
     from ...viewfilters import flow_matches, flows_active, read_filters
 
-    flows = list(store.get_all_flows())
-    # Drop auto-generated CLI submissions (path=cli:submit); keep seeded/authored.
-    flows = [f for f in flows if getattr(f.name, "path", "") != "cli:submit"]
+    # Drop auto-generated CLI submissions (path=cli:submit) in the query; keep
+    # seeded/authored. They are ~97% of flows by count and nearly all by size.
+    flows = list(store.get_all_flows(exclude_path="cli:submit"))
     total_before = len(flows)
     if q:
         flows = [f for f in flows if q.lower() in f.name.name.lower()]

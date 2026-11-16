@@ -91,9 +91,18 @@ class WorkflowMixin(_MixinBase):
         result = self._db.flows.delete_one({"uuid": flow_id})
         return result.deleted_count > 0
 
-    def get_all_flows(self) -> Sequence[FlowDefinition]:
-        """Get all flows."""
-        docs = self._db.flows.find()
+    def get_all_flows(self, exclude_path: str | None = None) -> Sequence[FlowDefinition]:
+        """Get all flows, optionally leaving out those whose ``name.path`` is ``exclude_path``.
+
+        Filter IN THE QUERY, not after loading: ``fw ffl run`` saves one
+        ``cli:submit`` flow per submission, each carrying its whole compiled
+        program. Measured 2026-11-16: 3,833 of 3,948 flows (nearly all of
+        4.6 GB) were ``cli:submit``, and the Flows page loaded every one only
+        to discard it — over 60 s, so the page never rendered. The 115 it
+        shows total 10 MB.
+        """
+        query = {"name.path": {"$ne": exclude_path}} if exclude_path else {}
+        docs = self._db.flows.find(query)
         return [self._doc_to_flow(doc) for doc in docs]
 
     # =========================================================================
