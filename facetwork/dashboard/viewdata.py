@@ -398,6 +398,26 @@ def _enrich_runners_with_progress(
     Returns a dict mapping runner UUID to progress info.
     """
     progress: dict[str, dict] = {}
+    # Fast path: one aggregate over every listed run's step states. Progress
+    # needs only counts, and loading each run's full steps was the slow part.
+    if callable(getattr(type(store), "count_steps_by_state", None)):
+        from facetwork.runtime.states import StepState
+
+        try:
+            counts = store.count_steps_by_state([r.workflow_id for r in runners])
+        except Exception:  # noqa: BLE001 - fall through to the per-run path
+            counts = None
+        if counts is not None:
+            for r in runners:
+                by_state = counts.get(r.workflow_id, {})
+                total = sum(by_state.values())
+                completed = by_state.get(StepState.STATEMENT_COMPLETE, 0)
+                progress[r.uuid] = {
+                    "completed": completed,
+                    "total": total,
+                    "pct": int(100 * completed / total) if total > 0 else 0,
+                }
+            return progress
     for r in runners:
         try:
             steps = list(store.get_steps_by_workflow(r.workflow_id))

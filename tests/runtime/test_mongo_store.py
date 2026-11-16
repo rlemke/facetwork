@@ -2001,3 +2001,42 @@ class TestReapStuckTasks:
 
         reaped = mongo_store.reap_stuck_tasks(default_stuck_ms=1000)
         assert len(reaped) == 0
+
+
+class TestCountStepsByState:
+    """count_steps_by_state gives the same progress the per-run path computed."""
+
+    def test_counts_match_full_steps(self, mongo_store):
+        from facetwork.dashboard.helpers import compute_step_progress
+
+        states = {
+            "wf-a": ["state.statement.Complete"] * 3 + ["state.statement.Created"],
+            "wf-b": ["state.statement.Error", "state.statement.Complete"],
+        }
+        for wf, sts in states.items():
+            for st in sts:
+                mongo_store.save_step(
+                    StepDefinition(
+                        id=step_id(), workflow_id=wf, object_type="VariableAssignment", state=st
+                    )
+                )
+
+        counts = mongo_store.count_steps_by_state(["wf-a", "wf-b", "wf-none", ""])
+        assert counts == {
+            "wf-a": {"state.statement.Complete": 3, "state.statement.Created": 1},
+            "wf-b": {"state.statement.Error": 1, "state.statement.Complete": 1},
+        }
+        assert mongo_store.count_steps_by_state([]) == {}
+
+        # The dashboard's fast path must agree with the original per-run path.
+        from types import SimpleNamespace
+
+        from facetwork.dashboard.viewdata import _enrich_runners_with_progress
+
+        runners = [
+            SimpleNamespace(uuid=f"r-{w}", workflow_id=w) for w in ("wf-a", "wf-b", "wf-none")
+        ]
+        fast = _enrich_runners_with_progress(runners, mongo_store)
+        for r in runners:
+            slow = compute_step_progress(r, list(mongo_store.get_steps_by_workflow(r.workflow_id)))
+            assert fast[r.uuid] == slow

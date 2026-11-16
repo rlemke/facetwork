@@ -298,6 +298,12 @@ class BaseMixin:
         runners.create_index("uuid", unique=True, name="runner_uuid_index")
         runners.create_index("workflow_id", name="runner_workflow_id_index")
         runners.create_index("state", name="runner_state_index")
+        # Every list view sorts runs newest-first. Without this, Mongo sorted
+        # in memory and so read every run in FULL (each carries its compiled
+        # program, 3.2 GB for 2,652 runs): 4.4 s vs 0.1 s unsorted, measured
+        # 2026-11-16. Additive under a NEW name, so old images (which never
+        # create it) cannot hit an IndexKeySpecsConflict at startup.
+        runners.create_index("start_time", name="runner_start_time_index")
 
         # Tasks collection
         tasks = self._db.tasks

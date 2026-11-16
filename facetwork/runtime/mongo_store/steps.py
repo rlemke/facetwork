@@ -63,6 +63,26 @@ class StepMixin(_MixinBase):
         docs = self._db.steps.find({"workflow_id": workflow_id})
         return [self._doc_to_step(doc) for doc in docs]
 
+    def count_steps_by_state(self, workflow_ids: Sequence[str]) -> dict[str, dict[str, int]]:
+        """Step counts per state for many workflows, in ONE aggregate query.
+
+        Returns ``{workflow_id: {state: count}}``; a workflow with no steps is
+        absent. For list views that need progress, not steps: loading every
+        step of every listed run (one query + full documents per run) made the
+        dashboard's completed-runs tab take ~14 s on 94,771 steps.
+        """
+        ids = [w for w in workflow_ids if w]
+        if not ids:
+            return {}
+        out: dict[str, dict[str, int]] = {}
+        pipeline = [
+            {"$match": {"workflow_id": {"$in": ids}}},
+            {"$group": {"_id": {"w": "$workflow_id", "s": "$state"}, "n": {"$sum": 1}}},
+        ]
+        for row in self._db.steps.aggregate(pipeline):
+            out.setdefault(row["_id"]["w"], {})[row["_id"]["s"]] = row["n"]
+        return out
+
     def get_actionable_steps_by_workflow(self, workflow_id: str) -> Sequence[StepDefinition]:
         """Fetch steps that need processing — DB-level filtering.
 
