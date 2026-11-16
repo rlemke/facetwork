@@ -77,6 +77,25 @@ if [ -f "$FW_ROOT/.env.fleet" ]; then
     MONGO="$(awk -F= '!/^[[:space:]]*#/ && $1 == "FW_MONGODB_URL" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$FW_ROOT/.env.fleet" 2>/dev/null)"
 fi
 [ -z "$MONGO" ] && MONGO="${FW_MONGODB_URL:-}"
+# ⚠️ .env.fleet names the cluster by ALIAS (afl-mongodb). Containers resolve it
+# through extra_hosts, but a host shell only can where someone added an
+# /etc/hosts entry — which this repo deliberately stopped requiring. Without
+# this, a host with no entry reported "could not verify" for both Mongo checks
+# on every run while the fleet was fine (measured 2026-11-16 on the infra host).
+# Only substitute when the alias does NOT resolve here, so a host whose
+# /etc/hosts does carry it keeps using exactly what it used before.
+_mongo_host="$(printf '%s' "$MONGO" | sed -E 's#^mongodb(\+srv)?://([^@/]*@)?([^:/,?]+).*#\3#')"
+case "$_mongo_host" in
+afl-*)
+    _py="$FW_ROOT/.venv/bin/python3"; [ -x "$_py" ] || _py="python3"
+    if ! "$_py" -c 'import socket, sys; socket.gethostbyname(sys.argv[1])' "$_mongo_host" 2>/dev/null; then
+        _real="$(fw_service_host "$_mongo_host")"
+        if [ -n "$_real" ]; then
+            MONGO="$(printf '%s' "$MONGO" | sed "s#$_mongo_host#$_real#")"
+        fi
+    fi
+    ;;
+esac
 MONGO_ARGS=""
 # Exported as well as passed: the checks disagree on how they take it, and a
 # flag that is silently ignored is worse than one that is missing.

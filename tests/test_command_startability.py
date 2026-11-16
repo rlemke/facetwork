@@ -157,3 +157,26 @@ def test_shared_venv_helper_counts_as_the_fix(tmp_path):
         "import pymongo\n",
     )
     assert sa.classify(p)[1] == "venv"
+
+
+def test_fleet_bootstrap_reexec_counts_as_the_fix(tmp_path):
+    """`fw fleet router` re-execs via _fleet_bootstrap.bootstrap_and_reexec()
+    only. Not recognising it made selfcheck report the router BROKEN on a host
+    whose system python lacks pymongo, while the command itself ran fine."""
+    p = _cmd(
+        tmp_path,
+        "c",
+        "#!/usr/bin/env python3\n"
+        "try:\n"
+        "    import pymongo\n"
+        "except ModuleNotFoundError:\n"
+        "    from _fleet_bootstrap import bootstrap_and_reexec\n"
+        "    bootstrap_and_reexec()\n"
+        "    import pymongo\n",
+    )
+    assert sa.classify(p)[1] == "venv"
+
+
+def test_real_fleet_router_is_classified_venv():
+    p = REPO / "scripts" / "lib" / "fleet" / "router"
+    assert sa.classify(p)[1] == "venv"

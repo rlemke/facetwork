@@ -49,8 +49,12 @@ VENV_PY = re.compile(r"\.venv/bin/python")
 REEXEC = re.compile(r"os\.exec[vl]p?e?\(")
 # The shared fix (_helpers/venv_reexec.py) does the exec out of line, so
 # looking only for a literal os.execv here would report every command that
-# adopted it as still broken.
-ENSURE_VENV = re.compile(r"ensure_venv\(")
+# adopted it as still broken. _fleet_bootstrap.bootstrap_and_reexec() is the
+# older shared fix (it also installs the fleet deps first); `fw fleet router`
+# uses only that one, and missing it here made selfcheck report the router
+# BROKEN on a host whose system python lacks pymongo, while the command itself
+# ran fine (measured 2026-11-16 under a launchd-style PATH=/usr/bin:/bin).
+ENSURE_VENV = re.compile(r"\b(?:ensure_venv|bootstrap_and_reexec)\(")
 # A bare python invocation in shell: start of line/pipe/subshell, not $PYTHON.
 BASH_BARE_PY = re.compile(r"(?:^|[|;&(`]|\$\()\s*(?:command\s+)?python3?\b", re.M)
 # Imports inside an embedded python payload, in the two shapes shell uses: at
