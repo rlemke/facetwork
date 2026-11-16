@@ -180,21 +180,53 @@ class TestWorkflowNew:
         assert "HikingTrails" in resp.text
         assert "StateBoundaries" in resp.text
 
-    def test_new_page_skips_cli_submissions(self, client):
-        """cli:submit flows (one per `fw ffl run`) are not listed.
+    def _cli_submission(self, store, flow_uuid, qualified, date):
+        """One `fw ffl run` submission: a cli:submit flow + its workflow record."""
+        from facetwork.runtime.entities import WorkflowDefinition
 
-        They were ~97% of flows in production; listing them repeated every
-        ad-hoc workflow per submission and the page timed out.
-        """
-        tc, store = client
-        flow = _make_flow("flow-cli", "Submitted", NAMESPACED_AST)
+        flow = _make_flow(flow_uuid, "Submitted", NAMESPACED_AST)
         flow.name.path = "cli:submit"
         store.save_flow(flow)
+        store.save_workflow(
+            WorkflowDefinition(
+                uuid=f"wf-{flow_uuid}",
+                name=qualified,
+                namespace_id="cli",
+                facet_id=f"facet-{flow_uuid}",
+                flow_id=flow_uuid,
+                starting_step="",
+                version="1.0",
+                date=date,
+            )
+        )
+
+    def test_new_page_lists_newest_cli_submission_once(self, client):
+        """A workflow that exists only via `fw ffl run` appears ONCE, from its
+        newest submission — not once per submission (that timed the page out)."""
+        tc, store = client
+        for i, date in enumerate((1000, 3000, 2000)):
+            self._cli_submission(store, f"cli-{i}", "geo.Routes.BicycleRoutes", date)
 
         resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
-        assert "BicycleRoutes" not in resp.text
-        assert "No workflows available" in resp.text
+        assert resp.text.count('data-name="geo.routes.bicycleroutes"') == 1
+        assert "/v3/flows/cli-1/run/wf-cli-1" in resp.text  # date 3000 = newest
+        assert "latest CLI submission" in resp.text
+        # Only the submitted workflow is added, not the rest of that flow.
+        assert "HikingTrails" not in resp.text
+
+    def test_new_page_prefers_seeded_over_cli_submission(self, client):
+        """When a seeded flow provides the workflow, the CLI copy is not added."""
+        tc, store = client
+        store.save_flow(_make_flow("flow-seed", "Seeded", NAMESPACED_AST))
+        _seed_workflows(store, "flow-seed", NAMESPACED_AST)
+        self._cli_submission(store, "cli-x", "geo.Routes.BicycleRoutes", 9999)
+
+        resp = tc.get("/v3/workflows/new")
+        assert resp.status_code == 200
+        assert resp.text.count('data-name="geo.routes.bicycleroutes"') == 1
+        assert "cli-x" not in resp.text
+        assert "latest CLI submission" not in resp.text
 
     def test_new_page_groups_by_namespace(self, client):
         """Workflows are grouped under per-namespace sections."""

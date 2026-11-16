@@ -102,10 +102,11 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
     from ..execution.workflows import _build_afl_snippet, _collect_workflows_with_ns
 
     ns_map: dict[str, list[dict[str, Any]]] = {}
-    # Seeded/authored flows only, as on the Flows page. `fw ffl run` saves one
-    # cli:submit flow per submission (3,833 of 3,948 on 2026-11-16, each with
-    # its whole program), so including them listed every ad-hoc workflow
-    # hundreds of times and the page timed out (>120 s) before rendering any.
+    # Seeded/authored flows first. `fw ffl run` saves one cli:submit flow per
+    # submission (3,833 of 3,948 on 2026-11-16, each with its whole program),
+    # so loading them all listed every ad-hoc workflow hundreds of times and
+    # the page timed out (>120 s). They are added back below, ONE per workflow
+    # (the newest submission), and only for workflows no seeded flow provides.
     for flow in store.get_all_flows(exclude_path="cli:submit"):
         if not flow.compiled_ast:
             continue
@@ -126,6 +127,8 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
             }
             ns_map.setdefault(item["ns"], []).append(item)
 
+    _add_cli_only_workflows(store, ns_map)
+
     ns_groups: list[dict[str, Any]] = [
         {"name": ns, "workflows": sorted(wfs, key=lambda w: w["name"])}
         for ns, wfs in ns_map.items()
@@ -138,6 +141,49 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
         "v3/workflows/new.html",
         {"ns_groups": ns_groups, "total": total, "active_nav": "runs"},
     )
+
+
+def _add_cli_only_workflows(store, ns_map: dict[str, list[dict[str, Any]]]) -> None:
+    """Add the newest CLI submission of each workflow that exists ONLY that way.
+
+    A workflow run with `fw ffl run` and never seeded (e.g. a one-off study)
+    would otherwise be unreachable from New run. Loads only the chosen flows.
+    """
+    if not callable(getattr(type(store), "get_latest_workflows_for_flow_path", None)):
+        return
+    from ..execution.workflows import _build_afl_snippet, _collect_workflows_with_ns
+
+    listed = {w["qualified_name"] for wfs in ns_map.values() for w in wfs}
+    latest = {
+        name: wr
+        for name, wr in store.get_latest_workflows_for_flow_path("cli:submit").items()
+        if name not in listed
+    }
+    if not latest:
+        return
+    flows = {
+        f.uuid: f for f in store.get_flows_by_ids(sorted({w.flow_id for w in latest.values()}))
+    }
+    for qualified, wr in sorted(latest.items()):
+        flow = flows.get(wr.flow_id)
+        if flow is None or not flow.compiled_ast:
+            continue
+        entries: list[dict] = []
+        _collect_workflows_with_ns(flow.compiled_ast, "", entries)
+        for entry in entries:
+            ns, wf = entry["ns"], entry["wf"]
+            if (f"{ns}.{wf['name']}" if ns else wf["name"]) != qualified:
+                continue
+            item = {
+                "ns": ns or "system.unnamespaced",
+                "name": wf.get("name", ""),
+                "qualified_name": qualified,
+                "afl_source": _build_afl_snippet(ns, wf),
+                "run_url": f"/v3/flows/{flow.uuid}/run/{wr.uuid}",
+                "cli_submission": True,
+            }
+            ns_map.setdefault(item["ns"], []).append(item)
+            break
 
 
 def _short_state(state: str) -> str:

@@ -91,6 +91,31 @@ class WorkflowMixin(_MixinBase):
         result = self._db.flows.delete_one({"uuid": flow_id})
         return result.deleted_count > 0
 
+    def get_latest_workflows_for_flow_path(self, path: str) -> dict[str, WorkflowDefinition]:
+        """Newest workflow record per qualified name among flows saved under ``path``.
+
+        For ``cli:submit``: ``fw ffl run`` saves one flow per submission, so a
+        workflow submitted 300 times has 300 records. Reads only the small
+        workflow docs (never a flow's compiled program); "newest" is the
+        record's ``date``, the submission time.
+        """
+        flow_ids = [d["uuid"] for d in self._db.flows.find({"name.path": path}, {"uuid": 1})]
+        if not flow_ids:
+            return {}
+        newest: dict[str, dict] = {}
+        for doc in self._db.workflows.find({"flow_id": {"$in": flow_ids}}):
+            name = doc.get("name") or ""
+            if name and int(doc.get("date") or 0) >= int(newest.get(name, {}).get("date") or 0):
+                newest[name] = doc
+        return {name: self._doc_to_workflow(doc) for name, doc in newest.items()}
+
+    def get_flows_by_ids(self, flow_ids: Sequence[str]) -> Sequence[FlowDefinition]:
+        """Fetch several flows in one query (missing ids are skipped)."""
+        ids = [f for f in flow_ids if f]
+        if not ids:
+            return []
+        return [self._doc_to_flow(doc) for doc in self._db.flows.find({"uuid": {"$in": ids}})]
+
     def get_all_flows(self, exclude_path: str | None = None) -> Sequence[FlowDefinition]:
         """Get all flows, optionally leaving out those whose ``name.path`` is ``exclude_path``.
 

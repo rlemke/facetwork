@@ -40,7 +40,7 @@
     {% for w in group.workflows %}
     <div class="wf" data-row data-name="{{ w.qualified_name|lower }}">
       <div class="wf-top">
-        <b>{{ w.name }}</b><span class="q">{{ w.qualified_name }}</span>
+        <b>{{ w.name }}</b><span class="q">{{ w.qualified_name }}</span>{% if w.cli_submission %}<span class="q" title="Not seeded: the newest fw ffl run submission of this workflow">· latest CLI submission</span>{% endif %}
         <span class="acts">
           <button class="wf-src" type="button" onclick="this.closest('.wf').classList.toggle('open')">FFL</button>
           {% if w.run_url %}<a class="btn primary" href="{{ w.run_url }}"><svg viewBox="0 0 24 24"><path d="M5 4l14 8-14 8z"/></svg> Run</a>
