@@ -65,7 +65,7 @@ def workflow_list_v3(
     )
     from ...viewfilters import read_filters, runner_matches, workflows_active
 
-    all_runners = store.get_all_runners(limit=1000)
+    all_runners = store.get_all_runners(limit=1000, include_ast=False)
     # Narrow the universe by the persisted global filters, then tab on top.
     gf = read_filters(request)
     all_runners = [r for r in all_runners if runner_matches(r, gf)]

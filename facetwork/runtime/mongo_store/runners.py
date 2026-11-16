@@ -46,9 +46,20 @@ class RunnerMixin(_MixinBase):
         """Update runner state."""
         self._db.runners.update_one({"uuid": runner_id}, {"$set": {"state": state}})
 
-    def get_all_runners(self, limit: int = 100) -> Sequence[RunnerDefinition]:
-        """Get all runners, most recent first."""
-        docs = self._db.runners.find().sort("start_time", -1).limit(limit)
+    def get_all_runners(
+        self, limit: int = 100, include_ast: bool = True
+    ) -> Sequence[RunnerDefinition]:
+        """Get all runners, most recent first.
+
+        ``include_ast=False`` leaves out ``compiled_ast`` / ``workflow_ast``
+        (the returned runners carry None there). Pass it from any LIST view:
+        a run document holds its whole compiled program, measured 2026-11-16
+        at ~1.2 MB each / 3.2 GB for 2,652 runs, so loading them in full took
+        93 s and the dashboard Runs page never rendered. The list never reads
+        either field.
+        """
+        projection = None if include_ast else {"compiled_ast": 0, "workflow_ast": 0}
+        docs = self._db.runners.find({}, projection).sort("start_time", -1).limit(limit)
         return [self._doc_to_runner(doc) for doc in docs]
 
     def delete_runner(self, runner_id: str) -> dict:

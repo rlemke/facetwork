@@ -766,6 +766,40 @@ class TestNewQueryMethods:
         runners = mongo_store.get_all_runners(limit=3)
         assert len(runners) == 3
 
+    def test_get_all_runners_without_ast(self, mongo_store):
+        """include_ast=False drops the compiled program but keeps the list fields.
+
+        A run document carries its whole compiled program (~1.2 MB each in
+        production); loading 2,652 of them in full stalled the Runs page.
+        """
+        workflow = WorkflowDefinition(
+            uuid="wf-1",
+            name="Test",
+            namespace_id="ns-1",
+            facet_id="f-1",
+            flow_id="flow-1",
+            starting_step="s-1",
+            version="1.0",
+        )
+        r = RunnerDefinition(
+            uuid="r-ast",
+            workflow_id="wf-1",
+            workflow=workflow,
+            state=RunnerState.RUNNING,
+            start_time=1000,
+            compiled_ast={"declarations": [{"type": "Namespace"}]},
+            workflow_ast={"type": "WorkflowDecl"},
+        )
+        mongo_store.save_runner(r)
+
+        (full,) = mongo_store.get_all_runners()
+        assert full.compiled_ast and full.workflow_ast
+
+        (lite,) = mongo_store.get_all_runners(include_ast=False)
+        assert lite.compiled_ast is None and lite.workflow_ast is None
+        assert (lite.uuid, lite.state, lite.start_time) == ("r-ast", RunnerState.RUNNING, 1000)
+        assert lite.workflow.name == "Test"
+
     def test_get_all_flows(self, mongo_store):
         """Test getting all flows."""
         f1 = FlowDefinition(
