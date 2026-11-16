@@ -2664,3 +2664,72 @@ class TestEnvironmentDecls:
         }
         """)
         assert ast.namespaces[0].event_facets[0].environment == "geo.PyGeo"
+
+
+class TestKeywordPrefixedIdentifiers:
+    """A name that merely STARTS with a keyword-like word is an identifier.
+
+    BOOLEAN / NULL / CATCH_KW / TYPE_BUILTIN carry lexer priority 2, and as
+    plain strings they also won on a prefix: `false_step` lexed as
+    `false` + `_step`, `Interval` as the type `Int` + `erval`. Found as
+    "identifiers starting with false are rejected" in a TESS workflow.
+    """
+
+    @pytest.mark.parametrize(
+        "name", ["false_alarms", "falsey", "nullcheck", "null_count", "catch_up", "trueish"]
+    )
+    def test_step_named_with_keyword_prefix(self, parser, name):
+        ast = parser.parse(
+            "namespace t {\n"
+            "    facet G(x: Long) => (out: Long)\n"
+            "    workflow W(n: Long) => (out: Long) andThen {\n"
+            f"        {name} = G(x = $.n)\n"
+            f"        yield W(out = {name}.out)\n"
+            "    }\n"
+            "}\n"
+        )
+        steps = ast.namespaces[0].workflows[0].body.block.steps
+        assert [s.name for s in steps] == [name]
+
+    @pytest.mark.parametrize("name", ["Interval", "Longitude", "Stringent", "JsonBlob", "Doubled"])
+    def test_schema_named_with_builtin_type_prefix(self, parser, name):
+        ast = parser.parse(
+            "namespace t {\n"
+            f"    schema {name} {{ v: Long }}\n"
+            f"    facet G(x: {name}) => (out: Long)\n"
+            "}\n"
+        )
+        ns = ast.namespaces[0]
+        assert ns.schemas[0].name == name
+        assert ns.facets[0].sig.params[0].type.name == name
+
+    def test_exact_keywords_still_literals_and_types(self, parser):
+        ast = parser.parse(
+            "namespace t {\n"
+            "    facet G(b: Boolean, s: String, n: Long) => (out: Long)\n"
+            "    workflow W(n: Long) => (out: Long) andThen {\n"
+            "        g = G(b = false, s = null, n = $.n)\n"
+            "        h = G(b = true, s = null, n = $.n)\n"
+            "        yield W(out = g.out)\n"
+            "    }\n"
+            "}\n"
+        )
+        g, h = ast.namespaces[0].workflows[0].body.block.steps
+        assert [a.value.value for a in g.call.args[:2]] == [False, None]
+        assert h.call.args[0].value.value is True
+        types = [p.type.name for p in ast.namespaces[0].facets[0].sig.params]
+        assert types == ["Boolean", "String", "Long"]
+
+    def test_exact_keyword_as_step_name_still_errors_with_location(self, parser):
+        with pytest.raises(ParseError) as exc_info:
+            parser.parse(
+                "namespace t {\n"
+                "    facet G(x: Long) => (out: Long)\n"
+                "    workflow W(n: Long) => (out: Long) andThen {\n"
+                "        false = G(x = $.n)\n"
+                "        yield W(out = 1)\n"
+                "    }\n"
+                "}\n"
+            )
+        assert exc_info.value.line == 4
+        assert exc_info.value.column == 9

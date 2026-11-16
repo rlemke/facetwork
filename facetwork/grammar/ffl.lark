@@ -227,10 +227,15 @@ _stmt_end: (_NL+ | ";" _NL* | )
 
 // Terminals - order matters for priority
 // Keywords and literals must come before IDENT
-CATCH_KW.2: "catch"
-BOOLEAN.2: "true" | "false"
-NULL.2: "null"
-TYPE_BUILTIN.2: "String" | "Long" | "Int" | "Double" | "Boolean" | "Json"
+// Keyword-like terminals carry priority 2 so they beat IDENT on an exact
+// word, but as plain strings they ALSO won on a mere prefix: `false_step` lexed
+// as BOOLEAN + IDENT, `Interval` as TYPE_BUILTIN "Int" + "erval". The lookahead
+// makes each match only as a whole word, so any identifier that merely starts
+// with one (false_alarms, nullcheck, catch_up, Longitude, Stringent) is IDENT.
+CATCH_KW.2: /catch(?![A-Za-z0-9_])/
+BOOLEAN.2: /(?:true|false)(?![A-Za-z0-9_])/
+NULL.2: /null(?![A-Za-z0-9_])/
+TYPE_BUILTIN.2: /(?:String|Long|Int|Double|Boolean|Json)(?![A-Za-z0-9_])/
 
 STRING: "\"" _STRING_INNER* "\""
 _STRING_INNER: /[^"\\]/ | _ESCAPE
