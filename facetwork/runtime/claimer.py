@@ -20,6 +20,11 @@ both by owning the claim for the whole host:
   subtracted from what later claims offer, until the task finishes or the hold
   expires. A claim checks free memory but reserves nothing, so without this
   several big tasks fit into the same gap.
+* It books CPUs: each claim offers a runner's CPU capacity minus the
+  ``requires.cpus`` of every task running on this host (read from the store,
+  cached for a moment, and raised at once by each CPU task it claims). Capacity
+  alone is the same however busy the host is: measured 2026-11-14, a search
+  asking for 8 CPUs ran 10 chunks at once on a 12-CPU host.
 
 A runner finds the claimer through ``FW_CLAIM_PROXY_URL``; without it, or when
 the claimer is unreachable, the runner claims directly as before, so a missing
@@ -167,6 +172,10 @@ class Claimer:
         self._last_reclaim_scan = -1e9
         self._reserved: dict[str, tuple[float, float]] = {}  # uuid -> (gb, at)
         self._last_reserve_check = 0.0
+        self._cpu_held_ttl_s = 2.0
+        self._cpu_held = 0.0
+        self._cpu_held_at = -1e9
+        self._cpu_held_warned = False
         self._stopping = threading.Event()
         self._threads: list[threading.Thread] = []
         self.stats = {"queries": 0, "claimed": 0, "handed": 0, "released": 0, "requests": 0}
@@ -333,6 +342,11 @@ class Claimer:
         if not waiters:
             return False
         reserved = self.reserved_gb()
+        held_cpus = (
+            self.cpus_held()
+            if any(isinstance(w.resources.get("cpus"), (int, float)) for w in waiters)
+            else None
+        )
         entries: list[tuple] = []
         seen: set[str] = set()
         scripts: list[tuple] = []
@@ -340,6 +354,8 @@ class Claimer:
             offered = dict(w.resources)
             if isinstance(offered.get("memory_gb"), (int, float)):
                 offered["memory_gb"] = max(0.0, offered["memory_gb"] - reserved)
+            if held_cpus is not None and isinstance(offered.get("cpus"), (int, float)):
+                offered["cpus"] = max(0.0, round(offered["cpus"] - held_cpus, 2))
             w.offered = offered
             caps = {"known_features": w.known_features, "resources": offered}
             for names, tl in w.claims:
@@ -394,6 +410,10 @@ class Claimer:
         mem = (getattr(task, "requires", None) or {}).get("memory_gb")
         if isinstance(mem, (int, float)) and mem > 0:
             self._reserved[task.uuid] = (float(mem), self._clock())
+        cpus = (getattr(task, "requires", None) or {}).get("cpus")
+        if isinstance(cpus, (int, float)) and cpus > 0:
+            # Held from now, before the store shows it running on a runner here.
+            self._cpu_held += float(cpus)
         with self._cond:
             owner.task = task
         self._finish_cycle()
@@ -423,6 +443,34 @@ class Claimer:
                     self._reserved.pop(uid, None)
         return round(sum(gb for gb, _ in self._reserved.values()), 2)
 
+    def cpus_held(self) -> float | None:
+        """CPUs held by tasks running on this host, or None if unknown.
+
+        None leaves offers at capacity (the behaviour before CPUs were booked):
+        when ``FW_CLAIM_LIVE_CPUS=0`` or the store cannot answer.
+        """
+        if os.environ.get("FW_CLAIM_LIVE_CPUS", "1") == "0":
+            return None
+        fn = getattr(self._store, "cpus_held_on_host", None)
+        if fn is None:
+            return None
+        now = self._clock()
+        if now - self._cpu_held_at < self._cpu_held_ttl_s:
+            return self._cpu_held
+        try:
+            held = float(fn(self._server_name))
+        except Exception as exc:  # noqa: BLE001 — a claim cycle must not die on this
+            if not self._cpu_held_warned:
+                self._cpu_held_warned = True
+                logger.warning(
+                    "claimer: cannot read CPUs held on %s (%s); offering CPU capacity",
+                    self._server_name,
+                    exc,
+                )
+            return None
+        self._cpu_held, self._cpu_held_at = held, now
+        return held
+
     def status(self) -> dict:
         with self._cond:
             waiting = [
@@ -435,6 +483,7 @@ class Claimer:
             "idle_cycles": self._idle,
             "reserved_gb": self.reserved_gb(),
             "reservations": len(self._reserved),
+            "cpus_held": self.cpus_held(),
             **self.stats,
         }
 

@@ -154,6 +154,20 @@ def claim_resources() -> dict:
     return res
 
 
+def offer_free_cpus(res: dict, held: float | None) -> dict:
+    """``res`` with ``cpus`` cut to capacity minus what running tasks hold.
+
+    ``held`` is the sum of ``requires.cpus`` over the tasks running on this
+    host (``cpus_held_on_host``); ``None`` means it could not be read, and the
+    offer stays at capacity, as before CPUs were booked.
+    """
+    if held is None or not isinstance(res.get("cpus"), (int, float)):
+        return res
+    out = dict(res)
+    out["cpus"] = max(0.0, round(float(res["cpus"]) - float(held), 2))
+    return out
+
+
 def live_free() -> dict | None:
     """Live availability to publish on the heartbeat (``free_resources``).
 
@@ -385,6 +399,14 @@ class BaseRunner:
     _proxy_down_until: float = 0.0
     _proxy_waited: bool = False  # the last proxied claim long-polled and came back empty
     _proxy_hits: int = 0  # proxied claims this cycle; later slots ask without waiting
+
+    # CPU booking: CPUs held by tasks running on this host, read from the store
+    # and cached briefly; a claim made here adds to the cached figure at once,
+    # so two claims inside the cache window cannot share the same free CPUs.
+    _CPU_HELD_TTL_S: float = 2.0
+    _cpu_held: float = 0.0
+    _cpu_held_at: float = -1e9
+    _cpu_held_warned: bool = False
 
     def _known_ast_features(self) -> list[str]:
         """AST features this runner can execute faithfully.
@@ -662,7 +684,7 @@ class BaseRunner:
         lease-reclaim half paced by ``_RECLAIM_SCAN_MS``. The scan is marked done
         only when a reclaim-enabled claim came back empty, i.e. it really ran.
         """
-        if self._CLAIM_PROXY_URL and time.monotonic() >= self._proxy_down_until:
+        if self._proxy_active():
             try:
                 return self._claim_via_proxy(
                     claims,
@@ -678,6 +700,9 @@ class BaseRunner:
                     exc,
                     self._PROXY_RETRY_S,
                 )
+                # The offer was made for the claimer, which books CPUs itself;
+                # claiming directly, this runner must book them.
+                resources = offer_free_cpus(resources, self._cpus_held())
         now = _current_time_ms()
         reclaim = now - self._last_reclaim_scan_ms >= self._RECLAIM_SCAN_MS
         task = self._persistence.claim_any(
@@ -690,7 +715,46 @@ class BaseRunner:
         )
         if task is None and reclaim:
             self._last_reclaim_scan_ms = now
+        self._book_cpus(task)
         return task
+
+    def _proxy_active(self) -> bool:
+        """True when claims go through the host's claimer (see _claim_next)."""
+        return bool(self._CLAIM_PROXY_URL) and time.monotonic() >= self._proxy_down_until
+
+    def _cpus_held(self) -> float | None:
+        """CPUs held by tasks running on this host, or None if unknown.
+
+        None (capacity-only, the old behaviour) when booking is switched off
+        (``FW_CLAIM_LIVE_CPUS=0``), the store cannot answer, or the runner has
+        no server name to find its host by.
+        """
+        if os.environ.get("FW_CLAIM_LIVE_CPUS", "1") == "0":
+            return None
+        fn = getattr(self._persistence, "cpus_held_on_host", None)
+        name = getattr(getattr(self, "_config", None), "server_name", "") or ""
+        if fn is None or not name:
+            return None
+        now = time.monotonic()
+        if now - self._cpu_held_at < self._CPU_HELD_TTL_S:
+            return self._cpu_held
+        try:
+            held = float(fn(name))
+        except Exception as exc:  # noqa: BLE001 — a claim must not die on this
+            if not self._cpu_held_warned:
+                self._cpu_held_warned = True
+                logger.warning(
+                    "Cannot read CPUs held on %s (%s); claiming against CPU capacity", name, exc
+                )
+            return None
+        self._cpu_held, self._cpu_held_at = held, now
+        return held
+
+    def _book_cpus(self, task: Any) -> None:
+        """Count a just-claimed task's CPU floor before the next claim reads it."""
+        cpus = (getattr(task, "requires", None) or {}).get("cpus") if task is not None else None
+        if isinstance(cpus, (int, float)) and cpus > 0:
+            self._cpu_held += float(cpus)
 
     def _claim_via_proxy(
         self,
@@ -815,8 +879,14 @@ class BaseRunner:
         return measured_resources()
 
     def _claim_resources(self) -> dict:
-        """Capacity offered when CLAIMING: memory is what is free now (claim_resources)."""
-        return claim_resources()
+        """Capacity offered when CLAIMING: memory is what is free now
+        (claim_resources), CPUs are capacity minus what running tasks on this
+        host hold. Through the claimer the CPUs stay at capacity: the claimer
+        books them for the whole host (claimer.Claimer.cycle)."""
+        res = claim_resources()
+        if self._proxy_active():
+            return res
+        return offer_free_cpus(res, self._cpus_held())
 
     def _heartbeat_loop(self) -> None:
         """Periodically update the server's ping_time, self-healing the record.

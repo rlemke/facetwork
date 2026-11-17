@@ -319,6 +319,33 @@ flowchart TD
 The ledger is per host. Hosts don't share reservations, and they don't need
 to: each host's free memory is its own.
 
+### 6.5 CPU booking
+
+A `requires.cpus` floor used to be checked against the host's CPU count only,
+and that count is the same however much the host is already running. Measured
+2026-11-14: `tess.stitch.SearchChunk` asked for 8 CPUs and ran 3 search
+processes, and a 12-CPU host held up to 10 chunks at once (30 processes). Its
+chunks took a median of 55,112 s, against 6,740 s on a host that was not as
+overloaded.
+
+CPUs are now booked from the store. `cpus_held_on_host(server_name)` sums
+`requires.cpus` over the tasks `running` on every server record with that
+host's `server_name` (its runners and its claimer), and a claim offers
+capacity minus that sum:
+
+- **Through the claimer**, the runner sends its CPU capacity and the claimer
+  subtracts what the host holds. It reads the sum at most every 2 s and adds
+  each CPU task it claims at once, so two claims in the same window cannot
+  share the same CPUs.
+- **Claiming directly** (no claimer, or it is unreachable), the runner does the
+  same itself.
+
+Unlike memory, nothing is reserved past the task's life: the sum is read from
+running tasks, so a CPU frees the moment its task stops running. A task with no
+`cpus` floor holds nothing and is never held back. If the sum cannot be read,
+the offer stays at capacity (the old behaviour) with one warning;
+`FW_CLAIM_LIVE_CPUS=0` switches booking off.
+
 **Measured 2026-10-21.** The test was three script tasks, each declaring
 `Requires(memory_gb = 30)` and allocating nothing, so live free memory never
 dropped. One host had 41.8 GB free and seven idle runners waiting on its

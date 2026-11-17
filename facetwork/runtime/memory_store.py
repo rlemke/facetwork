@@ -460,6 +460,18 @@ class MemoryStore(PersistenceAPI):
             if t.state == state and (not task_list or t.task_list_name == task_list)
         ]
 
+    def cpus_held_on_host(self, server_name: str) -> float:
+        """CPUs that tasks RUNNING on one host asked for (see MongoStore)."""
+        if not server_name:
+            return 0.0
+        ids = {s.uuid for s in self._servers.values() if s.server_name == server_name}
+        total = 0.0
+        for t in self._tasks.values():
+            cpus = (t.requires or {}).get("cpus")
+            if t.state == "running" and t.server_id in ids and isinstance(cpus, (int, float)):
+                total += max(0.0, float(cpus))
+        return total
+
     def duplicate_completion_count(self) -> int:
         """Count step_ids that have more than one ``completed`` task."""
         from collections import Counter

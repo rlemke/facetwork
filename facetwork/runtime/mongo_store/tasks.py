@@ -465,6 +465,38 @@ class TaskMixin(_MixinBase):
         docs = self._db.tasks.find(query).sort("created", -1)
         return [self._doc_to_task(doc) for doc in docs]
 
+    def cpus_held_on_host(self, server_name: str) -> float:
+        """CPUs that tasks RUNNING on one host asked for (``requires.cpus``).
+
+        A host is every server record with this ``server_name`` (its runners
+        and its claimer). The resource floor is checked against capacity, and
+        capacity is the same however many tasks a host already runs: measured
+        2026-11-14, a stitched search asking for 8 CPUs ran 10 chunks at once on
+        a 12-CPU host. Claims subtract this from capacity to offer only the CPUs
+        still free. Tasks with no ``cpus`` floor hold nothing.
+        """
+        if not server_name:
+            return 0.0
+        ids = [
+            d["uuid"]
+            for d in self._db.servers.find({"server_name": server_name}, {"uuid": 1, "_id": 0})
+            if d.get("uuid")
+        ]
+        if not ids:
+            return 0.0
+        pipeline: list[dict[str, Any]] = [
+            {
+                "$match": {
+                    "state": "running",
+                    "server_id": {"$in": ids},
+                    "requires.cpus": {"$gt": 0},
+                }
+            },
+            {"$group": {"_id": None, "n": {"$sum": "$requires.cpus"}}},
+        ]
+        rows = list(self._db.tasks.aggregate(pipeline))
+        return float(rows[0]["n"]) if rows else 0.0
+
     def duplicate_completion_count(self) -> int:
         """Count step_ids that have more than one ``completed`` task document.
 

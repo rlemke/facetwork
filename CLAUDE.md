@@ -781,6 +781,17 @@ capable host having it FREE is reported **STARVED** (exit 1). Judged only when
 every capable host reports a fresh reading — an old-image host may have the
 memory free, so it yields no verdict rather than a false alarm.
 
+⚠️ **CPUs are booked.** A `cpus` floor is offered capacity MINUS the
+`requires.cpus` of every task running on that host (`cpus_held_on_host`, by
+`server_name`; the claimer does it for the whole host, a runner claiming
+directly does it itself). Before this, capacity alone was checked and a 12-CPU
+host ran ten 8-CPU stitched searches at once (measured 2026-11-14, chunks 8x
+slower than on an unloaded host). So a `cpus` floor now means "this many CPUs
+of mine": declare what the step actually uses (`Requires(cpus = "$.workers")`),
+not a large number to keep it off small hosts, or the host runs fewer copies
+than it could. `FW_CLAIM_LIVE_CPUS=0` = capacity-only. See
+[task-flow.md §6.5](docs/reference/task-flow.md).
+
 ⚠️ Advertised capacity is **static per process** and does not account for what a
 runner is already doing, so it is a floor against catastrophic placement, not a
 scheduler. Real numbers: BuildAdminSet's own adaptive batcher measured
