@@ -25,6 +25,9 @@ both by owning the claim for the whole host:
   cached for a moment, and raised at once by each CPU task it claims). Capacity
   alone is the same however busy the host is: measured 2026-11-14, a search
   asking for 8 CPUs ran 10 chunks at once on a 12-CPU host.
+* It applies fast-host placement: a task marked ``Placement(prefer = "fast")``
+  is left to faster hosts when they would finish it sooner than this host
+  (facetwork/runtime/placement.py).
 
 A runner finds the claimer through ``FW_CLAIM_PROXY_URL``; without it, or when
 the claimer is unreachable, the runner claims directly as before, so a missing
@@ -58,6 +61,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from .entities import ServerDefinition, ServerState, TaskState
+from .placement import PlacementGate
 
 
 def _current_time_ms() -> int:
@@ -176,6 +180,7 @@ class Claimer:
         self._cpu_held = 0.0
         self._cpu_held_at = -1e9
         self._cpu_held_warned = False
+        self._placement = PlacementGate(store, self._server_name, clock=clock)
         self._stopping = threading.Event()
         self._threads: list[threading.Thread] = []
         self.stats = {"queries": 0, "claimed": 0, "handed": 0, "released": 0, "requests": 0}
@@ -347,6 +352,7 @@ class Claimer:
             if any(isinstance(w.resources.get("cpus"), (int, float)) for w in waiters)
             else None
         )
+        declined = self._placement.declined()
         entries: list[tuple] = []
         seen: set[str] = set()
         scripts: list[tuple] = []
@@ -359,6 +365,10 @@ class Claimer:
             w.offered = offered
             caps = {"known_features": w.known_features, "resources": offered}
             for names, tl in w.claims:
+                if declined:
+                    names = [n for n in names if n not in declined]
+                    if not names:
+                        continue
                 key = json.dumps([sorted(names), tl, caps], sort_keys=True, default=str)
                 if key not in seen:
                     seen.add(key)
@@ -483,6 +493,7 @@ class Claimer:
             "idle_cycles": self._idle,
             "reserved_gb": self.reserved_gb(),
             "reservations": len(self._reserved),
+            "placement_declined": sorted(self._placement.declined()),
             "cpus_held": self.cpus_held(),
             **self.stats,
         }

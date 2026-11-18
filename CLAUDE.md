@@ -792,6 +792,19 @@ not a large number to keep it off small hosts, or the host runs fewer copies
 than it could. `FW_CLAIM_LIVE_CPUS=0` = capacity-only. See
 [task-flow.md §6.5](docs/reference/task-flow.md).
 
+⚠️ **Slow hosts can hold the last tasks: `with Placement(prefer = "fast")`.**
+A slower host claims such a task only if it would finish it before the hosts
+faster than it could get to it (the HEFT earliest-finish test). It uses
+handler times measured per host and stored in `task_timings`, and
+`cpus // requires.cpus` slots per host. So a long queue uses every host, and
+near the end of a run only the fast ones take work. Measured 2026-11-17: one
+star-pass of the stitched TESS search took 635 s on the fastest host and
+1,772-4,481 s on the other four. With chunks spread evenly, the run ended
+waiting about 7.5 h per chunk on the slowest host. A host with no timing yet
+claims as before, and the fastest host never declines.
+`FW_CLAIM_PLACEMENT=0` = off. See
+[task-flow.md §6.6](docs/reference/task-flow.md).
+
 ⚠️ Advertised capacity is **static per process** and does not account for what a
 runner is already doing, so it is a floor against catastrophic placement, not a
 scheduler. Real numbers: BuildAdminSet's own adaptive batcher measured

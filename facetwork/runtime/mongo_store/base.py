@@ -305,6 +305,12 @@ class BaseMixin:
         # create it) cannot hit an IndexKeySpecsConflict at startup.
         runners.create_index("start_time", name="runner_start_time_index")
 
+        # Handler run time per host for fast-host placement (placement.py). A
+        # NEW collection, so no older image can disagree about its indexes.
+        self._db.task_timings.create_index(
+            [("facet", 1), ("cpus", 1), ("at", -1)], name="task_timing_facet_index"
+        )
+
         # Tasks collection
         tasks = self._db.tasks
         tasks.create_index("uuid", unique=True, name="task_uuid_index")

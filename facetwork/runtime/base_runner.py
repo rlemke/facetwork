@@ -56,6 +56,7 @@ from .entities import (
     TaskState,
 )
 from .evaluator import ExecutionStatus
+from .placement import PlacementGate
 from .types import generate_id
 
 if TYPE_CHECKING:
@@ -407,6 +408,7 @@ class BaseRunner:
     _cpu_held: float = 0.0
     _cpu_held_at: float = -1e9
     _cpu_held_warned: bool = False
+    _placement: PlacementGate | None = None
 
     def _known_ast_features(self) -> list[str]:
         """AST features this runner can execute faithfully.
@@ -703,6 +705,9 @@ class BaseRunner:
                 # The offer was made for the claimer, which books CPUs itself;
                 # claiming directly, this runner must book them.
                 resources = offer_free_cpus(resources, self._cpus_held())
+        # Claiming directly, this runner applies the fast-host rule itself (the
+        # claimer does it for the whole host).
+        claims = self._placement_gate().strip(claims)
         now = _current_time_ms()
         reclaim = now - self._last_reclaim_scan_ms >= self._RECLAIM_SCAN_MS
         task = self._persistence.claim_any(
@@ -717,6 +722,13 @@ class BaseRunner:
             self._last_reclaim_scan_ms = now
         self._book_cpus(task)
         return task
+
+    def _placement_gate(self) -> PlacementGate:
+        """The fast-host placement gate for this host (see placement.py)."""
+        if self._placement is None:
+            name = getattr(getattr(self, "_config", None), "server_name", "") or ""
+            self._placement = PlacementGate(self._persistence, name)
+        return self._placement
 
     def _proxy_active(self) -> bool:
         """True when claims go through the host's claimer (see _claim_next)."""

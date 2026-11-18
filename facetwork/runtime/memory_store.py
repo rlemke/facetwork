@@ -62,6 +62,8 @@ class MemoryStore(PersistenceAPI):
         self._tasks: dict[str, TaskDefinition] = {}
         self._logs: list[LogDefinition] = []
         self._servers: dict[str, ServerDefinition] = {}
+        # (facet, server_name, cpus, seconds, at) per placement task run.
+        self._task_timings: list[tuple[str, str, float, float, int]] = []
         self._free_resources: dict[str, dict] = {}
         self._handler_registrations: dict[str, HandlerRegistration] = {}
         self._step_logs: list[StepLogEntry] = []
@@ -459,6 +461,57 @@ class MemoryStore(PersistenceAPI):
             for t in self._tasks.values()
             if t.state == state and (not task_list or t.task_list_name == task_list)
         ]
+
+    # -- fast-host placement (see MongoStore; keep in lockstep) -------------------
+
+    def record_task_timing(
+        self, facet: str, server_name: str, seconds: float, cpus: float = 0.0
+    ) -> None:
+        if not facet or not server_name or seconds <= 0:
+            return
+        self._task_timings.append(
+            (facet, server_name, float(cpus or 0.0), float(seconds), _current_time_ms())
+        )
+
+    def facet_timings(
+        self, facet: str, cpus: float = 0.0, per_host: int = 20
+    ) -> dict[str, list[float]]:
+        out: dict[str, list[float]] = {}
+        want = float(cpus or 0.0)
+        rows = [r for r in self._task_timings if r[0] == facet and r[2] == want]
+        for _f, host, _c, secs, _at in sorted(rows, key=lambda r: r[4], reverse=True):
+            got = out.setdefault(host, [])
+            if len(got) < per_host:
+                got.append(secs)
+        return out
+
+    def prefer_fast_demand(self) -> dict[str, tuple[int, float]]:
+        counts: dict[str, int] = {}
+        cpus: dict[str, dict[float, int]] = {}
+        for t in self._tasks.values():
+            if (
+                t.state != "pending"
+                or (getattr(t, "placement", None) or {}).get("prefer") != "fast"
+            ):
+                continue
+            counts[t.name] = counts.get(t.name, 0) + 1
+            c = float((t.requires or {}).get("cpus") or 0.0)
+            per = cpus.setdefault(t.name, {})
+            per[c] = per.get(c, 0) + 1
+        return {n: (k, max(cpus[n], key=cpus[n].get)) for n, k in counts.items()}
+
+    def live_host_cpus(self, facet: str, fresh_ms: int = 300_000) -> dict[str, float]:
+        out: dict[str, float] = {}
+        cutoff = _current_time_ms() - fresh_ms
+        for s in self._servers.values():
+            if s.state != "running" or facet not in (s.handlers or []) or s.ping_time < cutoff:
+                continue
+            c = (getattr(s, "resources", None) or {}).get("cpus")
+            if s.server_name:
+                out[s.server_name] = max(
+                    out.get(s.server_name, 0.0), float(c) if isinstance(c, (int, float)) else 0.0
+                )
+        return out
 
     def cpus_held_on_host(self, server_name: str) -> float:
         """CPUs that tasks RUNNING on one host asked for (see MongoStore)."""

@@ -361,6 +361,7 @@ class EventTransmitHandler(StateHandler):
             kind="script" if (env_hash and has_script) else "",
             required_features=self._required_features(),
             requires=self._resolve_requires(),
+            placement=self._resolve_placement(),
         )
         self.context.changes.add_created_task(task)
 
@@ -429,6 +430,42 @@ class EventTransmitHandler(StateHandler):
             stmt_def = self.context.get_statement_definition(self.step)
             if stmt_def:
                 _collect(getattr(stmt_def, "mixins", None) or [], out)
+        except Exception:
+            return {}
+        return out
+
+    def _resolve_placement(self) -> dict:
+        """Placement preference from ``Placement`` mixins (call site wins).
+
+        ``with Placement(prefer = "fast")`` asks for the earliest-finish rule
+        in facetwork/runtime/placement.py: a slower host takes the task only
+        when it would finish it before the faster hosts could get to it. Any
+        other value is ignored (no preference), never guessed at.
+        """
+
+        def _str(raw) -> str | None:
+            if isinstance(raw, dict):
+                return _str(raw.get("value"))
+            return raw if isinstance(raw, str) else None
+
+        out: dict = {}
+
+        def _collect(mixins) -> None:
+            for mixin in mixins or []:
+                target = mixin.get("target", "") if isinstance(mixin, dict) else ""
+                if target != "Placement" and not target.endswith(".Placement"):
+                    continue
+                for arg in mixin.get("args", []) or []:
+                    if arg.get("name") == "prefer" and _str(arg.get("value")) == "fast":
+                        out["prefer"] = "fast"
+
+        try:
+            facet_def = self.context.get_facet_definition(self.step.facet_name)
+            if facet_def:
+                _collect(facet_def.get("mixins", []))
+            stmt_def = self.context.get_statement_definition(self.step)
+            if stmt_def:
+                _collect(getattr(stmt_def, "mixins", None) or [])
         except Exception:
             return {}
         return out

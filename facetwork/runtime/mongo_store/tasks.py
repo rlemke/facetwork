@@ -465,6 +465,77 @@ class TaskMixin(_MixinBase):
         docs = self._db.tasks.find(query).sort("created", -1)
         return [self._doc_to_task(doc) for doc in docs]
 
+    # -- fast-host placement (facetwork/runtime/placement.py) ---------------------
+
+    def record_task_timing(
+        self, facet: str, server_name: str, seconds: float, cpus: float = 0.0
+    ) -> None:
+        """Record how long one placement task's handler ran on a host."""
+        if not facet or not server_name or seconds <= 0:
+            return
+        self._db.task_timings.insert_one(
+            {
+                "facet": facet,
+                "server_name": server_name,
+                "cpus": float(cpus or 0.0),
+                "seconds": float(seconds),
+                "at": _current_time_ms(),
+            }
+        )
+
+    def facet_timings(
+        self, facet: str, cpus: float = 0.0, per_host: int = 20
+    ) -> dict[str, list[float]]:
+        """Recent handler seconds per host for a facet at one CPU floor."""
+        out: dict[str, list[float]] = {}
+        docs = (
+            self._db.task_timings.find(
+                {"facet": facet, "cpus": float(cpus or 0.0)},
+                {"_id": 0, "server_name": 1, "seconds": 1},
+            )
+            .sort("at", -1)
+            .limit(50 * per_host)
+        )
+        for d in docs:
+            secs = out.setdefault(d.get("server_name", ""), [])
+            if len(secs) < per_host:
+                secs.append(float(d.get("seconds", 0.0)))
+        out.pop("", None)
+        return out
+
+    def prefer_fast_demand(self) -> dict[str, tuple[int, float]]:
+        """``{facet: (pending count, requires.cpus)}`` for waiting fast-placement tasks."""
+        counts: dict[str, int] = {}
+        cpus: dict[str, dict[float, int]] = {}
+        for d in self._db.tasks.find(
+            {"state": "pending", "placement.prefer": "fast"},
+            {"_id": 0, "name": 1, "requires.cpus": 1},
+        ):
+            name = d.get("name", "")
+            counts[name] = counts.get(name, 0) + 1
+            c = float((d.get("requires") or {}).get("cpus") or 0.0)
+            cpus.setdefault(name, {})[c] = cpus.setdefault(name, {}).get(c, 0) + 1
+        return {n: (k, max(cpus[n], key=cpus[n].get)) for n, k in counts.items()}
+
+    def live_host_cpus(self, facet: str, fresh_ms: int = 300_000) -> dict[str, float]:
+        """Hosts with a live runner for ``facet`` -> advertised CPUs (0 if unknown)."""
+        out: dict[str, float] = {}
+        for s in self._db.servers.find(
+            {
+                "state": "running",
+                "handlers": facet,
+                "ping_time": {"$gte": _current_time_ms() - fresh_ms},
+            },
+            {"_id": 0, "server_name": 1, "resources": 1},
+        ):
+            name = s.get("server_name", "")
+            c = (s.get("resources") or {}).get("cpus")
+            if name:
+                out[name] = max(
+                    out.get(name, 0.0), float(c) if isinstance(c, (int, float)) else 0.0
+                )
+        return out
+
     def cpus_held_on_host(self, server_name: str) -> float:
         """CPUs that tasks RUNNING on one host asked for (``requires.cpus``).
 
@@ -996,6 +1067,7 @@ class TaskMixin(_MixinBase):
             # outside what this runner advertises" with operators the
             # in-memory double also supports. Derived, never authored.
             "requires_dims": sorted(task.requires or {}),
+            "placement": dict(getattr(task, "placement", None) or {}),
         }
 
     def _doc_to_task(self, doc: dict) -> TaskDefinition:
@@ -1030,4 +1102,5 @@ class TaskMixin(_MixinBase):
             kind=doc.get("kind", ""),
             required_features=list(doc.get("required_features") or []),
             requires=dict(doc.get("requires") or {}),
+            placement=dict(doc.get("placement") or {}),
         )

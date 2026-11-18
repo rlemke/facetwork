@@ -69,6 +69,7 @@ from .entities import (
 from .errors import PermanentError
 from .evaluator import Evaluator, ExecutionResult, ExecutionStatus
 from .persistence import PersistenceAPI
+from .placement import record_timing
 from .runner_config import BaseRunnerConfig
 from .states import StepState
 from .task_liveness import make_task_heartbeat
@@ -1105,6 +1106,9 @@ class RegistryRunner(BaseRunner):
                     task.step_id,
                 )
                 return
+
+            # Placement tasks: how long this took HERE feeds the fast-host rule.
+            record_timing(self._persistence, task, self._config.server_name, dispatch_duration)
 
             # We own the completion → apply the result and resume.
             # process_single_step handles the continued step and cascades up to

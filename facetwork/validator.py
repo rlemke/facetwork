@@ -63,6 +63,10 @@ from .ast import (
     YieldStmt,
 )
 
+# Mixins read by the runtime from the compiled AST rather than declared in FFL
+# (runtime/handlers/completion.py): never a typo of a declared facet.
+_RUNTIME_MIXINS = frozenset({"Timeout", "Requires", "Placement"})
+
 
 @dataclass
 class ValidationError:
@@ -734,6 +738,11 @@ class FFLValidator:
         # Warn only when there is a concrete near-match to name. With no close
         # candidate this really is an external reference and silence is right,
         # which keeps the false-positive rate at essentially zero.
+        # Mixins the runtime itself reads off the AST (Timeout, Requires,
+        # Placement) are never declared anywhere, so a near-match is noise:
+        # `Placement` was flagged as a typo of a domain's `Plan`.
+        if short_name in _RUNTIME_MIXINS:
+            return None
         near = _suggest.closest(short_name, self._facets_by_short_name.keys())
         if near:
             qualified = self._facets_by_short_name.get(near) or [near]

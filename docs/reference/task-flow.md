@@ -355,6 +355,47 @@ with the next starting in the same 5-second sample the previous one finished
 before the script-branch fix (§6.1) started all three at once, on a host
 reporting 20 GB free.
 
+### 6.6 Fast-host placement
+
+Booking stops a host from running more than it has CPUs for, but it says
+nothing about which host should take a task. Measured 2026-11-17, on the
+fleet stitched TESS search with booking on and every worker on a whole core:
+a star-pass took a median 635 s on the fastest host and 1,772-4,481 s on the
+other four. Chunks were spread evenly, so the run ended with the slowest hosts
+holding its last chunks (about 7.5 h each on one of them) while the fast host
+sat idle.
+
+A task declared `with Placement(prefer = "fast")` (on the facet or at the call
+site) carries `placement: {"prefer": "fast"}`. A host claims it only if it
+would finish it sooner than the hosts faster than it could get to it. This is
+the earliest-finish-time test of heterogeneous list scheduling (HEFT):
+
+    claim  iff  mine <= pending / sum(slots_g / seconds_g) + min(seconds_g)
+
+over the live hosts `g` faster than this one. Here `mine` and `seconds_g` are
+median handler times for this facet at the same `requires.cpus`. `slots_g` is
+`cpus // requires.cpus`, and `pending` is the number of such tasks waiting.
+With a long queue every host works. Near the end, only hosts that would finish
+first take work: with 5 slots at 3,808 s, a 26,884 s host claims while 31 or
+more chunks are waiting, and stops below that.
+
+- **Times are measured, not configured.** The runner that completes a
+  placement task records its handler time in `task_timings`, keyed by host
+  name (`server_name`), so the history survives runner restarts and server
+  purges.
+- **Absent means unconstrained.** A host with no timing yet, a facet with no
+  faster live host, or a store that cannot answer claims as before. The
+  fastest host never declines, so the gate can delay a task but never strand
+  it. A faster host only counts while it has a live runner (pinged within
+  5 min) with the handler.
+- **Where it runs:** the claimer removes declined facets from the names it
+  claims for the whole host (`/status` shows `placement_declined`). A runner
+  claiming directly does the same. The decision is cached for 30 s.
+  `FW_CLAIM_PLACEMENT=0` switches it off.
+- **Approximations:** the estimate counts only faster hosts draining the
+  queue, and ignores slower hosts taking from it and the time left on tasks
+  already running. Medians come from the last 20 runs per host.
+
 ---
 
 ## 7. External (polyglot) agents

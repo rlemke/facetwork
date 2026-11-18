@@ -1018,6 +1018,11 @@ off the runners entirely: one process per host polls for all of them.
   `requires.cpus` of every task running on this host (`cpus_held_on_host`),
   so a 12-CPU host takes one 8-CPU task, not ten (measured 2026-11-14). A
   runner claiming directly books the same way. See task-flow.md §6.5.
+- **Fast-host placement:** facets that a slower host should leave to faster
+  ones right now (`Placement(prefer = "fast")` tasks, judged by the HEFT
+  earliest-finish test on per-host handler times in `task_timings`) are
+  removed from the names it claims. A runner claiming directly does the same.
+  See task-flow.md §6.6.
 - **Fallback:** a runner reaches the claimer through `FW_CLAIM_PROXY_URL`. Unset,
   or unreachable (then retried after 60 s), the runner claims directly, so a
   missing claimer makes a host noisier, never stuck.

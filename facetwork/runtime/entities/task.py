@@ -68,3 +68,7 @@ class TaskDefinition:
     # runner never accepts work it will only fail. Empty = unconstrained, the
     # same "absent means anyone" rule environment_hash and required_features use.
     requires: dict = field(default_factory=dict)
+    # Placement preference, e.g. {"prefer": "fast"}: a slower host claims the
+    # task only when it would finish it sooner than the faster hosts could get
+    # to it (facetwork/runtime/placement.py). Empty = no preference.
+    placement: dict = field(default_factory=dict)
