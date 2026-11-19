@@ -462,6 +462,11 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         return h[:-6] if h.endswith(".local") else h
     _claimer_hosts = {_hn(h) for h in (cfg.get("claimer_hosts") or [])}
     claimer_here = "*" in _claimer_hosts or _hn(HOST) in _claimer_hosts
+    # CPUs this host keeps for itself: {host: n}, "*" = every host without its
+    # own entry. A desktop that is also the fastest runner host needs headroom,
+    # or placement keeps every slot busy and the desktop stalls.
+    _reserve = {_hn(h): v for h, v in (cfg.get("cpu_reserve") or {}).items()}
+    cpu_reserve = _reserve.get(_hn(HOST), _reserve.get("*", 0)) or 0
     gen_role = roles.get("generalist", {})
     gen_domains = [d for d in (gen_role.get("domains") or []) if d]
     gen_replicas = int(gen_role.get("replicas", 1) or 0)
@@ -569,6 +574,8 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         env["FW_GEOFABRIK_BASE_URL"] = geofabrik
     if image:
         env["FW_RUNNER_IMAGE"] = image
+    if cpu_reserve:
+        env["FW_CPU_RESERVE"] = str(cpu_reserve)
     if claimer_here:
         # Every runner on this host claims through the claimer container. A
         # runner that cannot reach it claims directly, so this cannot strand work.
@@ -607,6 +614,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
 
     label = (f"v{cfg.get('version')} group={grp} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
              + (" osm-offline=1" if cfg.get("osm_offline") else "")
+             + (f" cpu-reserve={cpu_reserve}" if cpu_reserve else "")
              + (f" geofabrik={geofabrik}" if geofabrik else "")
              + (f" image={image}" if image else "")
              + (f" gh-router={gh_image}" if gh_image else "")

@@ -186,6 +186,40 @@ def live_free() -> dict | None:
     return None if gb is None else {"memory_gb": gb}
 
 
+def measured_cpus(count: int | None, cpu_max: str | None, reserve: str | None) -> float | None:
+    """CPUs this runner offers: the cores it can use, minus the host's reserve.
+
+    ``count`` is ``os.cpu_count()``; ``cpu_max`` the cgroup v2 ``cpu.max`` text
+    (``"<quota> <period>"`` or ``"max <period>"``), which caps a container below
+    the VM's core count when compose sets ``cpus:``; ``reserve`` is
+    ``FW_CPU_RESERVE``, the cores a host keeps for something other than claimed
+    work (the fleet-agent sets it from fleet_config ``cpu_reserve``).
+
+    Measured 2026-11-19: the fastest host is also a desktop, its Docker VM has
+    all 16 cores, and once fast-host placement kept its five 3-CPU slots full
+    the load average sat near 21 and the desktop's own tools stalled for
+    minutes. A reserve never takes a host below 1 CPU. ``None`` = unknown.
+    """
+    cpus = float(count or 0)
+    if cpu_max:
+        parts = cpu_max.split()
+        try:
+            if len(parts) == 2 and parts[0] != "max" and float(parts[1]) > 0:
+                quota = float(parts[0]) / float(parts[1])
+                cpus = min(cpus, quota) if cpus else quota
+        except ValueError:
+            pass
+    if cpus <= 0:
+        return None
+    try:
+        held_back = float(reserve) if reserve not in (None, "") else 0.0
+    except ValueError:
+        held_back = 0.0
+    if held_back > 0:
+        cpus = max(1.0, cpus - held_back)
+    return round(cpus, 2)
+
+
 def _measure() -> dict:
     """MEASURED capacity of this host, for resource-aware claim routing.
 
@@ -204,9 +238,13 @@ def _measure() -> dict:
 
     res: dict = {}
     try:
-        res["cpus"] = float(_os.cpu_count() or 0) or None
-        if res["cpus"] is None:
-            res.pop("cpus")
+        try:
+            cpu_max = open("/sys/fs/cgroup/cpu.max").read()
+        except Exception:
+            cpu_max = None
+        cpus = measured_cpus(_os.cpu_count(), cpu_max, _os.environ.get("FW_CPU_RESERVE"))
+        if cpus:
+            res["cpus"] = cpus
     except Exception:
         pass
 

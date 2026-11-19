@@ -97,6 +97,8 @@ def _print_cfg(cfg):
     print(f"  osm-offline: {'ON (third-party mirrors forbidden)' if cfg.get('osm_offline') else 'off'}")
     _ch = cfg.get("claimer_hosts") or []
     print(f"  claimer:   {'all hosts' if '*' in _ch else (', '.join(_ch) if _ch else 'off (runners claim directly)')}")
+    _cr = cfg.get("cpu_reserve") or {}
+    print(f"  cpu-reserve: {', '.join(f'{h}={n}' for h, n in sorted(_cr.items())) if _cr else 'none (runners offer every core)'}")
     print(f"  geofabrik: {eps.get('geofabrik') or '- (compose default: MinIO osm-extracts)'}")
     print(f"  updated:   {cfg.get('updated_at', '-')}")
     # Infra services are identified by access URL only (single node, cluster, or
@@ -165,6 +167,24 @@ def cmd_set(a):
             [] if _v in ("", "off") else ["*"] if _v == "all"
             else [h.strip() for h in _v.split(",") if h.strip()]
         )
+    if a.cpu_reserve is not None:
+        _v = a.cpu_reserve.strip()
+        if _v in ("", "off"):
+            cfg["cpu_reserve"] = {}
+        else:
+            _cr = dict(cfg.get("cpu_reserve") or {})
+            for _item in _v.split(","):
+                _h, _, _n = _item.strip().partition("=")
+                if not _h.strip() or not _n.strip():
+                    sys.exit(f"--cpu-reserve: expected HOST=N[,HOST=N], got {_item!r}")
+                _n = float(_n)
+                if _n < 0:
+                    sys.exit(f"--cpu-reserve: {_h} must be >= 0")
+                if _n == 0:
+                    _cr.pop(_h.strip(), None)
+                else:
+                    _cr[_h.strip()] = int(_n) if _n.is_integer() else _n
+            cfg["cpu_reserve"] = _cr
     if a.geofabrik_base:
         # Where runners fetch <region>-latest.osm.pbf from. Config, never a
         # literal in code or a compose default: the two candidate stores differ
@@ -520,6 +540,12 @@ def main():
                          "instead of one per runner, plus a memory ledger against the "
                          "claim race. A change recreates that host's runners (their env "
                          "gains/loses FW_CLAIM_PROXY_URL).")
+    ps.add_argument("--cpu-reserve", metavar="HOST=N,...|off", default=None,
+                    help="CPUs a host keeps for itself: its runners advertise their cores "
+                         "minus N, so CPU booking and placement leave them free (a desktop "
+                         "that is also a fast runner host). '*=N' sets every host without "
+                         "its own entry; HOST=0 removes one; 'off' clears all. A change "
+                         "recreates that host's runners.")
     ps.add_argument("--osm-offline", choices=("on", "off"), default=None,
                     help="forbid osm extract fetches to THIRD-PARTY mirrors "
                          "(geofabrik/osmfr) fleet-wide; the self-hosted mirror is "

@@ -346,6 +346,16 @@ running tasks, so a CPU frees the moment its task stops running. A task with no
 the offer stays at capacity (the old behaviour) with one warning;
 `FW_CLAIM_LIVE_CPUS=0` switches booking off.
 
+Capacity is the cores the runner can use (`os.cpu_count()`, capped by a
+container's cgroup `cpu.max`) minus the host's **CPU reserve**:
+`fw fleet set --cpu-reserve HOST=N[,HOST=N]` (`*=N` for every host without its
+own entry, `HOST=0` to remove one, `off` to clear) stores `cpu_reserve` in
+fleet_config, and the fleet-agent passes it to that host's runners as
+`FW_CPU_RESERVE`. Use it on a host that is also someone's desktop: measured
+2026-11-19, the fastest host (16 cores) ran at a load average near 21 once
+fast-host placement kept its five 3-CPU slots full, and the desktop's own
+tools stalled for minutes. A reserve never takes a host below 1 CPU.
+
 **Measured 2026-10-21.** The test was three script tasks, each declaring
 `Requires(memory_gb = 30)` and allocating nothing, so live free memory never
 dropped. One host had 41.8 GB free and seven idle runners waiting on its

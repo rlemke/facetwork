@@ -113,6 +113,9 @@ x-fleet-env: &fleet-env
   FW_RUNNER_IMAGE: ${FW_RUNNER_IMAGE:-}
   # Per-host claimer (fleet_config claimer_hosts). Empty = claim directly.
   FW_CLAIM_PROXY_URL: ${FW_CLAIM_PROXY_URL:-}
+  # CPUs this host keeps for itself (fleet_config cpu_reserve); runners advertise
+  # their cores minus this. Empty = all cores.
+  FW_CPU_RESERVE: ${FW_CPU_RESERVE:-}
 
 services:
   runner-anthropic:

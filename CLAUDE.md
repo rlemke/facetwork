@@ -789,7 +789,11 @@ host ran ten 8-CPU stitched searches at once (measured 2026-11-14, chunks 8x
 slower than on an unloaded host). So a `cpus` floor now means "this many CPUs
 of mine": declare what the step actually uses (`Requires(cpus = "$.workers")`),
 not a large number to keep it off small hosts, or the host runs fewer copies
-than it could. `FW_CLAIM_LIVE_CPUS=0` = capacity-only. See
+than it could. `FW_CLAIM_LIVE_CPUS=0` = capacity-only. A host that is also
+someone's desktop keeps cores for itself with `fw fleet set --cpu-reserve
+HOST=N` (runners advertise their cores minus N, and respect a container
+`cpu.max`): measured 2026-11-19, the fastest host ran at load ~21 on 16 cores
+once placement kept all its slots full, and its desktop tools stalled. See
 [task-flow.md §6.5](docs/reference/task-flow.md).
 
 ⚠️ **Slow hosts can hold the last tasks: `with Placement(prefer = "fast")`.**
