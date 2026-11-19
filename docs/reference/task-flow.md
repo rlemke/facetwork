@@ -390,7 +390,11 @@ more chunks are waiting, and stops below that.
   5 min) with the handler.
 - **Where it runs:** the claimer removes declined facets from the names it
   claims for the whole host (`/status` shows `placement_declined`). A runner
-  claiming directly does the same. The decision is cached for 30 s.
+  claiming directly does the same. The decision is cached for 30 s, but
+  only while placement tasks are waiting: "nothing waiting" is checked again
+  on the next cycle, so a run's first chunks are judged as soon as they exist
+  (a cached empty answer once let the slowest host take four first-wave
+  chunks in the 36 s before it looked again).
   `FW_CLAIM_PLACEMENT=0` switches it off.
 - **Approximations:** the estimate counts only faster hosts draining the
   queue, and ignores slower hosts taking from it and the time left on tasks

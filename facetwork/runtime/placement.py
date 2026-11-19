@@ -67,12 +67,16 @@ def should_claim(mine: float | None, faster: Iterable[tuple[float, float]], pend
     return mine <= max(pending, 1) / rate + fastest
 
 
-def declined_facets(store: Any, server_name: str) -> set[str]:
+def declined_facets(
+    store: Any, server_name: str, demand: dict[str, tuple[int, float]] | None = None
+) -> set[str]:
     """Facets this host should not claim now (see module docstring)."""
     out: set[str] = set()
     if not server_name:
         return out
-    for facet, (pending, cpus) in store.prefer_fast_demand().items():
+    if demand is None:
+        demand = store.prefer_fast_demand()
+    for facet, (pending, cpus) in demand.items():
         medians = {
             host: statistics.median(secs)
             for host, secs in store.facet_timings(facet, cpus).items()
@@ -126,6 +130,7 @@ class PlacementGate:
         self._clock = clock
         self._declined: set[str] = set()
         self._at = float("-inf")
+        self._idle = True  # last check saw no placement tasks waiting
         self._warned = False
 
     def declined(self) -> set[str]:
@@ -137,10 +142,16 @@ class PlacementGate:
         ):
             return set()
         now = self._clock()
-        if now - self._at < self._ttl_s:
+        # An answer is cached only while placement tasks are waiting. "Nothing
+        # waiting" is never cached: a run's first chunks appear all at once, and
+        # a cached empty answer let a slow host claim four of them in the 36 s
+        # before it next looked (measured 2026-11-18, fleet stitched TESS run).
+        if not self._idle and now - self._at < self._ttl_s:
             return self._declined
         try:
-            declined = declined_facets(self._store, self._server_name)
+            demand = self._store.prefer_fast_demand()
+            self._idle = not demand
+            declined = declined_facets(self._store, self._server_name, demand) if demand else set()
         except Exception as exc:  # noqa: BLE001 — a claim must never die on this
             if not self._warned:
                 self._warned = True
@@ -150,6 +161,7 @@ class PlacementGate:
                     exc,
                 )
             declined = set()
+            self._idle = False  # do not retry a failing store on every cycle
         if declined != self._declined and declined:
             logger.info(
                 "Placement: %s leaves %s to faster hosts", self._server_name, sorted(declined)

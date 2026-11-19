@@ -190,6 +190,29 @@ def test_the_gate_strips_declined_names_and_can_be_switched_off(store, monkeypat
     assert PlacementGate(store, SLOW).strip(claims) == claims
 
 
+def test_an_empty_queue_is_not_cached(store):
+    # The gate looked before the run's chunks existed; they then appear all at
+    # once. The slow host must judge them on its next look, not after the TTL.
+    _fleet(store, pending=0)
+    gate = PlacementGate(store, SLOW, clock=lambda: 100.0)
+    assert gate.declined() == set()
+    for i in range(5):
+        store.save_task(_task(f"q{i}"))
+    assert gate.declined() == {FACET}
+
+
+def test_a_waiting_queue_is_cached_for_the_ttl(store):
+    _fleet(store, pending=5)
+    now = [100.0]
+    gate = PlacementGate(store, SLOW, clock=lambda: now[0])
+    assert gate.declined() == {FACET}
+    for i in range(60):
+        store.save_task(_task(f"q{i}"))
+    assert gate.declined() == {FACET}  # still cached
+    now[0] += 31
+    assert gate.declined() == set()
+
+
 def test_the_claimer_on_a_slow_host_leaves_the_last_tasks(store):
     _fleet(store, pending=5)
     store.save_task(_task("plain", prefer="", name="ns.Other"))
