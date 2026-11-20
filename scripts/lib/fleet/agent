@@ -19,6 +19,7 @@ Secrets stay local (Phase 1/2): MinIO creds come from this host's environment
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -239,7 +240,25 @@ def _source_fingerprint() -> tuple:
     return tuple(out)
 
 
-def _reexec_if_source_changed(baseline: tuple) -> None:
+#: Applied state handed across a self re-exec (see _reexec_if_source_changed).
+_RESUME_ENV = "FW_AGENT_RESUME_STATE"
+
+
+def _resume_state() -> tuple:
+    """(last_version, last_image) left by our own re-exec, else (None, None).
+
+    Read once and removed from the environment, so it never reaches a child
+    process or a later cold start.
+    """
+    raw = os.environ.pop(_RESUME_ENV, "")
+    try:
+        d = json.loads(raw) if raw else {}
+        return d.get("version"), d.get("image")
+    except (ValueError, AttributeError):
+        return None, None
+
+
+def _reexec_if_source_changed(baseline: tuple, last_version=None, last_image=None) -> None:
     """Re-exec this process when its own source has changed on disk.
 
     ⚠️ Why a daemon needs this. `git pull` updates FILES; it does not reload a
@@ -259,8 +278,18 @@ def _reexec_if_source_changed(baseline: tuple) -> None:
       * only re-execs when the new source PARSES, so a half-written or broken
         file leaves the current (working) process running;
       * at the TOP of a cycle, never mid-reconcile;
-      * in-memory state is only last_version/last_image, both re-derived on the
-        next poll, so a reload costs one extra reconcile at worst.
+      * the in-memory state, last_version/last_image, is handed to the new
+        process, so a reload does NOT re-apply an unchanged config version.
+
+    ⚠️ That last point used to say "a reload costs one extra reconcile at
+    worst". Measured 2026-11-19 it cost far more: a commit that added one env
+    var to docker-compose.fleet.yml was pulled onto the hosts, each agent
+    re-exec'd, re-applied v566 from scratch, and compose -- seeing a changed
+    service definition -- recreated every runner on every host. 18 stitched
+    TESS chunks, ~3 h in each, were reaped and redone. A compose or agent change
+    now takes effect at the next config version (a rollout), which is when
+    restarting runners is expected; the wrong-image check still runs every
+    cycle, so state is still verified.
     """
     if _source_fingerprint() == baseline:
         return
@@ -281,6 +310,8 @@ def _reexec_if_source_changed(baseline: tuple) -> None:
           f"pick it up (no restart needed)", flush=True)
     sys.stdout.flush()
     sys.stderr.flush()
+    if last_version is not None:
+        os.environ[_RESUME_ENV] = json.dumps({"version": last_version, "image": last_image})
     os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), *sys.argv[1:]])
 
 
@@ -1140,8 +1171,12 @@ def cmd_watch(a):
     stop = {"v": False}
     signal.signal(signal.SIGTERM, lambda *_: stop.update(v=True))
     signal.signal(signal.SIGINT, lambda *_: stop.update(v=True))
-    last_version = None
-    last_image = None
+    # None after a cold start (boot, crash, supervisor restart), so the first
+    # cycle reconciles; our own re-exec hands its state over instead.
+    last_version, last_image = _resume_state()
+    if last_version is not None:
+        print(f"fleet-agent[{HOST}]: reloaded with v{last_version} already applied "
+              f"-- not re-applying it", flush=True)
     # Backoff state for a persistently-failing reconcile: `fails` counts
     # consecutive failures of `failing_version`. A failed _apply does NOT advance
     # last_version (so it retries), which without backoff means retrying every
@@ -1156,7 +1191,7 @@ def cmd_watch(a):
     while not stop["v"]:
         # Reload our own code before anything else in the cycle: a pulled fix
         # that never runs is indistinguishable from a fix that did not work.
-        _reexec_if_source_changed(_src_baseline)
+        _reexec_if_source_changed(_src_baseline, last_version, last_image)
         wait = a.interval  # normal poll cadence unless a failure backs us off
         # Watchdog: a poll that runs longer than _WATCHDOG_SECONDS is wedged on
         # something Mongo/docker timeouts didn't catch — force-exit so the

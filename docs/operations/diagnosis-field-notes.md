@@ -88,6 +88,13 @@ the file containing the function proves nothing about the process.
    "running stale code": convergence views show what was *recorded*, liveness
    watchdogs check *alive*, not *current*. Either make it re-exec on source
    change, or restart it as part of every deploy.
+9. **A daemon that reloads itself must carry its applied state across the
+   reload.** The fleet-agent's re-exec once started with no memory of the
+   version it had applied, re-applied it, and compose recreated every runner on
+   every host because the pulled commit had changed one service definition
+   (measured 2026-11-19: 18 stitched TESS chunks, ~3 h each, redone). It now
+   hands the applied version to the new process, so a compose or agent change
+   takes effect at the next config version, which is when a rollout is expected.
 
 ---
 
