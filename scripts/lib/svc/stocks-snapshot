@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# fw-summary: mark open paper-trading groups to market; --install adds the weekday launchd timer
+# fw-summary: mark open paper-trading groups to market and republish their pages; --install adds the weekday timer
 #
-# Submits stocks.workflows.SnapshotStockGroups with a blank group_id, which
-# marks EVERY open group. The FFL calls this "the form the daily cron entry
-# runs" — this is that entry.
+# Submits stocks.publish.UpdateSite: stocks.groups.SnapshotGroups with a blank
+# group_id (marks EVERY open group), then renders the static pages
+# (stocks.site.Build) and publishes them to the maps site under stocks/.
+# Pages depend only on the data, so a day with no new mark commits nothing.
+# --no-publish (and --group) submit stocks.workflows.SnapshotStockGroups alone.
+#
+# Publishing composes census.Publish.PublishWebBundle, so this host needs the
+# fwh_census_us checkout for its FFL; without it the run falls back to the
+# snapshot alone and says so.
 #
 # Timing: the job fires at 23:30 LOCAL on weekdays, which is after the US close
 # in every DST alignment. ET and Central European time normally sit 6h apart
@@ -22,7 +28,8 @@
 #
 # Usage:
 #   fw svc stocks-snapshot                # run one snapshot now (also what the timer calls)
-#   fw svc stocks-snapshot --group ID     # just one group
+#   fw svc stocks-snapshot --group ID     # just one group (no publish)
+#   fw svc stocks-snapshot --no-publish   # marks only; leave the published pages alone
 #   fw svc stocks-snapshot --install      # write + load the weekday timer
 #   fw svc stocks-snapshot --at 22:45     # install at a different local time
 #   fw svc stocks-snapshot --uninstall    # unload + remove
@@ -36,7 +43,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 WRAPPER="$HOME/.facetwork/stocks-snapshot.sh"
 LOGDIR="$HOME/.facetwork"
 LOG="$LOGDIR/stocks-snapshot.log"
-GROUP="" ACTION="run" AT="23:30" LOAD=1
+GROUP="" ACTION="run" AT="23:30" LOAD=1 PUBLISH=1
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -46,15 +53,33 @@ while [ $# -gt 0 ]; do
         --status) ACTION="status"; shift ;;
         --at) AT="$2"; shift 2 ;;
         --no-load) LOAD=0; shift ;;
+        --no-publish) PUBLISH=0; shift ;;
         -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
 
-FFL="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_stocks/src/stocks/ffl/stocks.ffl"
+HANDLERS="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+FFL="$HANDLERS/fwh_stocks/src/stocks/ffl/stocks.ffl"
+SITE_FFL="$HANDLERS/fwh_stocks/src/stocks/ffl/stocks_site.ffl"
+CENSUS="$HANDLERS/fwh_census_us/src/census_us"
+CENSUS_FFL=("$CENSUS/handlers/publish/ffl/census_publish.ffl" "$CENSUS/handlers/downloads/ffl/census_operations.ffl")
 
 run_snapshot() {
     [ -f "$FFL" ] || { echo "no stocks FFL at $FFL — is fwh_stocks installed?" >&2; exit 1; }
+    [ -n "$GROUP" ] && PUBLISH=0
+    if [ "$PUBLISH" = 1 ] && { [ ! -f "$SITE_FFL" ] || [ ! -f "${CENSUS_FFL[0]}" ] || [ ! -f "${CENSUS_FFL[1]}" ]; }; then
+        echo "WARNING: cannot publish the pages: need $SITE_FFL and the fwh_census_us FFL under $CENSUS" >&2
+        echo "WARNING: running the snapshot alone; the published pages will NOT change" >&2
+        PUBLISH=0
+    fi
+    if [ "$PUBLISH" = 1 ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] snapshotting all open groups + publishing the pages"
+        "$FW_ROOT/fw" ffl run --primary "$SITE_FFL" --library "$FFL" \
+            --library "${CENSUS_FFL[0]}" --library "${CENSUS_FFL[1]}" \
+            --workflow stocks.publish.UpdateSite --inputs '{}'
+        return
+    fi
     echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] snapshotting ${GROUP:-all open groups}"
     # The runner claims this; nothing here needs the domain importable locally.
     "$FW_ROOT/fw" ffl run --primary "$FFL" \
@@ -116,7 +141,7 @@ if ! docker info >/dev/null 2>&1; then
   for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 5; done
 fi
 cd "$FW_ROOT" || exit 1
-exec ./fw svc stocks-snapshot
+exec ./fw svc stocks-snapshot$([ "$PUBLISH" = 1 ] || echo " --no-publish")
 WRAP
     chmod +x "$WRAPPER"
 
