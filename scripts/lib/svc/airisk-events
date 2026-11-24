@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# fw-summary: weekly search for outages and hacks blamed on AI (Claude + web search), then rebuild and republish the AI Risk Clock; --install adds the weekly timer
+#
+# Submits airisk.publish.RefreshEvents: airisk.events.Refresh asks Claude
+# (claude-opus-5-5, web search + fetch) for events newly blamed on AI since the
+# list was last searched, and for new facts on the listed ones (a published
+# root cause, an official denial). Nothing it proposes is published unchecked:
+# fields and the evidence grade are validated, and every source must be a URL
+# that came up in its own searches that run and must not answer 404/410. What
+# passes goes to events-auto.json in the airisk domain store, kept apart from
+# the hand-curated data/events.json and applied on top of it at build time;
+# the page marks each row the search added or changed. The workflow then runs
+# the same rebuild + publish as the daily airisk-update.
+#
+# Each run's proposal, the URLs Claude saw, every decision (with reasons for
+# rejections) and token use are written to events-log/<date>.json in the
+# store. Read it to move a marked row into the curated file.
+#
+# Cost: one Claude run with up to 30 searches and 20 fetches, a few dollars.
+# The facet is advertised only by runners that have ANTHROPIC_API_KEY.
+#
+# Timing: weekly, Monday 06:40 LOCAL by default (before the daily 07:15
+# refresh, which then republishes the same overlay).
+#
+# Usage:
+#   fw svc airisk-events                 # run one search + publish now (what the timer calls)
+#   fw svc airisk-events --install       # write + load the weekly timer
+#   fw svc airisk-events --at 06:40 --day 1   # time and weekday (0 = Sunday … 6)
+#   fw svc airisk-events --uninstall     # unload + remove
+#   fw svc airisk-events --status        # is the timer loaded, and when did it last run?
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+. "$FW_LIB/_helpers/_timer.sh"
+set -euo pipefail
+
+LABEL="com.facetwork.airisk-events"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/airisk-events.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/airisk-events.log"
+ACTION="run" AT="06:40" DAY=1 LOAD=1
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        --at) AT="$2"; shift 2 ;;
+        --day) DAY="$2"; shift 2 ;;
+        --no-load) LOAD=0; shift ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+HANDLERS="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+FFL="$HANDLERS/fwh_airisk/src/airisk/ffl/airisk.ffl"
+SITE_FFL="$HANDLERS/fwh_airisk/src/airisk/ffl/airisk_site.ffl"
+CENSUS="$HANDLERS/fwh_census_us/src/census_us"
+CENSUS_FFL=("$CENSUS/handlers/publish/ffl/census_publish.ffl" "$CENSUS/handlers/downloads/ffl/census_operations.ffl")
+
+run_search() {
+    for f in "$FFL" "$SITE_FFL" "${CENSUS_FFL[@]}"; do
+        [ -f "$f" ] || { echo "missing $f (need the fwh_airisk and fwh_census_us checkouts)" >&2; exit 1; }
+    done
+    grep -q "workflow RefreshEvents" "$SITE_FFL" || {
+        echo "$SITE_FFL has no RefreshEvents workflow: pull fwh_airisk" >&2; exit 1; }
+    echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] AI Risk Clock weekly events search + site publish"
+    "$FW_ROOT/fw" ffl run --primary "$SITE_FFL" --library "$FFL" \
+        --library "${CENSUS_FFL[0]}" --library "${CENSUS_FFL[1]}" \
+        --library "$FW_ROOT/facetwork/ffl/http.ffl" \
+        --workflow airisk.publish.RefreshEvents
+}
+
+case "$ACTION" in
+run) run_search ;;
+
+status)
+    if fw_timer_loaded "$LABEL"; then
+        echo "timer: LOADED ($LABEL)"
+    else
+        echo "timer: not loaded — install with: fw svc airisk-events --install"
+    fi
+    if [ -f "$LOG" ]; then
+        echo "last log lines ($LOG):"
+        tail -5 "$LOG" | sed 's/^/  /'
+    else
+        echo "log:    (none yet at $LOG)"
+    fi
+    ;;
+
+uninstall)
+    if fw_timer_is_darwin; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        rm -f "$PLIST"
+    else
+        fw_timer_cron_uninstall "$LABEL"
+    fi
+    rm -f "$WRAPPER"
+    echo "uninstalled $LABEL. The events list stops being searched; the curated list and the overlay stay as they are."
+    ;;
+
+install)
+    case "$AT" in
+        [0-9][0-9]:[0-9][0-9]) : ;;
+        *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
+    esac
+    case "$DAY" in
+        [0-6]) : ;;
+        *) echo "--day wants 0-6 (0 = Sunday), got '$DAY'" >&2; exit 2 ;;
+    esac
+    HH=$((10#${AT%%:*})) MM=$((10#${AT##*:}))
+    mkdir -p "$LOGDIR"
+
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Facetwork weekly AI Risk Clock events search — launched by $LABEL.
+# Regenerate via 'fw svc airisk-events --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+# A runner executes the search, not this script, so wait for Docker on a
+# machine that just woke up.
+if ! docker info >/dev/null 2>&1; then
+  open -a Docker >/dev/null 2>&1 || true
+  for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 5; done
+fi
+cd "$FW_ROOT" || exit 1
+exec ./fw svc airisk-events
+WRAP
+    chmod +x "$WRAPPER"
+
+    if ! fw_timer_is_darwin; then
+        SPEC="$MM $HH * * $DAY"
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote $WRAPPER; crontab: $SPEC (weekly)"
+        exit 0
+    fi
+
+    mkdir -p "$(dirname "$PLIST")"
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- Weekly. RunAtLoad is FALSE: installing a timer must not start a
+         paid search-and-publish run as a side effect. -->
+    <key>RunAtLoad</key><false/>
+    <key>StartCalendarInterval</key>
+    <dict><key>Weekday</key><integer>$DAY</integer><key>Hour</key><integer>$HH</integer><key>Minute</key><integer>$MM</integer></dict>
+    <key>WorkingDirectory</key><string>$FW_ROOT</string>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/airisk-events.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+    echo "wrote $WRAPPER and $PLIST (weekday $DAY at $AT local)"
+    if [ "$LOAD" = 1 ]; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        launchctl load "$PLIST"
+        echo "loaded $LABEL — logs: $LOG · check: fw svc airisk-events --status"
+    else
+        echo "not loaded (--no-load). Activate with: launchctl load $PLIST"
+    fi
+    ;;
+esac
