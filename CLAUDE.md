@@ -284,7 +284,7 @@ Notes for working with `fw`:
   3, exits 2 when it cannot tell, and passes on a host with no state. ⚠️ MAST
   reprocesses old sectors in place (48-55, 56-65); a changed TCE table name is
   REPORTED, never re-run unattended (`--sectors N` re-runs deliberately). ⚠️ The TOI
-  catalogue lags the data by months (on 2026-11-23 no TOI listed a sector after 96),
+  catalogue lags the data by months (on 2026-11-23 no TOI listed a sector after 97),
   so a new sector's planet sample is usually EMPTY; that is expected, and it is what
   exposed the zero-iteration `foreach` bug fixed with this command.
 - **`fw util ffl-audit [--root PATH] [--json] [--no-contracts]`** — sweep every
