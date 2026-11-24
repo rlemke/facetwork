@@ -228,6 +228,11 @@ check)
     # current?" and it lives in the store.
     run_one "osm store report is current" ./fw svc osm-report --check
 
+    # New TESS sectors arrive every 3-6 weeks and nothing errors when they
+    # stop: the search just stops advancing. Passes on hosts with no
+    # tess-update state, so only the host that runs the timer can alarm.
+    run_one "tess sectors still arriving" ./fw svc tess-update --check
+
     # Self-staleness: this job cannot report that it stopped running, but it
     # CAN report on its next tick that it had been absent.
     if [ -f "$HEALTH" ]; then

@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# fw-summary: search each newly released TESS sector (SectorRun + its upside-down control); --install adds the daily timer, --check alarms when sectors stop arriving
+#
+# Submits tess.workflows.SearchSectors (the planet sample and the TCE/no-TCE
+# sample) and tess.workflows.FalseAlarms (the same sample upside down) for
+# every sector MAST has released since the last run. A sector is RELEASED when
+# its SPOC single-sector TCE table is listed on MAST's bulk-download page AND
+# its 2-minute light curves are in the public bucket; the search is scored
+# against that table, so neither alone is enough.
+#
+# Timing: daily at 09:20 local. MAST releases a sector every 3-6 weeks
+# (measured 2026: s104 07-13, s105 08-17, s106 09-10, s107 10-01, s108 11-12)
+# and publishes no calendar, so the timer polls; a day with nothing new is two
+# HTTP requests. Results go to --work-dir (default
+# s3://afl-cache/cache/tess/sectors), one run directory per sector and kind.
+#
+# ⚠️ Being current is a RATE, not a state: if MAST stops, or its page changes
+# shape, nothing errors — sectors just stop arriving. --check (run by
+# fw svc selfcheck) alarms when no new sector has appeared for 70 days or the
+# timer itself has not run for 3, exits 2 when it cannot tell, and passes on a
+# host with no state file (that host is not the TESS host).
+#
+# ⚠️ MAST reprocesses old sectors in place. A changed TCE table name is
+# REPORTED and never re-run unattended; re-run deliberately with --sectors N.
+#
+# The state file records which sectors are done. Seed it once, before the
+# first --install, with the sectors already searched by hand:
+#   fw svc tess-update --seed-through 108 --note "local CLI (pwC)"
+#
+# Usage:
+#   fw svc tess-update                 # look for new sectors now, submit them (what the timer runs)
+#   fw svc tess-update --dry           # show what would be submitted
+#   fw svc tess-update --sectors 108   # submit exactly these sectors (deliberate re-run)
+#   fw svc tess-update --check         # 0 current / 1 attention / 2 cannot verify
+#   fw svc tess-update --install       # daily timer (--at HH:MM, default 09:20)
+#   fw svc tess-update --uninstall
+#   fw svc tess-update --status
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -euo pipefail
+
+LABEL="com.facetwork.tess-update"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/tess-update.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/tess-update.log"
+STATE="${FW_TESS_UPDATE_STATE:-$HOME/.facetwork/tess-update.json}"
+WORK_DIR="${FW_TESS_WORK_DIR:-s3://afl-cache/cache/tess/sectors}"
+ACTION="run" AT="09:20" LOAD=1 DRY="" SEED="" NOTE="seeded" FIRST=1
+SECTORS=()
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        --check) ACTION="check"; shift ;;
+        --seed-through) ACTION="seed"; SEED="$2"; shift 2 ;;
+        --seed-from) FIRST="$2"; shift 2 ;;
+        --note) NOTE="$2"; shift 2 ;;
+        --sectors) shift; while [ $# -gt 0 ] && [[ "$1" != --* ]]; do SECTORS+=("$1"); shift; done ;;
+        --work-dir) WORK_DIR="$2"; shift 2 ;;
+        --at) AT="$2"; shift 2 ;;
+        --no-load) LOAD=0; shift ;;
+        --dry) DRY="--dry"; shift ;;
+        -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+HANDLERS="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+FFL="$HANDLERS/fwh_tess/src/tesstransit/ffl/tess.ffl"
+HELPER="$FW_LIB/svc/_tess_update.py"
+# stdlib only: any python3 works, but prefer the repo venv (launchd's bare
+# python3 can be Xcode's sandboxed one).
+PY="$FW_ROOT/.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+helper() { "$PY" -I "$HELPER" "$@" --state "$STATE" --work-dir "$WORK_DIR" --fw "$FW_ROOT/fw" --ffl "$FFL"; }
+
+case "$ACTION" in
+run)
+    [ -f "$FFL" ] || { echo "no TESS FFL at $FFL — is fwh_tess installed?" >&2; exit 1; }
+    if [ ${#SECTORS[@]} -gt 0 ]; then helper run $DRY --sectors "${SECTORS[@]}"; else helper run $DRY; fi
+    ;;
+check) helper check ;;
+seed) helper seed --first "$FIRST" --through "$SEED" --note "$NOTE" ;;
+status)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    if fw_timer_is_darwin; then
+        if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then echo "timer: LOADED ($LABEL)"; else echo "timer: not loaded — fw svc tess-update --install"; fi
+    else
+        line="$(fw_timer_cron_line "$LABEL")"; [ -n "$line" ] && echo "timer: cron: $line" || echo "timer: not installed"
+    fi
+    [ -f "$STATE" ] && helper status || echo "state: none at $STATE (seed with --seed-through N)"
+    # if, not `[ -f ] && …`: as the last command that returns 1 when there is
+    # no log yet, and --status then reports failure on a fresh install.
+    if [ -f "$LOG" ]; then echo "last log lines ($LOG):"; tail -5 "$LOG" | sed 's/^/  /'; else echo "log:   (none yet at $LOG)"; fi
+    ;;
+uninstall)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    if fw_timer_is_darwin; then launchctl unload "$PLIST" 2>/dev/null || true; rm -f "$PLIST"; else fw_timer_cron_uninstall "$LABEL"; fi
+    rm -f "$WRAPPER"
+    echo "uninstalled $LABEL. The state file $STATE is kept; new sectors are no longer searched."
+    ;;
+install)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    [ -f "$STATE" ] || { echo "no state at $STATE: seed it first (fw svc tess-update --seed-through N), or the first tick submits every sector MAST has" >&2; exit 1; }
+    case "$AT" in [0-9][0-9]:[0-9][0-9]) HH="${AT%%:*}"; MM="${AT##*:}" ;; *) echo "--at wants HH:MM, got '$AT'" >&2; exit 2 ;; esac
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Facetwork TESS new-sector search — launched by $LABEL.
+# Regenerate via 'fw svc tess-update --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+export FW_TESS_UPDATE_STATE="$STATE" FW_TESS_WORK_DIR="$WORK_DIR"
+cd "$FW_ROOT" || exit 1
+echo "=== \$(date '+%F %T %Z')"
+exec ./fw svc tess-update
+WRAP
+    chmod +x "$WRAPPER"
+    if ! fw_timer_is_darwin; then
+        SPEC="$(fw_timer_cron_spec "$AT" "")"
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote $WRAPPER; crontab: $SPEC (daily at $AT local)"
+        exit 0
+    fi
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- RunAtLoad false: installing must not submit a search at an arbitrary hour. -->
+    <key>RunAtLoad</key><false/>
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>$((10#$HH))</integer><key>Minute</key><integer>$((10#$MM))</integer></dict>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/tess-update.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+    echo "wrote $WRAPPER and $PLIST (daily at $AT local)"
+    if [ "$LOAD" = 1 ]; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        launchctl load "$PLIST"
+        echo "loaded $LABEL. Logs: $LOG · check: fw svc tess-update --status"
+    else
+        echo "not loaded (--no-load). Activate with: launchctl load $PLIST"
+    fi
+    ;;
+esac
