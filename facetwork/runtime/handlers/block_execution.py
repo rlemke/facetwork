@@ -213,10 +213,14 @@ class BlockExecutionBeginHandler(StateHandler):
             # would otherwise fail with "Attribute not found" far from the
             # cause (found live: a city with zero facilities of a category
             # in the emergency-access pilot).
+            # _find_step, not persistence.get_step: a facet step created in
+            # this same iteration (a namespaced facet called as a step, which
+            # is every real fan-out) is still pending, so a store-only read
+            # returned None and the materialization silently did nothing.
+            # Found live 2026-11-23: a TESS sector no TOI listed yet planned
+            # zero chunks and the run failed at "Attribute 'results' not found".
             container = (
-                self.context.persistence.get_step(self.step.container_id)
-                if self.step.container_id
-                else None
+                self.context._find_step(self.step.container_id) if self.step.container_id else None
             )
             if container is not None and container.facet_name:
                 fdef = self.context.get_facet_definition(container.facet_name) or {}

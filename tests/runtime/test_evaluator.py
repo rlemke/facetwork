@@ -2774,6 +2774,41 @@ class TestForeachExecution:
         assert returns["values"].value == []
         assert "count" not in returns  # scalar returns stay unset
 
+    def test_foreach_empty_array_in_called_facet_materializes(self, store, evaluator):
+        """Zero-iteration foreach in a FACET called as a step, inside a namespace.
+
+        The case above covers a top-level workflow whose root step is already
+        stored. A facet called as a step is created in the same iteration as
+        its block, so its container was still pending and a store-only lookup
+        missed it: the [] was never set and the next step failed with
+        "Attribute 'results' not found" (live: a TESS sector with no TOI yet).
+        """
+        from facetwork import emit_dict, parse
+
+        prog = emit_dict(
+            parse(
+                """
+namespace t {
+  event facet Work(c: String) => (r: String)
+  facet Each(chunks: Json, width: Int) => (results: [String])
+    andThen foreach c in $.chunks limit $.width {
+      one = Work(c = $.c)
+      yield Each(results += one.r)
+    }
+  workflow W(chunks: Json = []) => (n: [String]) andThen {
+    e = Each(chunks = $.chunks, width = 0)
+    yield W(n = e.results)
+  }
+}
+"""
+            )
+        )
+        wf = next(d for d in prog["declarations"][0]["declarations"] if d.get("name") == "W")
+        result = evaluator.execute(wf, inputs={}, program_ast=prog)
+        assert result.success is True, getattr(result, "error", None)
+        assert result.status == ExecutionStatus.COMPLETED
+        assert result.outputs["n"] == []
+
 
 # =========================================================================
 # Step Deduplication Tests
